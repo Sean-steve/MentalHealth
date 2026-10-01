@@ -1,4 +1,4 @@
-name: Deploy MindOS tracker to Pages
+name: Deploy MindOS product experience to Pages
 
 on:
   push:
@@ -30,7 +30,7 @@ jobs:
         uses: actions/configure-pages@v5
         with:
           enablement: true
-      - name: Upload static tracker
+      - name: Upload MindOS Pages site
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./docs
