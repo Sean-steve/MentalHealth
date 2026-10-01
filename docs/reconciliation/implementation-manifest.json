@@ -1,0 +1,69 @@
+{
+  "generated_at": "2026-10-02",
+  "baseline": "uploaded mindos-foundation.zip / declared Sprint 21",
+  "validation": {
+    "targeted_typescript": "PASS_NO_NEW_NON_ENVIRONMENT_ERRORS",
+    "full_runtime_tests": "BLOCKED_MISSING_INSTALLED_DEPENDENCIES"
+  },
+  "sprint22": {
+    "status": "PARTIAL_RECONCILED",
+    "modified": [
+      "mindos/care_plans/assignments/assignment_service.ts",
+      "mindos/care_plans/plans/care_plan_service.ts"
+    ],
+    "added": [
+      "mindos/clinical_tasks/application/clinical_task_service.ts",
+      "mindos/clinical_tasks/domain/entities.ts",
+      "mindos/clinical_tasks/domain/types.ts",
+      "mindos/clinical_tasks/index.ts",
+      "mindos/clinical_tasks/repositories/in_memory_clinical_task_repository.ts",
+      "mindos/clinical_tasks/repositories/interfaces.ts",
+      "mindos/professional_messaging/application/ports.ts",
+      "mindos/professional_messaging/application/professional_messaging_service.ts",
+      "mindos/professional_messaging/domain/entities.ts",
+      "mindos/professional_messaging/domain/types.ts",
+      "mindos/professional_messaging/index.ts",
+      "mindos/professional_messaging/repositories/in_memory_professional_messaging_repository.ts",
+      "mindos/professional_messaging/repositories/interfaces.ts",
+      "mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql",
+      "tests/canonical_care_plans_tasks_messaging_sprint22.test.ts"
+    ],
+    "remaining": [
+      "PostgreSQL adapters",
+      "HTTP/API + server wiring",
+      "approved Safety/Notification adapters",
+      "full regression/E2E/security/privacy/build"
+    ]
+  },
+  "sprint23": {
+    "status": "PARTIAL_RECONCILED",
+    "modified": [
+      "mindos/outcomes/application/progress_view_service.ts",
+      "mindos/outcomes/measurements/measurement_service.ts",
+      "mindos/outcomes/reviews/outcome_review_service.ts",
+      "mindos/outcomes/trends/clinical_change_rules.ts",
+      "mindos/outcomes/trends/trend_engine.ts"
+    ],
+    "added": [
+      "mindos/platform/database/migrations/021_canonical_longitudinal_outcomes.sql",
+      "tests/canonical_longitudinal_outcomes_sprint23.test.ts"
+    ],
+    "safety_changes": [
+      "No seeded clinical-change thresholds",
+      "No fallback MCID",
+      "No fallback 7-9 target range",
+      "Missing approved rule => UNKNOWN + review required",
+      "Raw measurement values removed from generic event/audit/timeline metadata"
+    ],
+    "remaining": [
+      "PostgreSQL adapters",
+      "HTTP/API + server wiring",
+      "Clinical Governance rule loader",
+      "full regression/E2E/security/privacy/build"
+    ]
+  },
+  "artifact_sha256": {
+    "reconciliation_patch": "a4d8595e5f4ca280470958322867d295165323ed953085f48cf1bf4d99cf10fd",
+    "reconciled_zip": "95d807d3b606b63fd3d3f7c947eca916b4d9f67a1a14214e753879d69de329dc"
+  }
+}
