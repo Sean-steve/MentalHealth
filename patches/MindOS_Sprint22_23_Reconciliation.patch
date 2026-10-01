@@ -1,0 +1,2271 @@
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/care_plans/assignments/assignment_service.ts /mnt/data/mindos-work/mindos/care_plans/assignments/assignment_service.ts
+--- /mnt/data/mindos-original/mindos/care_plans/assignments/assignment_service.ts	2026-10-01 21:50:40.000000000 +0000
++++ /mnt/data/mindos-work/mindos/care_plans/assignments/assignment_service.ts	2026-10-01 22:19:09.855092428 +0000
+@@ -53,17 +53,16 @@
+       throw new NotFoundError(`CarePlan ${params.planId} not found.`);
+     }
+ 
+-    // Verify content exists and is published/active in ContentApplicationService if accessible
+-    try {
+-      const content = ContentApplicationService.getContentDetail(params.contentId);
+-      if (content && ((content as any).status === 'SUSPENDED' || (content as any).status === 'RETIRED')) {
+-        throw new DomainInvariantError(
+-          `Cannot assign content ${params.contentId} because it is in ${(content as any).status} status.`
+-        );
+-      }
+-    } catch (err: unknown) {
+-      if (err instanceof DomainInvariantError) throw err;
+-      // If content lookup fails closed, verify not hard blocked
++    // Fail closed: assignments may reference only a currently governed/published Content version.
++    const content = ContentApplicationService.getContentDetail(params.contentId);
++    if (!content?.version) {
++      throw new DomainInvariantError(`Content ${params.contentId} has no active governed version.`);
++    }
++    const activeVersion = Number((content.version as any).version ?? (content.version as any).version_number);
++    if (Number.isFinite(activeVersion) && activeVersion !== params.contentVersion) {
++      throw new DomainInvariantError(
++        `Requested content version ${params.contentVersion} is not the active governed version ${activeVersion}.`
++      );
+     }
+ 
+     const assignmentId = generateUUIDv7();
+@@ -118,6 +117,19 @@
+       throw new NotFoundError(`CarePlan ${params.planId} not found.`);
+     }
+ 
++    // Fail closed against the governed Assessment Registry.
++    const definition = AssessmentRegistry.getDefinition(params.instrumentType);
++    const activeAssessmentVersion = AssessmentRegistry.getActiveVersion(definition.id);
++    if (params.instrumentVersion !== undefined) {
++      const requestedVersion = String(params.instrumentVersion);
++      const canonicalVersion = String((activeAssessmentVersion as any).version ?? (activeAssessmentVersion as any).version_number ?? activeAssessmentVersion.id);
++      if (requestedVersion !== canonicalVersion && requestedVersion !== activeAssessmentVersion.id) {
++        throw new DomainInvariantError(
++          `Requested assessment version ${requestedVersion} is not the active governed version for ${params.instrumentType}.`
++        );
++      }
++    }
++
+     const assignmentId = generateUUIDv7();
+     const assignment: AssessmentAssignment = {
+       id: assignmentId,
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/care_plans/plans/care_plan_service.ts /mnt/data/mindos-work/mindos/care_plans/plans/care_plan_service.ts
+--- /mnt/data/mindos-original/mindos/care_plans/plans/care_plan_service.ts	2026-10-01 21:50:40.000000000 +0000
++++ /mnt/data/mindos-work/mindos/care_plans/plans/care_plan_service.ts	2026-10-01 22:19:09.854981711 +0000
+@@ -101,7 +101,13 @@
+     const planId = generateUUIDv7();
+     const versionId = generateUUIDv7();
+     const now = new Date().toISOString();
+-    const reviewFreq = params.reviewFrequencyDays || 30;
++    if (!params.reviewFrequencyDays || params.reviewFrequencyDays <= 0) {
++      throw new DomainInvariantError(
++        'A governed care-plan review frequency is required; MindOS must not invent a clinical review cadence.',
++        { errorCode: 'CARE_PLAN_REVIEW_POLICY_REQUIRED' }
++      );
++    }
++    const reviewFreq = params.reviewFrequencyDays;
+     const nextReview = new Date(Date.now() + 3600000 * 24 * reviewFreq).toISOString();
+ 
+     const version: CarePlanVersion = {
+@@ -308,7 +314,13 @@
+ 
+     const newVersionId = generateUUIDv7();
+     const now = new Date().toISOString();
+-    const reviewFreq = params.reviewFrequencyDays || activeVersion?.review_schedule.frequency_days || 30;
++    const reviewFreq = params.reviewFrequencyDays ?? activeVersion?.review_schedule.frequency_days;
++    if (!reviewFreq || reviewFreq <= 0) {
++      throw new DomainInvariantError(
++        'A governed care-plan review frequency is required for the new plan version.',
++        { errorCode: 'CARE_PLAN_REVIEW_POLICY_REQUIRED' }
++      );
++    }
+     const nextReview = new Date(Date.now() + 3600000 * 24 * reviewFreq).toISOString();
+ 
+     // Mark previous active version as SUPERSEDED
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/clinical_tasks/application/clinical_task_service.ts /mnt/data/mindos-work/mindos/clinical_tasks/application/clinical_task_service.ts
+--- /mnt/data/mindos-original/mindos/clinical_tasks/application/clinical_task_service.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/clinical_tasks/application/clinical_task_service.ts	2026-10-01 22:20:36.789032776 +0000
+@@ -0,0 +1,286 @@
++import { generateUUIDv7 } from '../../platform/database/uuid.js';
++import { EventBus } from '../../platform/events/index.js';
++import { AuditService } from '../../platform/audit/index.js';
++import { DataClassification } from '../../platform/shared/data_classification.js';
++import { validateStateTransition } from '../../platform/shared/state_machines.js';
++import { AuthorizationError, DomainInvariantError, NotFoundError } from '../../platform/errors/index.js';
++import {
++  RelationshipAccessEvaluator,
++  CareRelationshipService,
++  DataDomain,
++  ActionPermission
++} from '../../care_relationships/index.js';
++import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence } from '../domain/entities.js';
++import {
++  ClinicalTaskState,
++  ClinicalTaskType,
++  ClinicalTaskAssigneeType,
++  ClinicalTaskPriority,
++  ClinicalTaskCompletionAuthority,
++  ClinicalTaskDependencyType,
++  ClinicalTaskEvidenceType
++} from '../domain/types.js';
++import { IClinicalTaskRepository } from '../repositories/interfaces.js';
++
++const OWNER_DOMAIN_BY_TASK: Partial<Record<ClinicalTaskType, string>> = {
++  [ClinicalTaskType.ASSESSMENT]: 'assessments',
++  [ClinicalTaskType.CONTENT]: 'content',
++  [ClinicalTaskType.EXERCISE]: 'content',
++  [ClinicalTaskType.APPOINTMENT]: 'appointments',
++  [ClinicalTaskType.CARE_REVIEW]: 'care_plans'
++};
++
++export interface CreateClinicalTaskParams {
++  care_relationship_id: string;
++  care_plan_id?: string;
++  care_goal_id?: string;
++  task_type: ClinicalTaskType;
++  assigned_to_type: ClinicalTaskAssigneeType;
++  assigned_to_id: string;
++  priority?: ClinicalTaskPriority;
++  title: string;
++  instruction_reference: string;
++  due_at?: string;
++  recurrence_rule?: string;
++  source_type: string;
++  source_reference: string;
++  completion_authority?: ClinicalTaskCompletionAuthority;
++  owner_domain?: string;
++  dependency_task_ids?: string[];
++  policy_version: string;
++  idempotency_key?: string;
++  creator_professional_id: string;
++}
++
++export interface CompleteClinicalTaskParams {
++  task_id: string;
++  actor_id: string;
++  actor_type: ClinicalTaskAssigneeType;
++  completion_source?: string;
++  evidence_type: ClinicalTaskEvidenceType;
++  evidence_reference: string;
++}
++
++export class ClinicalTaskService {
++  private static repository: IClinicalTaskRepository;
++
++  public static setRepository(repo: IClinicalTaskRepository): void { ClinicalTaskService.repository = repo; }
++
++  private static assertRepository(): void {
++    if (!ClinicalTaskService.repository) throw new DomainInvariantError('ClinicalTaskRepository not initialized.');
++  }
++
++  public static async createTask(params: CreateClinicalTaskParams): Promise<ClinicalTask> {
++    ClinicalTaskService.assertRepository();
++    if (params.idempotency_key) {
++      const existing = await ClinicalTaskService.repository.findTaskByIdempotencyKey(params.idempotency_key);
++      if (existing) return existing;
++    }
++
++    await RelationshipAccessEvaluator.assertAccess({
++      relationshipId: params.care_relationship_id,
++      professionalId: params.creator_professional_id,
++      dataDomain: DataDomain.CARE_PLANS,
++      action: ActionPermission.WRITE,
++      purpose: 'CARE_DELIVERY'
++    });
++    const relationship = await CareRelationshipService.getRelationship(params.care_relationship_id);
++    if (!relationship) throw new NotFoundError(`CareRelationship ${params.care_relationship_id} not found.`);
++
++    const ownerDomain = params.owner_domain || OWNER_DOMAIN_BY_TASK[params.task_type];
++    const completionAuthority = params.completion_authority ||
++      (ownerDomain ? ClinicalTaskCompletionAuthority.OWNER_DOMAIN :
++        params.assigned_to_type === ClinicalTaskAssigneeType.USER
++          ? ClinicalTaskCompletionAuthority.USER_SELF_REPORT
++          : ClinicalTaskCompletionAuthority.PROFESSIONAL);
++
++    if (completionAuthority === ClinicalTaskCompletionAuthority.OWNER_DOMAIN && !ownerDomain) {
++      throw new DomainInvariantError('Owner-domain task requires owner_domain.');
++    }
++    if (params.due_at && Number.isNaN(Date.parse(params.due_at))) {
++      throw new DomainInvariantError('Clinical task due_at must be a valid ISO date-time.');
++    }
++
++    const now = new Date().toISOString();
++    const task: ClinicalTask = {
++      id: generateUUIDv7(),
++      subject_user_id: relationship.subject_user_id,
++      care_relationship_id: relationship.id,
++      care_plan_id: params.care_plan_id,
++      care_goal_id: params.care_goal_id,
++      task_type: params.task_type,
++      assigned_to_type: params.assigned_to_type,
++      assigned_to_id: params.assigned_to_id,
++      status: ClinicalTaskState.PENDING,
++      priority: params.priority || ClinicalTaskPriority.NORMAL,
++      title: params.title,
++      instruction_reference: params.instruction_reference,
++      created_at: now,
++      due_at: params.due_at,
++      recurrence_rule: params.recurrence_rule,
++      source_type: params.source_type,
++      source_reference: params.source_reference,
++      completion_authority: completionAuthority,
++      owner_domain: ownerDomain,
++      policy_version: params.policy_version,
++      idempotency_key: params.idempotency_key,
++      updated_at: now
++    };
++    await ClinicalTaskService.repository.saveTask(task);
++
++    for (const dependencyId of params.dependency_task_ids || []) {
++      await ClinicalTaskService.addDependency(task.id, dependencyId);
++    }
++    await ClinicalTaskService.refreshReadiness(task.id, params.creator_professional_id);
++    const saved = await ClinicalTaskService.getTask(task.id);
++
++    EventBus.enqueue('care.task_created', 'clinical_tasks', task.id, DataClassification.CLINICAL_RECORD, {
++      task_id: task.id,
++      subject_user_id: task.subject_user_id,
++      relationship_id: task.care_relationship_id,
++      task_type: task.task_type
++    });
++    AuditService.record({
++      actor_type: 'STAFF', actor_id: params.creator_professional_id, action: 'CLINICAL_TASK.CREATED',
++      resource_type: 'clinical_task', resource_id: task.id, purpose: 'Care Coordination',
++      authorization_basis: { relationshipId: task.care_relationship_id }, result: 'ALLOWED',
++      metadata: { taskType: task.task_type, completionAuthority: task.completion_authority }
++    });
++    return saved;
++  }
++
++  public static async getTask(taskId: string): Promise<ClinicalTask> {
++    ClinicalTaskService.assertRepository();
++    const task = await ClinicalTaskService.repository.findTaskById(taskId);
++    if (!task) throw new NotFoundError(`ClinicalTask ${taskId} not found.`);
++    return task;
++  }
++
++  public static async addDependency(taskId: string, dependsOnTaskId: string): Promise<ClinicalTaskDependency> {
++    ClinicalTaskService.assertRepository();
++    if (taskId === dependsOnTaskId) throw new DomainInvariantError('Clinical task cannot depend on itself.');
++    await ClinicalTaskService.getTask(taskId);
++    await ClinicalTaskService.getTask(dependsOnTaskId);
++    if (await ClinicalTaskService.pathExists(dependsOnTaskId, taskId)) {
++      throw new DomainInvariantError('Clinical task dependency would create a cycle.');
++    }
++    const existing = (await ClinicalTaskService.repository.findDependencies(taskId)).find(d => d.depends_on_task_id === dependsOnTaskId);
++    if (existing) return existing;
++    const dependency: ClinicalTaskDependency = {
++      id: generateUUIDv7(), task_id: taskId, depends_on_task_id: dependsOnTaskId,
++      dependency_type: ClinicalTaskDependencyType.COMPLETION_REQUIRED, created_at: new Date().toISOString()
++    };
++    await ClinicalTaskService.repository.saveDependency(dependency);
++    return dependency;
++  }
++
++  private static async pathExists(fromTaskId: string, targetTaskId: string, seen = new Set<string>()): Promise<boolean> {
++    if (fromTaskId === targetTaskId) return true;
++    if (seen.has(fromTaskId)) return false;
++    seen.add(fromTaskId);
++    const dependencies = await ClinicalTaskService.repository.findDependencies(fromTaskId);
++    for (const dep of dependencies) if (await ClinicalTaskService.pathExists(dep.depends_on_task_id, targetTaskId, seen)) return true;
++    return false;
++  }
++
++  public static async refreshReadiness(taskId: string, actorId = 'system'): Promise<ClinicalTask> {
++    const task = await ClinicalTaskService.getTask(taskId);
++    if ([ClinicalTaskState.COMPLETED, ClinicalTaskState.CANCELLED, ClinicalTaskState.SKIPPED].includes(task.status)) return task;
++    const dependencies = await ClinicalTaskService.repository.findDependencies(task.id);
++    let ready = true;
++    for (const dep of dependencies) {
++      const upstream = await ClinicalTaskService.repository.findTaskById(dep.depends_on_task_id);
++      if (!upstream || upstream.status !== ClinicalTaskState.COMPLETED) { ready = false; break; }
++    }
++    const target = ready ? ClinicalTaskState.READY : ClinicalTaskState.BLOCKED;
++    if (task.status !== target) {
++      validateStateTransition('ClinicalTaskState', task.status, target, task.id, actorId);
++      task.status = target; task.updated_at = new Date().toISOString();
++      await ClinicalTaskService.repository.saveTask(task);
++      if (target === ClinicalTaskState.READY) {
++        EventBus.enqueue('care.task_ready', 'clinical_tasks', task.id, DataClassification.CLINICAL_RECORD, { task_id: task.id });
++      }
++    }
++    return task;
++  }
++
++  public static async startTask(taskId: string, actorId: string): Promise<ClinicalTask> {
++    const task = await ClinicalTaskService.getTask(taskId);
++    if (task.assigned_to_id !== actorId && task.assigned_to_type !== ClinicalTaskAssigneeType.SYSTEM) {
++      throw new AuthorizationError('Only the assigned actor may start this clinical task.', { errorCode: 'AUTHZ_003' });
++    }
++    validateStateTransition('ClinicalTaskState', task.status, ClinicalTaskState.IN_PROGRESS, task.id, actorId);
++    task.status = ClinicalTaskState.IN_PROGRESS; task.started_at = new Date().toISOString(); task.updated_at = task.started_at;
++    await ClinicalTaskService.repository.saveTask(task); return task;
++  }
++
++  public static async completeTask(params: CompleteClinicalTaskParams): Promise<ClinicalTask> {
++    const task = await ClinicalTaskService.getTask(params.task_id);
++    if (task.completion_authority === ClinicalTaskCompletionAuthority.OWNER_DOMAIN) {
++      if (!params.completion_source || params.completion_source !== task.owner_domain) {
++        throw new AuthorizationError('This task can only be completed by its authoritative owning domain.', { errorCode: 'AUTHZ_004' });
++      }
++    } else if (task.completion_authority === ClinicalTaskCompletionAuthority.USER_SELF_REPORT) {
++      if (params.actor_type !== ClinicalTaskAssigneeType.USER || params.actor_id !== task.assigned_to_id) {
++        throw new AuthorizationError('Only the assigned user may self-report completion.', { errorCode: 'AUTHZ_003' });
++      }
++    } else if (task.completion_authority === ClinicalTaskCompletionAuthority.PROFESSIONAL) {
++      await RelationshipAccessEvaluator.assertAccess({
++        relationshipId: task.care_relationship_id, professionalId: params.actor_id,
++        dataDomain: DataDomain.CARE_PLANS, action: ActionPermission.WRITE, purpose: 'CARE_DELIVERY'
++      });
++    }
++
++    if (![ClinicalTaskState.READY, ClinicalTaskState.IN_PROGRESS, ClinicalTaskState.OVERDUE].includes(task.status)) {
++      throw new DomainInvariantError(`Clinical task ${task.id} cannot complete from ${task.status}.`);
++    }
++    validateStateTransition('ClinicalTaskState', task.status, ClinicalTaskState.COMPLETED, task.id, params.actor_id);
++    const now = new Date().toISOString();
++    task.status = ClinicalTaskState.COMPLETED; task.completed_at = now; task.updated_at = now;
++    await ClinicalTaskService.repository.saveTask(task);
++    const evidence: ClinicalTaskEvidence = {
++      id: generateUUIDv7(), task_id: task.id, evidence_type: params.evidence_type,
++      evidence_reference: params.evidence_reference, recorded_by: params.actor_id, recorded_at: now
++    };
++    await ClinicalTaskService.repository.saveEvidence(evidence);
++    EventBus.enqueue('care.task_completed', 'clinical_tasks', task.id, DataClassification.CLINICAL_RECORD, {
++      task_id: task.id, subject_user_id: task.subject_user_id, completion_source: params.completion_source || params.actor_type
++    });
++    const dependents = await ClinicalTaskService.repository.findDependents(task.id);
++    for (const dep of dependents) await ClinicalTaskService.refreshReadiness(dep.task_id, 'system');
++    return task;
++  }
++
++  public static async cancelTask(taskId: string, actorProfessionalId: string): Promise<ClinicalTask> {
++    const task = await ClinicalTaskService.getTask(taskId);
++    await RelationshipAccessEvaluator.assertAccess({
++      relationshipId: task.care_relationship_id, professionalId: actorProfessionalId,
++      dataDomain: DataDomain.CARE_PLANS, action: ActionPermission.WRITE, purpose: 'CARE_DELIVERY'
++    });
++    validateStateTransition('ClinicalTaskState', task.status, ClinicalTaskState.CANCELLED, task.id, actorProfessionalId);
++    task.status = ClinicalTaskState.CANCELLED; task.updated_at = new Date().toISOString();
++    await ClinicalTaskService.repository.saveTask(task);
++    EventBus.enqueue('care.task_cancelled', 'clinical_tasks', task.id, DataClassification.CLINICAL_RECORD, { task_id: task.id });
++    return task;
++  }
++
++  public static async reconcile(now = new Date()): Promise<{ overdue: string[]; readied: string[] }> {
++    ClinicalTaskService.assertRepository();
++    const overdue: string[] = []; const readied: string[] = [];
++    for (const task of await ClinicalTaskService.repository.listTasks()) {
++      if ([ClinicalTaskState.PENDING, ClinicalTaskState.BLOCKED].includes(task.status)) {
++        const refreshed = await ClinicalTaskService.refreshReadiness(task.id, 'system');
++        if (refreshed.status === ClinicalTaskState.READY) readied.push(task.id);
++      }
++      const current = await ClinicalTaskService.repository.findTaskById(task.id);
++      if (current?.due_at && Date.parse(current.due_at) < now.getTime() &&
++          [ClinicalTaskState.READY, ClinicalTaskState.IN_PROGRESS].includes(current.status)) {
++        validateStateTransition('ClinicalTaskState', current.status, ClinicalTaskState.OVERDUE, current.id, 'system');
++        current.status = ClinicalTaskState.OVERDUE; current.updated_at = now.toISOString();
++        await ClinicalTaskService.repository.saveTask(current); overdue.push(current.id);
++        EventBus.enqueue('care.task_overdue', 'clinical_tasks', current.id, DataClassification.CLINICAL_RECORD, { task_id: current.id });
++      }
++    }
++    return { overdue, readied };
++  }
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/clinical_tasks/domain/entities.ts /mnt/data/mindos-work/mindos/clinical_tasks/domain/entities.ts
+--- /mnt/data/mindos-original/mindos/clinical_tasks/domain/entities.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/clinical_tasks/domain/entities.ts	2026-10-01 22:20:36.786681631 +0000
+@@ -0,0 +1,53 @@
++import {
++  ClinicalTaskState,
++  ClinicalTaskType,
++  ClinicalTaskAssigneeType,
++  ClinicalTaskPriority,
++  ClinicalTaskCompletionAuthority,
++  ClinicalTaskDependencyType,
++  ClinicalTaskEvidenceType
++} from './types.js';
++
++export interface ClinicalTask {
++  id: string;
++  subject_user_id: string;
++  care_relationship_id: string;
++  care_plan_id?: string;
++  care_goal_id?: string;
++  task_type: ClinicalTaskType;
++  assigned_to_type: ClinicalTaskAssigneeType;
++  assigned_to_id: string;
++  status: ClinicalTaskState;
++  priority: ClinicalTaskPriority;
++  title: string;
++  instruction_reference: string;
++  created_at: string;
++  due_at?: string;
++  started_at?: string;
++  completed_at?: string;
++  recurrence_rule?: string;
++  source_type: string;
++  source_reference: string;
++  completion_authority: ClinicalTaskCompletionAuthority;
++  owner_domain?: string;
++  policy_version: string;
++  idempotency_key?: string;
++  updated_at: string;
++}
++
++export interface ClinicalTaskDependency {
++  id: string;
++  task_id: string;
++  depends_on_task_id: string;
++  dependency_type: ClinicalTaskDependencyType;
++  created_at: string;
++}
++
++export interface ClinicalTaskEvidence {
++  id: string;
++  task_id: string;
++  evidence_type: ClinicalTaskEvidenceType;
++  evidence_reference: string;
++  recorded_by: string;
++  recorded_at: string;
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/clinical_tasks/domain/types.ts /mnt/data/mindos-work/mindos/clinical_tasks/domain/types.ts
+--- /mnt/data/mindos-original/mindos/clinical_tasks/domain/types.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/clinical_tasks/domain/types.ts	2026-10-01 22:20:36.786002219 +0000
+@@ -0,0 +1,48 @@
++import { ClinicalTaskState } from '../../platform/shared/state_machines.js';
++
++export { ClinicalTaskState };
++
++export enum ClinicalTaskType {
++  USER_ACTION = 'USER_ACTION',
++  PROFESSIONAL_FOLLOW_UP = 'PROFESSIONAL_FOLLOW_UP',
++  ASSESSMENT = 'ASSESSMENT',
++  CONTENT = 'CONTENT',
++  EXERCISE = 'EXERCISE',
++  APPOINTMENT = 'APPOINTMENT',
++  CARE_REVIEW = 'CARE_REVIEW',
++  SAFETY_FOLLOW_UP = 'SAFETY_FOLLOW_UP',
++  CARE_COORDINATION = 'CARE_COORDINATION',
++  DOCUMENT_REVIEW = 'DOCUMENT_REVIEW'
++}
++
++export enum ClinicalTaskAssigneeType {
++  USER = 'USER',
++  PROFESSIONAL = 'PROFESSIONAL',
++  CARE_TEAM_ROLE = 'CARE_TEAM_ROLE',
++  SYSTEM = 'SYSTEM'
++}
++
++export enum ClinicalTaskPriority {
++  ROUTINE = 'ROUTINE',
++  NORMAL = 'NORMAL',
++  HIGH = 'HIGH',
++  CRITICAL = 'CRITICAL'
++}
++
++export enum ClinicalTaskCompletionAuthority {
++  USER_SELF_REPORT = 'USER_SELF_REPORT',
++  PROFESSIONAL = 'PROFESSIONAL',
++  OWNER_DOMAIN = 'OWNER_DOMAIN',
++  SYSTEM = 'SYSTEM'
++}
++
++export enum ClinicalTaskDependencyType {
++  COMPLETION_REQUIRED = 'COMPLETION_REQUIRED'
++}
++
++export enum ClinicalTaskEvidenceType {
++  USER_ATTESTATION = 'USER_ATTESTATION',
++  PROFESSIONAL_ATTESTATION = 'PROFESSIONAL_ATTESTATION',
++  DOMAIN_EVENT = 'DOMAIN_EVENT',
++  RESOURCE_REFERENCE = 'RESOURCE_REFERENCE'
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/clinical_tasks/index.ts /mnt/data/mindos-work/mindos/clinical_tasks/index.ts
+--- /mnt/data/mindos-original/mindos/clinical_tasks/index.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/clinical_tasks/index.ts	2026-10-01 22:20:36.789793399 +0000
+@@ -0,0 +1,13 @@
++import { InMemoryClinicalTaskRepository } from './repositories/in_memory_clinical_task_repository.js';
++import { ClinicalTaskService } from './application/clinical_task_service.js';
++
++const defaultRepository = new InMemoryClinicalTaskRepository();
++ClinicalTaskService.setRepository(defaultRepository);
++
++export * from './domain/types.js';
++export * from './domain/entities.js';
++export * from './repositories/interfaces.js';
++export * from './repositories/in_memory_clinical_task_repository.js';
++export * from './application/clinical_task_service.js';
++
++export function resetClinicalTasksForTesting(): void { defaultRepository.clear(); }
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/clinical_tasks/repositories/in_memory_clinical_task_repository.ts /mnt/data/mindos-work/mindos/clinical_tasks/repositories/in_memory_clinical_task_repository.ts
+--- /mnt/data/mindos-original/mindos/clinical_tasks/repositories/in_memory_clinical_task_repository.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/clinical_tasks/repositories/in_memory_clinical_task_repository.ts	2026-10-01 22:22:16.751007993 +0000
+@@ -0,0 +1,35 @@
++import { IClinicalTaskRepository } from './interfaces.js';
++import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence } from '../domain/entities.js';
++
++export class InMemoryClinicalTaskRepository implements IClinicalTaskRepository {
++  private tasks = new Map<string, ClinicalTask>();
++  private dependencies = new Map<string, ClinicalTaskDependency>();
++  private evidence = new Map<string, ClinicalTaskEvidence>();
++
++  async saveTask(task: ClinicalTask): Promise<void> { this.tasks.set(task.id, structuredClone(task)); }
++  async findTaskById(id: string): Promise<ClinicalTask | null> {
++    const task = this.tasks.get(id); return task ? structuredClone(task) : null;
++  }
++  async findTasksByRelationshipId(relationshipId: string): Promise<ClinicalTask[]> {
++    return Array.from(this.tasks.values()).filter(t => t.care_relationship_id === relationshipId).map(x => structuredClone(x));
++  }
++  async findTasksByAssignee(assigneeType: string, assigneeId: string): Promise<ClinicalTask[]> {
++    return Array.from(this.tasks.values()).filter(t => t.assigned_to_type === assigneeType && t.assigned_to_id === assigneeId).map(x => structuredClone(x));
++  }
++  async findTaskByIdempotencyKey(key: string): Promise<ClinicalTask | null> {
++    const task = Array.from(this.tasks.values()).find(t => t.idempotency_key === key); return task ? structuredClone(task) : null;
++  }
++  async saveDependency(dependency: ClinicalTaskDependency): Promise<void> { this.dependencies.set(dependency.id, structuredClone(dependency)); }
++  async findDependencies(taskId: string): Promise<ClinicalTaskDependency[]> {
++    return Array.from(this.dependencies.values()).filter(d => d.task_id === taskId).map(x => structuredClone(x));
++  }
++  async findDependents(taskId: string): Promise<ClinicalTaskDependency[]> {
++    return Array.from(this.dependencies.values()).filter(d => d.depends_on_task_id === taskId).map(x => structuredClone(x));
++  }
++  async saveEvidence(evidence: ClinicalTaskEvidence): Promise<void> { this.evidence.set(evidence.id, structuredClone(evidence)); }
++  async findEvidence(taskId: string): Promise<ClinicalTaskEvidence[]> {
++    return Array.from(this.evidence.values()).filter(e => e.task_id === taskId).map(x => structuredClone(x));
++  }
++  async listTasks(): Promise<ClinicalTask[]> { return Array.from(this.tasks.values()).map(x => structuredClone(x)); }
++  clear(): void { this.tasks.clear(); this.dependencies.clear(); this.evidence.clear(); }
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/clinical_tasks/repositories/interfaces.ts /mnt/data/mindos-work/mindos/clinical_tasks/repositories/interfaces.ts
+--- /mnt/data/mindos-original/mindos/clinical_tasks/repositories/interfaces.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/clinical_tasks/repositories/interfaces.ts	2026-10-01 22:20:36.787376125 +0000
+@@ -0,0 +1,16 @@
++import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence } from '../domain/entities.js';
++
++export interface IClinicalTaskRepository {
++  saveTask(task: ClinicalTask): Promise<void>;
++  findTaskById(id: string): Promise<ClinicalTask | null>;
++  findTasksByRelationshipId(relationshipId: string): Promise<ClinicalTask[]>;
++  findTasksByAssignee(assigneeType: string, assigneeId: string): Promise<ClinicalTask[]>;
++  findTaskByIdempotencyKey(key: string): Promise<ClinicalTask | null>;
++  saveDependency(dependency: ClinicalTaskDependency): Promise<void>;
++  findDependencies(taskId: string): Promise<ClinicalTaskDependency[]>;
++  findDependents(taskId: string): Promise<ClinicalTaskDependency[]>;
++  saveEvidence(evidence: ClinicalTaskEvidence): Promise<void>;
++  findEvidence(taskId: string): Promise<ClinicalTaskEvidence[]>;
++  listTasks(): Promise<ClinicalTask[]>;
++  clear(): void;
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/outcomes/application/progress_view_service.ts /mnt/data/mindos-work/mindos/outcomes/application/progress_view_service.ts
+--- /mnt/data/mindos-original/mindos/outcomes/application/progress_view_service.ts	2026-10-01 21:50:40.000000000 +0000
++++ /mnt/data/mindos-work/mindos/outcomes/application/progress_view_service.ts	2026-10-01 22:19:09.854535981 +0000
+@@ -140,7 +140,7 @@
+     if (!authDecision.allowed) {
+       throw new AuthorizationError(
+         `Professional ${params.professional_id} cannot access outcome dashboard for user ${params.subject_user_id}: ${authDecision.reason}`,
+-        { errorCode: authDecision.reasonCode || 'AUTHZ_RELATIONSHIP_REQUIRED' }
++        { errorCode: authDecision.reasonCode || 'AUTHZ_003' }
+       );
+     }
+ 
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/outcomes/measurements/measurement_service.ts /mnt/data/mindos-work/mindos/outcomes/measurements/measurement_service.ts
+--- /mnt/data/mindos-original/mindos/outcomes/measurements/measurement_service.ts	2026-10-01 21:50:40.000000000 +0000
++++ /mnt/data/mindos-work/mindos/outcomes/measurements/measurement_service.ts	2026-10-01 22:19:09.854692186 +0000
+@@ -125,7 +125,7 @@
+       source_id: measurementId,
+       provenance: params.provenance,
+       clinical_significance: 'ROUTINE',
+-      summary_reference: `${definition.name}: ${params.value} ${params.unit}`,
++      summary_reference: `outcome_measurement:${measurementId}`,
+       visibility_scope: TimelineVisibilityScope.USER, // Visible to user and professional
+       care_relationship_id: params.care_relationship_id,
+       care_plan_id: params.care_plan_id,
+@@ -142,8 +142,6 @@
+         measurement_id: measurementId,
+         subject_user_id: params.subject_user_id,
+         measure_code: params.measure_code,
+-        value: params.value,
+-        unit: params.unit,
+         provenance: params.provenance,
+         source_type: params.source_type
+       }
+@@ -159,7 +157,7 @@
+       purpose: 'Clinical Outcome Tracking',
+       authorization_basis: { measureCode: params.measure_code, sourceType: params.source_type },
+       result: 'ALLOWED',
+-      metadata: { value: params.value, unit: params.unit, provenance: params.provenance }
++      metadata: { provenance: params.provenance, sourceType: params.source_type }
+     });
+      // Recompute trend and evaluate deterioration alerts (Sections 44, 60, 61, 144, 145)
+@@ -177,8 +175,7 @@
+             subject_user_id: params.subject_user_id,
+             measure_code: params.measure_code,
+             trend_state: trend.trend_state,
+-            change_amount: trend.change_amount,
+-            is_clinically_significant: trend.is_clinically_significant
++            requires_review: trend.requires_review
+           }
+         );
+ 
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/outcomes/reviews/outcome_review_service.ts /mnt/data/mindos-work/mindos/outcomes/reviews/outcome_review_service.ts
+--- /mnt/data/mindos-original/mindos/outcomes/reviews/outcome_review_service.ts	2026-10-01 21:50:40.000000000 +0000
++++ /mnt/data/mindos-work/mindos/outcomes/reviews/outcome_review_service.ts	2026-10-01 22:19:09.854592897 +0000
+@@ -126,7 +126,7 @@
+     if (!authDecision.allowed) {
+       throw new AuthorizationError(
+         `Professional ${params.reviewer_id} cannot complete outcome review for subject ${review.subject_user_id}: ${authDecision.reason}`,
+-        { errorCode: authDecision.reasonCode || 'AUTHZ_RELATIONSHIP_REQUIRED' }
++        { errorCode: authDecision.reasonCode || 'AUTHZ_003' }
+       );
+     }
+ 
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/outcomes/trends/clinical_change_rules.ts /mnt/data/mindos-work/mindos/outcomes/trends/clinical_change_rules.ts
+--- /mnt/data/mindos-original/mindos/outcomes/trends/clinical_change_rules.ts	2026-10-01 21:50:40.000000000 +0000
++++ /mnt/data/mindos-work/mindos/outcomes/trends/clinical_change_rules.ts	2026-10-01 22:19:09.854195460 +0000
+@@ -1,55 +1,77 @@
+ /**
+- * MindOS Canonical Clinical Change Rules & Cutoffs
+- * Authority: Master Architecture Index Section 7 & 14, Volumes I, III, XV & Appendices B / C / Q
+- * Sprint 23 Bounded Context
+- * 
+- * Rules:
+- * - Minimal Clinically Important Difference (MCID) definitions.
+- * - Invariant (Section 43): Use only canonical clinical cutoffs; do not invent arbitrary thresholds.
++ * MindOS Governed Clinical Change Rule Registry
++ * Sprint 23 reconciliation.
++ *
++ * Clinical thresholds MUST come from an approved, versioned Clinical Governance
++ * artifact. This module deliberately ships with no numeric clinical defaults.
++ * Missing policy produces an UNKNOWN/review-required trend rather than guessed
++ * MCID, target ranges, deterioration thresholds, or Safety thresholds.
+  */
+ 
+ import { ClinicalChangeRule } from '../domain/types.js';
++import { DomainInvariantError } from '../../platform/errors/index.js';
+ 
+-export const CANONICAL_CLINICAL_CHANGE_RULES: Record<string, ClinicalChangeRule> = {
+-  PHQ9_TOTAL: {
+-    measure_code: 'PHQ9_TOTAL',
+-    mcid: 5, // Canonical MCID for PHQ-9 is 5 points
+-    reliable_change_threshold: 6,
+-    critical_worsening_threshold: 10,
+-    critical_safety_threshold: 20 // Severe depression threshold
+-  },
+-  GAD7_TOTAL: {
+-    measure_code: 'GAD7_TOTAL',
+-    mcid: 4, // Canonical MCID for GAD-7 is 4 points
+-    reliable_change_threshold: 5,
+-    critical_worsening_threshold: 8,
+-    critical_safety_threshold: 15 // Severe anxiety threshold
+-  },
+-  WHO5_TOTAL: {
+-    measure_code: 'WHO5_TOTAL',
+-    mcid: 10, // Canonical MCID for WHO-5 is 10 points
+-    reliable_change_threshold: 15,
+-    critical_worsening_threshold: 20,
+-    critical_safety_threshold: 28 // Significant depression indication <= 28
+-  },
+-  CSSRS_RISK_BAND: {
+-    measure_code: 'CSSRS_RISK_BAND',
+-    mcid: 1, // 1 band step
+-    critical_worsening_threshold: 1,
+-    critical_safety_threshold: 2 // Band 2 (Moderate) or 3 (High) triggers safety evaluation
+-  },
+-  SLEEP_HOURS_USER_REPORTED: {
+-    measure_code: 'SLEEP_HOURS_USER_REPORTED',
+-    mcid: 1.5,
+-    target_min: 7,
+-    target_max: 9,
+-    critical_worsening_threshold: 3
+-  },
+-  GOAL_CONFIDENCE_RATING: {
+-    measure_code: 'GOAL_CONFIDENCE_RATING',
+-    mcid: 2,
+-    target_min: 7,
+-    target_max: 10,
+-    critical_worsening_threshold: 3
++export interface GovernedClinicalChangeRule {
++  rule: ClinicalChangeRule;
++  clinical_artifact_id: string;
++  clinical_artifact_version: string;
++  approved_by: string;
++  approved_at: string;
++  policy_version: string;
++}
++
++const approvedRules = new Map<string, GovernedClinicalChangeRule>();
++
++export class ClinicalChangeRuleRegistry {
++  public static register(entry: GovernedClinicalChangeRule): void {
++    if (!entry.rule?.measure_code) {
++      throw new DomainInvariantError('Clinical change rule requires a measure code.');
++    }
++    if (!entry.clinical_artifact_id || !entry.clinical_artifact_version || !entry.policy_version) {
++      throw new DomainInvariantError(
++        `Clinical change rule ${entry.rule.measure_code} requires an approved, versioned governance artifact.`
++      );
++    }
++    if (!entry.approved_by || !entry.approved_at) {
++      throw new DomainInvariantError(
++        `Clinical change rule ${entry.rule.measure_code} requires approval provenance.`
++      );
++    }
++    if (!Number.isFinite(entry.rule.mcid) || entry.rule.mcid < 0) {
++      throw new DomainInvariantError(`Clinical change rule ${entry.rule.measure_code} has an invalid MCID.`);
++    }
++    if (
++      (entry.rule.target_min !== undefined || entry.rule.target_max !== undefined) &&
++      (entry.rule.target_min === undefined || entry.rule.target_max === undefined || entry.rule.target_min > entry.rule.target_max)
++    ) {
++      throw new DomainInvariantError(
++        `Clinical change rule ${entry.rule.measure_code} requires a valid complete target range.`
++      );
++    }
++
++    approvedRules.set(entry.rule.measure_code, Object.freeze({ ...entry, rule: Object.freeze({ ...entry.rule }) }));
++  }
++
++  public static get(measureCode: string): GovernedClinicalChangeRule | undefined {
++    return approvedRules.get(measureCode);
++  }
++
++  public static has(measureCode: string): boolean {
++    return approvedRules.has(measureCode);
+   }
+-};
++
++  public static list(): GovernedClinicalChangeRule[] {
++    return Array.from(approvedRules.values());
++  }
++
++  /** Test/bootstrap helper. Production bootstrap should load approved artifacts explicitly. */
++  public static clear(): void {
++    approvedRules.clear();
++  }
++}
++
++/**
++ * Deprecated compatibility export. It is intentionally empty: hard-coded clinical
++ * thresholds are prohibited. Call ClinicalChangeRuleRegistry.get instead.
++ */
++export const CANONICAL_CLINICAL_CHANGE_RULES: Readonly<Record<string, ClinicalChangeRule>> = Object.freeze({});
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/outcomes/trends/trend_engine.ts /mnt/data/mindos-work/mindos/outcomes/trends/trend_engine.ts
+--- /mnt/data/mindos-original/mindos/outcomes/trends/trend_engine.ts	2026-10-01 21:50:40.000000000 +0000
++++ /mnt/data/mindos-work/mindos/outcomes/trends/trend_engine.ts	2026-10-01 22:19:09.854295149 +0000
+@@ -1,36 +1,25 @@
+ /**
+  * MindOS Canonical Outcome Trend Engine
+- * Authority: Master Architecture Index Section 7 & 14, Volumes I, III, XV & Appendices B / C / Q
+- * Sprint 23 Bounded Context
+- * 
+- * Rules:
+- * - Deterministic trend calculation based on comparable valid measurements.
+- * - Invariant (Section 46): If count < 2 => INSUFFICIENT_DATA, never fabricated trend.
+- * - Invariant (Section 32): Incomparable versions => INCOMPARABLE.
+- * - Invariant (Section 39, 40): Trend does NOT equal diagnosis. Trend never mutates RiskState directly.
+- * - Invariant (Section 109): Professional overrides store both computed and overridden classifications.
++ * Sprint 23 reconciliation.
++ *
++ * Numeric clinical interpretation is only performed when an approved clinical
++ * change rule has been registered. No guessed MCID/target/safety thresholds.
+  */
+ 
+-import { OutcomeTrend, OutcomeSeries, OutcomeMeasurement } from '../domain/entities.js';
++import { OutcomeTrend, OutcomeSeries } from '../domain/entities.js';
+ import {
+   OutcomeTrendState,
+   OutcomeDirectionality,
+   DeteriorationSeverity,
+   TrendConfidence
+ } from '../domain/types.js';
+-import { CANONICAL_CLINICAL_CHANGE_RULES } from './clinical_change_rules.js';
++import { ClinicalChangeRuleRegistry } from './clinical_change_rules.js';
+ 
+ export class OutcomeTrendEngine {
+-  /**
+-   * Evaluates trend for an OutcomeSeries.
+-   */
+   public static evaluateSeries(series: OutcomeSeries): OutcomeTrend {
+     const measureCode = series.measure_code;
+     const measurements = series.measurements;
+-    const rule = CANONICAL_CLINICAL_CHANGE_RULES[measureCode];
+-    const mcid = rule ? rule.mcid : 1;
+ 
+-    // 1. Data sufficiency check (Sections 38, 46, 138)
+     if (measurements.length < 2) {
+       return {
+         measure_code: measureCode,
+@@ -44,13 +33,15 @@
+       };
+     }
+ 
+-    // 2. Comparability check (Sections 31, 32, 139)
+     if (series.comparability_status === 'INCOMPARABLE') {
+       return {
+         measure_code: measureCode,
+         trend_state: OutcomeTrendState.INCOMPARABLE,
+         confidence: 'INSUFFICIENT',
+-        reason_codes: ['INSTRUMENT_VERSION_OR_UNIT_INCOMPARABLE', series.incomparability_reason || 'INCOMPARABLE_SERIES'],
++        reason_codes: [
++          'INSTRUMENT_VERSION_OR_UNIT_INCOMPARABLE',
++          series.incomparability_reason || 'INCOMPARABLE_SERIES'
++        ],
+         is_clinically_significant: false,
+         measurement_count: measurements.length,
+         requires_review: true,
+@@ -61,98 +52,166 @@
+     const baselineMeasurement =
+       measurements.find((m) => m.id === series.baseline_measurement_id) || measurements[0];
+     const latestMeasurement = measurements[measurements.length - 1];
+-
+     const baselineVal = baselineMeasurement.value;
+     const latestVal = latestMeasurement.value;
+ 
+-    // If values are not numbers (e.g. categorical), evaluate categorical stability
++    // Equality is factual; a categorical change is not automatically clinically significant.
+     if (typeof baselineVal !== 'number' || typeof latestVal !== 'number') {
+-      const isIdentical = baselineVal === latestVal;
++      if (baselineVal === latestVal) {
++        return {
++          measure_code: measureCode,
++          trend_state: OutcomeTrendState.STABLE,
++          confidence: 'MODERATE',
++          reason_codes: ['CATEGORICAL_VALUE_UNCHANGED'],
++          is_clinically_significant: false,
++          baseline_value: baselineVal,
++          latest_value: latestVal,
++          measurement_count: measurements.length,
++          requires_review: false,
++          evaluated_at: new Date().toISOString()
++        };
++      }
+       return {
+         measure_code: measureCode,
+-        trend_state: isIdentical ? OutcomeTrendState.STABLE : OutcomeTrendState.MIXED,
+-        confidence: 'MODERATE',
+-        reason_codes: [isIdentical ? 'CATEGORICAL_VALUE_UNCHANGED' : 'CATEGORICAL_VALUE_CHANGED'],
+-        is_clinically_significant: !isIdentical,
++        trend_state: OutcomeTrendState.UNKNOWN,
++        confidence: 'LOW',
++        reason_codes: ['CATEGORICAL_CHANGE_REQUIRES_GOVERNED_INTERPRETATION'],
++        is_clinically_significant: false,
+         baseline_value: baselineVal,
+         latest_value: latestVal,
+         measurement_count: measurements.length,
+-        requires_review: !isIdentical,
++        requires_review: true,
+         evaluated_at: new Date().toISOString()
+       };
+     }
+ 
+-    const directionality = series.measure_definition.directionality;
++    const governed = ClinicalChangeRuleRegistry.get(measureCode);
+     const changeAmount = Number((latestVal - baselineVal).toFixed(2));
+-    const isSignificant = Math.abs(changeAmount) >= mcid;
+ 
++    if (!governed) {
++      return {
++        measure_code: measureCode,
++        trend_state: OutcomeTrendState.UNKNOWN,
++        change_amount: changeAmount,
++        confidence: 'LOW',
++        reason_codes: ['CLINICAL_CHANGE_RULE_NOT_CONFIGURED'],
++        is_clinically_significant: false,
++        baseline_value: baselineVal,
++        latest_value: latestVal,
++        measurement_count: measurements.length,
++        requires_review: true,
++        deterioration_severity: 'NONE',
++        evaluated_at: new Date().toISOString()
++      };
++    }
++
++    const rule = governed.rule;
++    const mcid = rule.mcid;
++    const directionality = series.measure_definition.directionality;
++    const isSignificant = Math.abs(changeAmount) >= mcid;
+     let trendState = OutcomeTrendState.STABLE;
+     let deteriorationSeverity: DeteriorationSeverity = 'NONE';
+-    const reasonCodes: string[] = [];
++    const reasonCodes: string[] = [
++      `GOVERNED_RULE:${governed.clinical_artifact_id}@${governed.clinical_artifact_version}`
++    ];
+ 
+     if (directionality === OutcomeDirectionality.LOWER_IS_BETTER) {
+       if (changeAmount <= -mcid) {
+         trendState = OutcomeTrendState.IMPROVING;
+-        reasonCodes.push('SCORE_DECREASED_BEYOND_MCID');
++        reasonCodes.push('SCORE_DECREASED_BEYOND_APPROVED_MCID');
+       } else if (changeAmount >= mcid) {
+         trendState = OutcomeTrendState.WORSENING;
+-        reasonCodes.push('SCORE_INCREASED_BEYOND_MCID');
++        reasonCodes.push('SCORE_INCREASED_BEYOND_APPROVED_MCID');
+       } else {
+-        trendState = OutcomeTrendState.STABLE;
+-        reasonCodes.push('SCORE_WITHIN_MCID_STABILITY_BAND');
++        reasonCodes.push('SCORE_WITHIN_APPROVED_MCID_STABILITY_BAND');
+       }
+     } else if (directionality === OutcomeDirectionality.HIGHER_IS_BETTER) {
+       if (changeAmount >= mcid) {
+         trendState = OutcomeTrendState.IMPROVING;
+-        reasonCodes.push('SCORE_INCREASED_BEYOND_MCID');
++        reasonCodes.push('SCORE_INCREASED_BEYOND_APPROVED_MCID');
+       } else if (changeAmount <= -mcid) {
+         trendState = OutcomeTrendState.WORSENING;
+-        reasonCodes.push('SCORE_DECREASED_BEYOND_MCID');
++        reasonCodes.push('SCORE_DECREASED_BEYOND_APPROVED_MCID');
+       } else {
+-        trendState = OutcomeTrendState.STABLE;
+-        reasonCodes.push('SCORE_WITHIN_MCID_STABILITY_BAND');
++        reasonCodes.push('SCORE_WITHIN_APPROVED_MCID_STABILITY_BAND');
+       }
+     } else if (directionality === OutcomeDirectionality.TARGET_RANGE) {
+-      const min = rule?.target_min ?? 7;
+-      const max = rule?.target_max ?? 9;
+-      const wasInTarget = baselineVal >= min && baselineVal <= max;
+-      const isInTarget = latestVal >= min && latestVal <= max;
+-
++      if (rule.target_min === undefined || rule.target_max === undefined) {
++        return {
++          measure_code: measureCode,
++          trend_state: OutcomeTrendState.UNKNOWN,
++          change_amount: changeAmount,
++          confidence: 'LOW',
++          reason_codes: ['APPROVED_TARGET_RANGE_NOT_CONFIGURED'],
++          is_clinically_significant: false,
++          baseline_value: baselineVal,
++          latest_value: latestVal,
++          measurement_count: measurements.length,
++          requires_review: true,
++          deterioration_severity: 'NONE',
++          evaluated_at: new Date().toISOString()
++        };
++      }
++      const wasInTarget = baselineVal >= rule.target_min && baselineVal <= rule.target_max;
++      const isInTarget = latestVal >= rule.target_min && latestVal <= rule.target_max;
+       if (!wasInTarget && isInTarget) {
+         trendState = OutcomeTrendState.IMPROVING;
+-        reasonCodes.push('ENTERED_CLINICAL_TARGET_RANGE');
++        reasonCodes.push('ENTERED_APPROVED_TARGET_RANGE');
+       } else if (wasInTarget && !isInTarget) {
+         trendState = OutcomeTrendState.WORSENING;
+-        reasonCodes.push('EXITED_CLINICAL_TARGET_RANGE');
++        reasonCodes.push('EXITED_APPROVED_TARGET_RANGE');
+       } else {
+-        trendState = OutcomeTrendState.STABLE;
+-        reasonCodes.push(isInTarget ? 'MAINTAINED_IN_TARGET_RANGE' : 'REMAINS_OUTSIDE_TARGET_RANGE');
++        reasonCodes.push(isInTarget ? 'MAINTAINED_IN_APPROVED_TARGET_RANGE' : 'REMAINS_OUTSIDE_APPROVED_TARGET_RANGE');
+       }
++    } else {
++      return {
++        measure_code: measureCode,
++        trend_state: OutcomeTrendState.UNKNOWN,
++        change_amount: changeAmount,
++        confidence: 'LOW',
++        reason_codes: ['NON_DIRECTIONAL_MEASURE_REQUIRES_PROFESSIONAL_REVIEW'],
++        is_clinically_significant: false,
++        baseline_value: baselineVal,
++        latest_value: latestVal,
++        measurement_count: measurements.length,
++        requires_review: true,
++        deterioration_severity: 'NONE',
++        evaluated_at: new Date().toISOString()
++      };
+     }
+ 
+-    // Evaluate deterioration severity and safety thresholds (Sections 44, 60, 61, 144, 145)
+     if (trendState === OutcomeTrendState.WORSENING) {
+       deteriorationSeverity = 'REVIEW_REQUIRED';
+-
+-      if (rule?.critical_worsening_threshold && Math.abs(changeAmount) >= rule.critical_worsening_threshold) {
++      if (
++        rule.critical_worsening_threshold !== undefined &&
++        Math.abs(changeAmount) >= rule.critical_worsening_threshold
++      ) {
+         deteriorationSeverity = 'URGENT_REVIEW';
+-        reasonCodes.push('CRITICAL_WORSENING_THRESHOLD_EXCEEDED');
++        reasonCodes.push('APPROVED_CRITICAL_WORSENING_THRESHOLD_EXCEEDED');
+       }
+ 
+-      if (rule?.critical_safety_threshold) {
+-        if (directionality === OutcomeDirectionality.LOWER_IS_BETTER && latestVal >= rule.critical_safety_threshold) {
++      if (rule.critical_safety_threshold !== undefined) {
++        if (
++          directionality === OutcomeDirectionality.LOWER_IS_BETTER &&
++          latestVal >= rule.critical_safety_threshold
++        ) {
+           deteriorationSeverity = 'SAFETY_SIGNAL';
+-          reasonCodes.push('CRITICAL_SAFETY_THRESHOLD_BREACHED');
+-        } else if (directionality === OutcomeDirectionality.HIGHER_IS_BETTER && latestVal <= rule.critical_safety_threshold) {
++          reasonCodes.push('APPROVED_SAFETY_THRESHOLD_BREACHED');
++        } else if (
++          directionality === OutcomeDirectionality.HIGHER_IS_BETTER &&
++          latestVal <= rule.critical_safety_threshold
++        ) {
+           deteriorationSeverity = 'SAFETY_SIGNAL';
+-          reasonCodes.push('CRITICAL_SAFETY_THRESHOLD_BREACHED');
++          reasonCodes.push('APPROVED_SAFETY_THRESHOLD_BREACHED');
+         }
+       }
+     }
+ 
+     const confidence: TrendConfidence = measurements.length >= 3 ? 'HIGH' : 'MODERATE';
+     const relativeChange =
+-      baselineVal !== 0 ? Number((((latestVal - baselineVal) / Math.abs(baselineVal)) * 100).toFixed(1)) : undefined;
++      baselineVal !== 0
++        ? Number((((latestVal - baselineVal) / Math.abs(baselineVal)) * 100).toFixed(1))
++        : undefined;
+ 
+     return {
+       measure_code: measureCode,
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql /mnt/data/mindos-work/mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql
+--- /mnt/data/mindos-original/mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql	2026-10-01 22:24:31.457078446 +0000
+@@ -0,0 +1,276 @@
++-- ==============================================================================
++-- MINDOS CANONICAL MIGRATION: 020_canonical_care_plans_tasks_messaging.sql
++-- Sprint 22 reconciliation: structured Care Plans, Clinical Tasks and
++-- relationship-scoped Professional Messaging.
++-- Additive expand migration. Existing Sprint 21 care/clinical tables remain
++-- authoritative until their dedicated production reconciliation migration lands.
++-- ==============================================================================
++
++-- UP --
++
++CREATE TABLE IF NOT EXISTS care_plans (
++  id UUID PRIMARY KEY,
++  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
++  care_relationship_id UUID NOT NULL REFERENCES care_relationships(id) ON DELETE RESTRICT,
++  primary_professional_id UUID NOT NULL REFERENCES professional_profiles(id) ON DELETE RESTRICT,
++  care_team_id UUID,
++  plan_type VARCHAR(80) NOT NULL,
++  status VARCHAR(60) NOT NULL,
++  current_version_id UUID,
++  started_at TIMESTAMPTZ NOT NULL,
++  target_end_at TIMESTAMPTZ,
++  completed_at TIMESTAMPTZ,
++  terminated_at TIMESTAMPTZ,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  version INTEGER NOT NULL DEFAULT 1
++);
++CREATE INDEX IF NOT EXISTS idx_care_plans_subject_status ON care_plans(subject_user_id, status);
++CREATE INDEX IF NOT EXISTS idx_care_plans_relationship_status ON care_plans(care_relationship_id, status);
++
++CREATE TABLE IF NOT EXISTS care_plan_versions (
++  id UUID PRIMARY KEY,
++  care_plan_id UUID NOT NULL REFERENCES care_plans(id) ON DELETE CASCADE,
++  version INTEGER NOT NULL,
++  status VARCHAR(60) NOT NULL,
++  summary TEXT NOT NULL,
++  review_frequency_days INTEGER NOT NULL CHECK (review_frequency_days > 0),
++  next_review_due TIMESTAMPTZ NOT NULL,
++  effective_from TIMESTAMPTZ NOT NULL,
++  effective_until TIMESTAMPTZ,
++  authored_by UUID NOT NULL REFERENCES professional_profiles(id) ON DELETE RESTRICT,
++  approved_by UUID,
++  acknowledged_by_user BOOLEAN NOT NULL DEFAULT FALSE,
++  acknowledged_at TIMESTAMPTZ,
++  supersedes_id UUID REFERENCES care_plan_versions(id) ON DELETE SET NULL,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  UNIQUE(care_plan_id, version)
++);
++ALTER TABLE care_plans
++  ADD CONSTRAINT fk_care_plans_current_version
++  FOREIGN KEY (current_version_id) REFERENCES care_plan_versions(id) DEFERRABLE INITIALLY DEFERRED;
++
++CREATE TABLE IF NOT EXISTS care_goals (
++  id UUID PRIMARY KEY,
++  care_plan_version_id UUID NOT NULL REFERENCES care_plan_versions(id) ON DELETE CASCADE,
++  goal_code VARCHAR(120),
++  goal_type VARCHAR(80) NOT NULL,
++  title VARCHAR(240) NOT NULL,
++  description_reference VARCHAR(240),
++  priority VARCHAR(40) NOT NULL,
++  target_type VARCHAR(80),
++  target_value JSONB,
++  baseline_reference VARCHAR(240),
++  status VARCHAR(60) NOT NULL,
++  provenance VARCHAR(60),
++  started_at TIMESTAMPTZ,
++  target_date TIMESTAMPTZ,
++  completed_at TIMESTAMPTZ,
++  created_by UUID,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++CREATE INDEX IF NOT EXISTS idx_care_goals_plan_status ON care_goals(care_plan_version_id, status);
++
++CREATE TABLE IF NOT EXISTS care_goal_reviews (
++  id UUID PRIMARY KEY,
++  goal_id UUID NOT NULL REFERENCES care_goals(id) ON DELETE CASCADE,
++  reviewed_by UUID NOT NULL,
++  reviewed_at TIMESTAMPTZ NOT NULL,
++  status_before VARCHAR(60) NOT NULL,
++  status_after VARCHAR(60) NOT NULL,
++  evidence_refs JSONB NOT NULL DEFAULT '[]',
++  reason_codes JSONB NOT NULL DEFAULT '[]',
++  notes_reference VARCHAR(240),
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++
++CREATE TABLE IF NOT EXISTS care_interventions (
++  id UUID PRIMARY KEY,
++  care_plan_version_id UUID NOT NULL REFERENCES care_plan_versions(id) ON DELETE CASCADE,
++  intervention_type VARCHAR(80) NOT NULL,
++  reference_type VARCHAR(80),
++  reference_id VARCHAR(160),
++  frequency JSONB,
++  duration JSONB,
++  schedule_reference VARCHAR(240),
++  responsible_actor_type VARCHAR(60),
++  responsible_actor_id VARCHAR(160),
++  status VARCHAR(60) NOT NULL,
++  clinical_artifact_reference VARCHAR(240),
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++
++CREATE TABLE IF NOT EXISTS care_plan_reviews (
++  id UUID PRIMARY KEY,
++  care_plan_id UUID NOT NULL REFERENCES care_plans(id) ON DELETE CASCADE,
++  care_plan_version_id UUID NOT NULL REFERENCES care_plan_versions(id) ON DELETE RESTRICT,
++  review_type VARCHAR(80) NOT NULL,
++  scheduled_for TIMESTAMPTZ NOT NULL,
++  started_at TIMESTAMPTZ,
++  completed_at TIMESTAMPTZ,
++  reviewer_id UUID NOT NULL,
++  outcome VARCHAR(80),
++  goal_reviews JSONB NOT NULL DEFAULT '[]',
++  recommended_changes JSONB NOT NULL DEFAULT '[]',
++  new_version_id UUID REFERENCES care_plan_versions(id) ON DELETE SET NULL,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++CREATE INDEX IF NOT EXISTS idx_care_plan_reviews_due ON care_plan_reviews(scheduled_for, completed_at);
++
++CREATE TABLE IF NOT EXISTS content_assignments (
++  id UUID PRIMARY KEY,
++  care_plan_id UUID NOT NULL REFERENCES care_plans(id) ON DELETE CASCADE,
++  care_plan_version_id UUID NOT NULL REFERENCES care_plan_versions(id) ON DELETE RESTRICT,
++  intervention_id UUID REFERENCES care_interventions(id) ON DELETE SET NULL,
++  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
++  assigned_by UUID NOT NULL,
++  content_id VARCHAR(160) NOT NULL,
++  content_version INTEGER NOT NULL,
++  status VARCHAR(60) NOT NULL,
++  due_date TIMESTAMPTZ,
++  completed_at TIMESTAMPTZ,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++
++CREATE TABLE IF NOT EXISTS assessment_assignments (
++  id UUID PRIMARY KEY,
++  care_plan_id UUID NOT NULL REFERENCES care_plans(id) ON DELETE CASCADE,
++  care_plan_version_id UUID NOT NULL REFERENCES care_plan_versions(id) ON DELETE RESTRICT,
++  intervention_id UUID REFERENCES care_interventions(id) ON DELETE SET NULL,
++  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
++  assigned_by UUID NOT NULL,
++  instrument_type VARCHAR(120) NOT NULL,
++  instrument_version VARCHAR(120),
++  assignment_purpose VARCHAR(160) NOT NULL,
++  due_window JSONB NOT NULL,
++  status VARCHAR(60) NOT NULL,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++
++CREATE TABLE IF NOT EXISTS clinical_tasks (
++  id UUID PRIMARY KEY,
++  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
++  care_relationship_id UUID NOT NULL REFERENCES care_relationships(id) ON DELETE RESTRICT,
++  care_plan_id UUID REFERENCES care_plans(id) ON DELETE CASCADE,
++  care_goal_id UUID REFERENCES care_goals(id) ON DELETE SET NULL,
++  task_type VARCHAR(80) NOT NULL,
++  assigned_to_type VARCHAR(60) NOT NULL,
++  assigned_to_id VARCHAR(160) NOT NULL,
++  status VARCHAR(60) NOT NULL,
++  priority VARCHAR(40) NOT NULL,
++  title VARCHAR(240) NOT NULL,
++  instruction_reference VARCHAR(240) NOT NULL,
++  due_at TIMESTAMPTZ,
++  started_at TIMESTAMPTZ,
++  completed_at TIMESTAMPTZ,
++  recurrence_rule TEXT,
++  source_type VARCHAR(80) NOT NULL,
++  source_reference VARCHAR(240) NOT NULL,
++  completion_authority VARCHAR(60) NOT NULL,
++  owner_domain VARCHAR(80),
++  policy_version VARCHAR(80) NOT NULL,
++  idempotency_key VARCHAR(160),
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),+  UNIQUE(idempotency_key)
++);
++CREATE INDEX IF NOT EXISTS idx_clinical_tasks_subject_status_due ON clinical_tasks(subject_user_id, status, due_at);
++CREATE INDEX IF NOT EXISTS idx_clinical_tasks_assignee_status_due ON clinical_tasks(assigned_to_type, assigned_to_id, status, due_at);
++
++CREATE TABLE IF NOT EXISTS clinical_task_dependencies (
++  id UUID PRIMARY KEY,
++  task_id UUID NOT NULL REFERENCES clinical_tasks(id) ON DELETE CASCADE,
++  depends_on_task_id UUID NOT NULL REFERENCES clinical_tasks(id) ON DELETE CASCADE,
++  dependency_type VARCHAR(60) NOT NULL,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  CHECK (task_id <> depends_on_task_id),
++  UNIQUE(task_id, depends_on_task_id)
++);
++
++CREATE TABLE IF NOT EXISTS clinical_task_evidence (
++  id UUID PRIMARY KEY,
++  task_id UUID NOT NULL REFERENCES clinical_tasks(id) ON DELETE CASCADE,
++  evidence_type VARCHAR(60) NOT NULL,
++  evidence_reference VARCHAR(240) NOT NULL,
++  recorded_by VARCHAR(160) NOT NULL,
++  recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++
++CREATE TABLE IF NOT EXISTS professional_message_threads (
++  id UUID PRIMARY KEY,
++  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
++  care_relationship_id UUID NOT NULL REFERENCES care_relationships(id) ON DELETE RESTRICT,
++  thread_type VARCHAR(80) NOT NULL,
++  purpose VARCHAR(120) NOT NULL,
++  status VARCHAR(60) NOT NULL,
++  created_by VARCHAR(160) NOT NULL,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  closed_at TIMESTAMPTZ,
++  response_expectation_reference VARCHAR(240) NOT NULL,
++  version INTEGER NOT NULL DEFAULT 1
++);
++CREATE INDEX IF NOT EXISTS idx_prof_message_threads_relationship_status ON professional_message_threads(care_relationship_id, status);
++CREATE INDEX IF NOT EXISTS idx_prof_message_threads_subject_status ON professional_message_threads(subject_user_id, status);
++
++CREATE TABLE IF NOT EXISTS professional_thread_participants (
++  id UUID PRIMARY KEY,
++  thread_id UUID NOT NULL REFERENCES professional_message_threads(id) ON DELETE CASCADE,
++  actor_type VARCHAR(60) NOT NULL,
++  actor_id VARCHAR(160) NOT NULL,
++  participant_role VARCHAR(80) NOT NULL,
++  status VARCHAR(60) NOT NULL,
++  joined_at TIMESTAMPTZ NOT NULL,
++  left_at TIMESTAMPTZ,
++  access_scope JSONB NOT NULL DEFAULT '[]',
++  UNIQUE(thread_id, actor_id)
++);
++
++CREATE TABLE IF NOT EXISTS professional_messages (
++  id UUID PRIMARY KEY,
++  thread_id UUID NOT NULL REFERENCES professional_message_threads(id) ON DELETE CASCADE,
++  sender_type VARCHAR(60) NOT NULL,
++  sender_id VARCHAR(160) NOT NULL,
++  message_type VARCHAR(80) NOT NULL,
++  content_reference VARCHAR(240) NOT NULL,
++  status VARCHAR(40) NOT NULL,
++  sent_at TIMESTAMPTZ NOT NULL,
++  delivered_at TIMESTAMPTZ,
++  read_at TIMESTAMPTZ,
++  reply_to_message_id UUID REFERENCES professional_messages(id) ON DELETE SET NULL,
++  clinical_significance VARCHAR(60) NOT NULL,
++  safety_monitoring_status VARCHAR(80) NOT NULL,
++  safety_reference VARCHAR(240),
++  idempotency_key VARCHAR(160) NOT NULL,
++  UNIQUE(thread_id, idempotency_key)
++);
++CREATE INDEX IF NOT EXISTS idx_prof_messages_thread_sent ON professional_messages(thread_id, sent_at, id);
++
++CREATE TABLE IF NOT EXISTS professional_message_attachments (
++  id UUID PRIMARY KEY,
++  thread_id UUID NOT NULL REFERENCES professional_message_threads(id) ON DELETE CASCADE,
++  message_id UUID NOT NULL REFERENCES professional_messages(id) ON DELETE CASCADE,
++  evidence_reference VARCHAR(240) NOT NULL,
++  mime_type VARCHAR(160) NOT NULL,
++  size_bytes BIGINT NOT NULL CHECK(size_bytes >= 0),
++  scan_status VARCHAR(40) NOT NULL,
++  data_classification VARCHAR(60) NOT NULL,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++
++-- DOWN --
++DROP TABLE IF EXISTS professional_message_attachments CASCADE;
++DROP TABLE IF EXISTS professional_messages CASCADE;
++DROP TABLE IF EXISTS professional_thread_participants CASCADE;
++DROP TABLE IF EXISTS professional_message_threads CASCADE;
++DROP TABLE IF EXISTS clinical_task_evidence CASCADE;
++DROP TABLE IF EXISTS clinical_task_dependencies CASCADE;
++DROP TABLE IF EXISTS clinical_tasks CASCADE;
++DROP TABLE IF EXISTS assessment_assignments CASCADE;
++DROP TABLE IF EXISTS content_assignments CASCADE;
++DROP TABLE IF EXISTS care_plan_reviews CASCADE;
++DROP TABLE IF EXISTS care_interventions CASCADE;
++DROP TABLE IF EXISTS care_goal_reviews CASCADE;
++DROP TABLE IF EXISTS care_goals CASCADE;
++ALTER TABLE care_plans DROP CONSTRAINT IF EXISTS fk_care_plans_current_version;
++DROP TABLE IF EXISTS care_plan_versions CASCADE;
++DROP TABLE IF EXISTS care_plans CASCADE;
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/platform/database/migrations/021_canonical_longitudinal_outcomes.sql /mnt/data/mindos-work/mindos/platform/database/migrations/021_canonical_longitudinal_outcomes.sql
+--- /mnt/data/mindos-original/mindos/platform/database/migrations/021_canonical_longitudinal_outcomes.sql	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/platform/database/migrations/021_canonical_longitudinal_outcomes.sql	2026-10-01 22:24:31.458106812 +0000
+@@ -0,0 +1,199 @@
++-- ==============================================================================
++-- MINDOS CANONICAL MIGRATION: 021_canonical_longitudinal_outcomes.sql
++-- Sprint 23 reconciliation: Longitudinal Clinical Record & Measurement-Based Care.
++-- Clinical change rules are NOT seeded here. They must be loaded from approved,
++-- versioned Clinical Governance artifacts.
++-- ==============================================================================
++
++-- UP --
++CREATE TABLE IF NOT EXISTS longitudinal_clinical_records (
++  id UUID PRIMARY KEY,
++  subject_user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE RESTRICT,
++  status VARCHAR(40) NOT NULL DEFAULT 'ACTIVE',
++  jurisdiction CHAR(2) NOT NULL DEFAULT 'KE',
++  record_version INTEGER NOT NULL DEFAULT 1,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++
++CREATE TABLE IF NOT EXISTS clinical_timeline_entries (
++  id UUID PRIMARY KEY,
++  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
++  event_type VARCHAR(120) NOT NULL,
++  occurred_at TIMESTAMPTZ NOT NULL,
++  recorded_at TIMESTAMPTZ NOT NULL,
++  source_domain VARCHAR(80) NOT NULL,
++  source_type VARCHAR(80) NOT NULL,
++  source_id VARCHAR(160) NOT NULL,
++  provenance VARCHAR(60) NOT NULL,
++  clinical_significance VARCHAR(60),
++  safety_significance VARCHAR(60),
++  summary_reference VARCHAR(240),
++  visibility_scope VARCHAR(60) NOT NULL,
++  invalidated_at TIMESTAMPTZ,
++  invalidation_reason VARCHAR(240),
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  UNIQUE(source_domain, source_type, source_id, event_type)
++);
++CREATE INDEX IF NOT EXISTS idx_clinical_timeline_subject_time ON clinical_timeline_entries(subject_user_id, occurred_at DESC, id);
++CREATE INDEX IF NOT EXISTS idx_clinical_timeline_type ON clinical_timeline_entries(subject_user_id, event_type, occurred_at DESC);
++
++CREATE TABLE IF NOT EXISTS outcome_measure_definitions (
++  id UUID PRIMARY KEY,
++  measure_code VARCHAR(120) NOT NULL UNIQUE,
++  name VARCHAR(200) NOT NULL,
++  description TEXT NOT NULL,
++  measure_type VARCHAR(80) NOT NULL,
++  unit VARCHAR(80) NOT NULL,
++  value_type VARCHAR(40) NOT NULL,
++  directionality VARCHAR(60) NOT NULL,
++  population VARCHAR(120) NOT NULL,
++  jurisdiction CHAR(2) NOT NULL,
++  source_domain VARCHAR(80) NOT NULL,
++  clinical_artifact_id VARCHAR(160),
++  clinical_artifact_version VARCHAR(120),
++  comparability_policy_id UUID NOT NULL,
++  status VARCHAR(40) NOT NULL,
++  min_value NUMERIC,
++  max_value NUMERIC,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++
++CREATE TABLE IF NOT EXISTS measure_comparability_policies (
++  id UUID PRIMARY KEY,
++  measure_code VARCHAR(120) NOT NULL,
++  allowed_version_pairs JSONB NOT NULL DEFAULT '[]',
++  unit_requirements JSONB NOT NULL DEFAULT '[]',
++  population_constraints JSONB NOT NULL DEFAULT '[]',
++  maximum_gap_days INTEGER,
++  transformation_policy VARCHAR(240),
++  status VARCHAR(40) NOT NULL,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++CREATE INDEX IF NOT EXISTS idx_comparability_measure_status ON measure_comparability_policies(measure_code, status);
++
++CREATE TABLE IF NOT EXISTS outcome_measurements (
++  id UUID PRIMARY KEY,
++  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
++  measure_definition_id UUID NOT NULL REFERENCES outcome_measure_definitions(id) ON DELETE RESTRICT,
++  measure_code VARCHAR(120) NOT NULL,
++  value_json JSONB NOT NULL,
++  unit VARCHAR(80) NOT NULL,
++  measured_at TIMESTAMPTZ NOT NULL,
++  recorded_at TIMESTAMPTZ NOT NULL,
++  source_type VARCHAR(80) NOT NULL,
++  source_reference VARCHAR(200) NOT NULL,
++  instrument_version VARCHAR(120),
++  provenance VARCHAR(60) NOT NULL,
++  validity_status VARCHAR(60) NOT NULL,
++  invalidation_reason VARCHAR(240),
++  invalidated_at TIMESTAMPTZ,
++  care_relationship_id UUID,
++  care_plan_id UUID,
++  care_goal_id UUID,
++  clinical_encounter_id UUID,
++  recorded_by VARCHAR(160),
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  UNIQUE(source_type, source_reference, measure_code)
++);
++CREATE INDEX IF NOT EXISTS idx_outcome_measurements_subject_measure_time ON outcome_measurements(subject_user_id, measure_code, measured_at DESC);
++CREATE INDEX IF NOT EXISTS idx_outcome_measurements_source ON outcome_measurements(source_type, source_reference);
++
++CREATE TABLE IF NOT EXISTS outcome_baselines (
++  id UUID PRIMARY KEY,
++  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
++  measure_code VARCHAR(120) NOT NULL,
++  baseline_measurement_id UUID NOT NULL REFERENCES outcome_measurements(id) ON DELETE RESTRICT,
++  baseline_value_json JSONB NOT NULL,
++  baseline_type VARCHAR(60) NOT NULL,
++  established_at TIMESTAMPTZ NOT NULL,
++  established_by VARCHAR(160) NOT NULL,
++  override_reason VARCHAR(240),
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  UNIQUE(subject_user_id, measure_code)
++);
++
++CREATE TABLE IF NOT EXISTS outcome_reviews (
++  id UUID PRIMARY KEY,
++  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
++  care_relationship_id UUID NOT NULL,
++  care_plan_id UUID,
++  review_type VARCHAR(80) NOT NULL,
++  status VARCHAR(60) NOT NULL,
++  reviewer_id UUID,
++  measurement_refs JSONB NOT NULL DEFAULT '[]',
++  trend_refs JSONB NOT NULL DEFAULT '[]',
++  scheduled_for TIMESTAMPTZ,
++  started_at TIMESTAMPTZ,
++  completed_at TIMESTAMPTZ,
++  decision VARCHAR(80),
++  reason_codes JSONB NOT NULL DEFAULT '[]',
++  clinical_notes_reference VARCHAR(240),
++  recommended_actions JSONB NOT NULL DEFAULT '[]',
++  snapshot_id UUID,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++CREATE INDEX IF NOT EXISTS idx_outcome_reviews_subject_status ON outcome_reviews(subject_user_id, status, scheduled_for);
++
++CREATE TABLE IF NOT EXISTS outcome_snapshots (
++  id UUID PRIMARY KEY,
++  review_id UUID NOT NULL UNIQUE REFERENCES outcome_reviews(id) ON DELETE RESTRICT,
++  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
++  measure_states JSONB NOT NULL,
++  trend_states JSONB NOT NULL,
++  care_plan_version_id UUID,
++  frozen_at TIMESTAMPTZ NOT NULL,
++  hash VARCHAR(128) NOT NULL
++);
++ALTER TABLE outcome_reviews
++  ADD CONSTRAINT fk_outcome_reviews_snapshot
++  FOREIGN KEY(snapshot_id) REFERENCES outcome_snapshots(id) DEFERRABLE INITIALLY DEFERRED;
++
++CREATE TABLE IF NOT EXISTS outcome_alerts (
++  id UUID PRIMARY KEY,
++  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
++  care_relationship_id UUID,
++  alert_type VARCHAR(80) NOT NULL,
++  severity VARCHAR(40) NOT NULL,
++  measure_code VARCHAR(120),
++  measurement_id UUID REFERENCES outcome_measurements(id) ON DELETE SET NULL,
++  trend_reference VARCHAR(240),
++  status VARCHAR(60) NOT NULL,
++  generated_at TIMESTAMPTZ NOT NULL,
++  review_due_at TIMESTAMPTZ,
++  assigned_to UUID,
++  policy_version VARCHAR(80),
++  resolved_at TIMESTAMPTZ,
++  resolution_reason VARCHAR(240)
++);
++CREATE INDEX IF NOT EXISTS idx_outcome_alerts_subject_status ON outcome_alerts(subject_user_id, status, severity);
++
++-- Clinical change rules intentionally have no numeric seed values. Only approved
++-- governance artifacts may populate this table at runtime/migration time.
++CREATE TABLE IF NOT EXISTS governed_clinical_change_rules (
++  id UUID PRIMARY KEY,
++  measure_code VARCHAR(120) NOT NULL,
++  rule_json JSONB NOT NULL,
++  clinical_artifact_id VARCHAR(160) NOT NULL,
++  clinical_artifact_version VARCHAR(120) NOT NULL,
++  approved_by VARCHAR(160) NOT NULL,
++  approved_at TIMESTAMPTZ NOT NULL,
++  policy_version VARCHAR(80) NOT NULL,
++  status VARCHAR(40) NOT NULL DEFAULT 'ACTIVE',
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  UNIQUE(measure_code, clinical_artifact_id, clinical_artifact_version)
++);
++
++-- DOWN --
++DROP TABLE IF EXISTS governed_clinical_change_rules CASCADE;
++DROP TABLE IF EXISTS outcome_alerts CASCADE;
++ALTER TABLE outcome_reviews DROP CONSTRAINT IF EXISTS fk_outcome_reviews_snapshot;
++DROP TABLE IF EXISTS outcome_snapshots CASCADE;
++DROP TABLE IF EXISTS outcome_reviews CASCADE;
++DROP TABLE IF EXISTS outcome_baselines CASCADE;
++DROP TABLE IF EXISTS outcome_measurements CASCADE;
++DROP TABLE IF EXISTS measure_comparability_policies CASCADE;
++DROP TABLE IF EXISTS outcome_measure_definitions CASCADE;
++DROP TABLE IF EXISTS clinical_timeline_entries CASCADE;
++DROP TABLE IF EXISTS longitudinal_clinical_records CASCADE;
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/professional_messaging/application/ports.ts /mnt/data/mindos-work/mindos/professional_messaging/application/ports.ts
+--- /mnt/data/mindos-original/mindos/professional_messaging/application/ports.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/professional_messaging/application/ports.ts	2026-10-01 22:22:00.299807731 +0000
+@@ -0,0 +1,38 @@
++import { MessagingAvailabilityState, ThreadParticipantType } from '../domain/types.js';
++
++export interface ProfessionalMessagingSafetyPort {
++  evaluateCandidate(params: {
++    subject_user_id: string;
++    thread_id: string;
++    message_id: string;
++    sender_type: ThreadParticipantType;
++    content_reference: string;
++  }): Promise<{ configured: boolean; candidate_signal: boolean; safety_reference?: string }>;
++}
++
++export interface ProfessionalMessagingNotificationPort {
++  notifyNewMessage(params: { thread_id: string; message_id: string; recipient_ids: string[] }): Promise<{ accepted: boolean }>;
++}
++
++export interface MessagingAvailabilityPolicyPort {
++  getAvailability(params: { professional_id: string; at: string }): Promise<{
++    state: MessagingAvailabilityState;
++    response_expectation_reference: string;
++  }>;
++}
++
++export class UnconfiguredMessagingSafetyAdapter implements ProfessionalMessagingSafetyPort {
++  async evaluateCandidate(): Promise<{ configured: boolean; candidate_signal: boolean }> {
++    return { configured: false, candidate_signal: false };
++  }
++}
++
++export class NoopProfessionalMessagingNotificationAdapter implements ProfessionalMessagingNotificationPort {
++  async notifyNewMessage(): Promise<{ accepted: boolean }> { return { accepted: false }; }
++}
++
++export class UnknownMessagingAvailabilityAdapter implements MessagingAvailabilityPolicyPort {
++  async getAvailability(): Promise<{ state: MessagingAvailabilityState; response_expectation_reference: string }> {
++    return { state: 'UNKNOWN', response_expectation_reference: 'MESSAGING_NOT_EMERGENCY_MONITORING' };
++  }
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/professional_messaging/application/professional_messaging_service.ts /mnt/data/mindos-work/mindos/professional_messaging/application/professional_messaging_service.ts
+--- /mnt/data/mindos-original/mindos/professional_messaging/application/professional_messaging_service.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/professional_messaging/application/professional_messaging_service.ts	2026-10-01 22:22:00.300613923 +0000
+@@ -0,0 +1,305 @@
++import { generateUUIDv7 } from '../../platform/database/uuid.js';
++import { EventBus } from '../../platform/events/index.js';
++import { AuditService } from '../../platform/audit/index.js';
++import { DataClassification } from '../../platform/shared/data_classification.js';
++import { validateStateTransition } from '../../platform/shared/state_machines.js';
++import { AuthorizationError, DomainInvariantError, NotFoundError } from '../../platform/errors/index.js';
++import {
++  CareRelationshipService,
++  RelationshipAccessEvaluator,
++  CareRelationshipState,
++  DataDomain,
++  ActionPermission
++} from '../../care_relationships/index.js';
++import {
++  ProfessionalMessageThread,
++  ProfessionalThreadParticipant,
++  ProfessionalMessage,
++  ProfessionalMessageAttachment
++} from '../domain/entities.js';
++import {
++  ProfessionalThreadStatus,
++  MessageDeliveryStatus,
++  ProfessionalThreadType,
++  ThreadParticipantType,
++  ThreadParticipantStatus,
++  ProfessionalMessageType
++} from '../domain/types.js';
++import { IProfessionalMessagingRepository } from '../repositories/interfaces.js';
++import {
++  ProfessionalMessagingSafetyPort,
++  ProfessionalMessagingNotificationPort,
++  MessagingAvailabilityPolicyPort,
++  UnconfiguredMessagingSafetyAdapter,
++  NoopProfessionalMessagingNotificationAdapter,
++  UnknownMessagingAvailabilityAdapter
++} from './ports.js';
++
++export interface OpenThreadParams {
++  care_relationship_id: string;
++  thread_type: ProfessionalThreadType;
++  purpose: string;
++  created_by: string;
++  creator_type: ThreadParticipantType.USER | ThreadParticipantType.PROFESSIONAL;
++  professional_id?: string;
++  response_expectation_reference?: string;
++}
++
++export interface SendMessageParams {
++  thread_id: string;
++  sender_type: ThreadParticipantType.USER | ThreadParticipantType.PROFESSIONAL;
++  sender_id: string;
++  message_type: ProfessionalMessageType;
++  content_reference: string;
++  idempotency_key: string;
++  reply_to_message_id?: string;
++}
++
++export class ProfessionalMessagingService {
++  private static repository: IProfessionalMessagingRepository;
++  private static safetyPort: ProfessionalMessagingSafetyPort = new UnconfiguredMessagingSafetyAdapter();
++  private static notificationPort: ProfessionalMessagingNotificationPort = new NoopProfessionalMessagingNotificationAdapter();
++  private static availabilityPort: MessagingAvailabilityPolicyPort = new UnknownMessagingAvailabilityAdapter();
++
++  public static setRepository(repo: IProfessionalMessagingRepository): void { ProfessionalMessagingService.repository = repo; }
++  public static setSafetyPort(port: ProfessionalMessagingSafetyPort): void { ProfessionalMessagingService.safetyPort = port; }
++  public static setNotificationPort(port: ProfessionalMessagingNotificationPort): void { ProfessionalMessagingService.notificationPort = port; }
++  public static setAvailabilityPolicyPort(port: MessagingAvailabilityPolicyPort): void { ProfessionalMessagingService.availabilityPort = port; }
++
++  private static assertRepository(): void {
++    if (!ProfessionalMessagingService.repository) throw new DomainInvariantError('ProfessionalMessagingRepository not initialized.');
++  }
++
++  public static async openThread(params: OpenThreadParams): Promise<ProfessionalMessageThread> {
++    ProfessionalMessagingService.assertRepository();
++    const relationship = await CareRelationshipService.getRelationship(params.care_relationship_id);
++    if (!relationship) throw new NotFoundError(`CareRelationship ${params.care_relationship_id} not found.`);
++    if (relationship.status !== CareRelationshipState.ACTIVE) {
++      throw new DomainInvariantError('Professional messaging requires an active care relationship.');
++    }
++    if (params.creator_type === ThreadParticipantType.USER && params.created_by !== relationship.subject_user_id) {
++      throw new AuthorizationError('User may only open a thread for their own care relationship.', { errorCode: 'AUTHZ_003' });
++    }
++    const professionalId = params.professional_id || relationship.primary_provider_id;
++    if (!professionalId) throw new DomainInvariantError('Professional messaging thread requires an eligible professional participant.');
++    await RelationshipAccessEvaluator.assertAccess({
++      relationshipId: relationship.id,
++      professionalId,
++      dataDomain: DataDomain.MESSAGING,
++      action: ActionPermission.MESSAGE,
++      purpose: 'CARE_COORDINATION'
++    });
++
++    const availability = await ProfessionalMessagingService.availabilityPort.getAvailability({
++      professional_id: professionalId, at: new Date().toISOString()
++    });
++    const now = new Date().toISOString();
++    const thread: ProfessionalMessageThread = {
++      id: generateUUIDv7(), subject_user_id: relationship.subject_user_id,
++      care_relationship_id: relationship.id, thread_type: params.thread_type,
++      purpose: params.purpose, status: ProfessionalThreadStatus.OPEN,
++      created_by: params.created_by, created_at: now,
++      response_expectation_reference: params.response_expectation_reference || availability.response_expectation_reference,
++      version: 1
++    };
++    await ProfessionalMessagingService.repository.saveThread(thread);
++    await ProfessionalMessagingService.saveParticipant(thread.id, ThreadParticipantType.USER, relationship.subject_user_id, 'SUBJECT', params.created_by);
++    await ProfessionalMessagingService.saveParticipant(thread.id, ThreadParticipantType.PROFESSIONAL, professionalId, 'CARE_PROFESSIONAL', params.created_by);
++
++    EventBus.enqueue('care.thread_opened', 'professional_messaging', thread.id, DataClassification.CLINICAL_RECORD, {
++      thread_id: thread.id, relationship_id: relationship.id, subject_user_id: relationship.subject_user_id
++    });
++    return thread;
++  }
++
++  private static async saveParticipant(threadId: string, actorType: ThreadParticipantType, actorId: string, role: string, addedBy: string): Promise<ProfessionalThreadParticipant> {
++    const existing = await ProfessionalMessagingService.repository.findParticipant(threadId, actorId);
++    if (existing?.status === ThreadParticipantStatus.ACTIVE) return existing;
++    const p: ProfessionalThreadParticipant = {
++      id: existing?.id || generateUUIDv7(), thread_id: threadId, actor_type: actorType, actor_id: actorId,
++      participant_role: role, status: ThreadParticipantStatus.ACTIVE, joined_at: new Date().toISOString(),
++      access_scope: ['MESSAGE_READ', 'MESSAGE_SEND']
++    };
++    await ProfessionalMessagingService.repository.saveParticipant(p);
++    EventBus.enqueue('care.thread_participant_added', 'professional_messaging', p.id, DataClassification.CLINICAL_RECORD, {
++      thread_id: threadId, participant_id: p.id, actor_type: actorType
++    });
++    AuditService.record({
++      actor_type: 'STAFF', actor_id: addedBy, action: 'CARE_MESSAGE_THREAD.PARTICIPANT_ADDED',
++      resource_type: 'professional_message_thread', resource_id: threadId, purpose: 'Care Coordination',
++      authorization_basis: { threadId }, result: 'ALLOWED', metadata: { participantType: actorType }
++    });
++    return p;
++  }
++
++  public static async addProfessionalParticipant(threadId: string, professionalId: string, addedByProfessionalId: string, role = 'CARE_TEAM'): Promise<ProfessionalThreadParticipant> {
++    const thread = await ProfessionalMessagingService.getThread(threadId);
++    await RelationshipAccessEvaluator.assertAccess({
++      relationshipId: thread.care_relationship_id, professionalId: addedByProfessionalId,
++      dataDomain: DataDomain.MESSAGING, action: ActionPermission.MESSAGE, purpose: 'CARE_COORDINATION'
++    });
++    await RelationshipAccessEvaluator.assertAccess({
++      relationshipId: thread.care_relationship_id, professionalId,
++      dataDomain: DataDomain.MESSAGING, action: ActionPermission.MESSAGE, purpose: 'CARE_COORDINATION'
++    });
++    return ProfessionalMessagingService.saveParticipant(threadId, ThreadParticipantType.PROFESSIONAL, professionalId, role, addedByProfessionalId);
++  }
++
++  public static async removeParticipant(threadId: string, actorId: string, removedByProfessionalId: string): Promise<void> {
++    const thread = await ProfessionalMessagingService.getThread(threadId);
++    await RelationshipAccessEvaluator.assertAccess({
++      relationshipId: thread.care_relationship_id, professionalId: removedByProfessionalId,
++      dataDomain: DataDomain.MESSAGING, action: ActionPermission.MESSAGE, purpose: 'CARE_COORDINATION'
++    });
++    const p = await ProfessionalMessagingService.repository.findParticipant(threadId, actorId);
++    if (!p || p.status !== ThreadParticipantStatus.ACTIVE) return;
++    if (p.actor_type === ThreadParticipantType.USER && p.actor_id === thread.subject_user_id) {
++      throw new DomainInvariantError('The subject user cannot be removed from their own care thread.');
++    }
++    p.status = ThreadParticipantStatus.REMOVED; p.left_at = new Date().toISOString();
++    await ProfessionalMessagingService.repository.saveParticipant(p);
++    EventBus.enqueue('care.thread_participant_removed', 'professional_messaging', p.id, DataClassification.CLINICAL_RECORD, {
++      thread_id: threadId, participant_id: p.id
++    });
++  }
++
++  public static async sendMessage(params: SendMessageParams): Promise<ProfessionalMessage> {
++    ProfessionalMessagingService.assertRepository();
++    if (!params.idempotency_key) throw new DomainInvariantError('Professional message send requires an idempotency key.');
++    const existing = await ProfessionalMessagingService.repository.findMessageByIdempotencyKey(params.thread_id, params.idempotency_key);
++    if (existing) return existing;
++    const thread = await ProfessionalMessagingService.getThread(params.thread_id);
++    if (thread.status !== ProfessionalThreadStatus.OPEN) {
++      throw new DomainInvariantError(`Cannot send message to ${thread.status} care thread.`);
++    }
++    const participant = await ProfessionalMessagingService.repository.findParticipant(thread.id, params.sender_id);
++    if (!participant || participant.status !== ThreadParticipantStatus.ACTIVE || participant.actor_type !== params.sender_type) {
++      throw new AuthorizationError('Sender is not an active participant in this care thread.', { errorCode: 'AUTHZ_003' });
++    }
++    if (params.sender_type === ThreadParticipantType.USER) {
++      if (params.sender_id !== thread.subject_user_id) {
++        throw new AuthorizationError('User may only send within their own care thread.', { errorCode: 'AUTHZ_003' });
++      }
++    } else {
++      await RelationshipAccessEvaluator.assertAccess({
++        relationshipId: thread.care_relationship_id, professionalId: params.sender_id,
++        dataDomain: DataDomain.MESSAGING, action: ActionPermission.MESSAGE, purpose: 'CARE_COORDINATION'
++      });
++    }
++    if (!params.content_reference) throw new DomainInvariantError('Message requires a protected content reference; raw content is not stored in the thread metadata record.');
++
++    const messageId = generateUUIDv7();
++    const safety = await ProfessionalMessagingService.safetyPort.evaluateCandidate({
++      subject_user_id: thread.subject_user_id, thread_id: thread.id, message_id: messageId,
++      sender_type: params.sender_type, content_reference: params.content_reference
++    });
++    const message: ProfessionalMessage = {
++      id: messageId, thread_id: thread.id, sender_type: params.sender_type, sender_id: params.sender_id,
++      message_type: params.message_type, content_reference: params.content_reference,
++      status: MessageDeliveryStatus.SENT, sent_at: new Date().toISOString(), reply_to_message_id: params.reply_to_message_id,
++      clinical_significance: safety.candidate_signal ? 'REVIEW_REQUIRED' : 'ROUTINE',
++      safety_monitoring_status: !safety.configured ? 'NOT_CONFIGURED' : safety.candidate_signal ? 'CANDIDATE_SIGNAL_FORWARDED' : 'EVALUATED_NO_SIGNAL',
++      safety_reference: safety.safety_reference, idempotency_key: params.idempotency_key
++    };
++    await ProfessionalMessagingService.repository.saveMessage(message);
++    EventBus.enqueue('care.message_sent', 'professional_messaging', message.id, DataClassification.CLINICAL_RECORD, {
++      message_id: message.id, thread_id: thread.id, sender_type: message.sender_type,
++      safety_monitoring_status: message.safety_monitoring_status
++    });
++    if (safety.candidate_signal) {
++      EventBus.enqueue('care.message_safety_escalated', 'professional_messaging', message.id, DataClassification.CLINICAL_RECORD, {
++        message_id: message.id, thread_id: thread.id, safety_reference: safety.safety_reference
++      });
++    }
++    const recipients = (await ProfessionalMessagingService.repository.findParticipants(thread.id))
++      .filter(p => p.status === ThreadParticipantStatus.ACTIVE && p.actor_id !== params.sender_id).map(p => p.actor_id);
++    await ProfessionalMessagingService.notificationPort.notifyNewMessage({ thread_id: thread.id, message_id: message.id, recipient_ids: recipients });
++    return message;
++  }
++
++  public static async markDelivered(messageId: string): Promise<ProfessionalMessage> {
++    const message = await ProfessionalMessagingService.getMessage(messageId);
++    if (message.status === MessageDeliveryStatus.SENT) {
++      validateStateTransition('MessageDeliveryStatus', message.status, MessageDeliveryStatus.DELIVERED, message.id, 'system');
++      message.status = MessageDeliveryStatus.DELIVERED; message.delivered_at = new Date().toISOString();
++      await ProfessionalMessagingService.repository.saveMessage(message);
++      EventBus.enqueue('care.message_delivered', 'professional_messaging', message.id, DataClassification.CLINICAL_RECORD, { message_id: message.id, thread_id: message.thread_id });
++    }
++    return message;
++  }
++
++  public static async markRead(messageId: string, actorId: string): Promise<ProfessionalMessage> {
++    const message = await ProfessionalMessagingService.getMessage(messageId);
++    const participant = await ProfessionalMessagingService.repository.findParticipant(message.thread_id, actorId);
++    if (!participant || participant.status !== ThreadParticipantStatus.ACTIVE) throw new AuthorizationError('Only an active thread participant may mark a message read.', { errorCode: 'AUTHZ_003' });
++    if (message.status !== MessageDeliveryStatus.READ) {
++      validateStateTransition('MessageDeliveryStatus', message.status, MessageDeliveryStatus.READ, message.id, actorId);
++      message.status = MessageDeliveryStatus.READ; message.read_at = new Date().toISOString();
++      await ProfessionalMessagingService.repository.saveMessage(message);
++    }
++    return message;
++  }
++
++  public static async addAttachment(params: { thread_id: string; message_id: string; actor_id: string; evidence_reference: string; mime_type: string; size_bytes: number; scan_status: ProfessionalMessageAttachment['scan_status']; data_classification: string; }): Promise<ProfessionalMessageAttachment> {
++    const thread = await ProfessionalMessagingService.getThread(params.thread_id);
++    const message = await ProfessionalMessagingService.getMessage(params.message_id);
++    if (message.thread_id !== thread.id) throw new DomainInvariantError('Attachment message/thread mismatch.');
++    const participant = await ProfessionalMessagingService.repository.findParticipant(thread.id, params.actor_id);
++    if (!participant || participant.status !== ThreadParticipantStatus.ACTIVE) throw new AuthorizationError('Only an active participant may attach files.', { errorCode: 'AUTHZ_003' });
++    if (params.scan_status !== 'CLEAN') throw new DomainInvariantError('Only malware-scanned CLEAN attachments may be linked to a care message.');+    const a: ProfessionalMessageAttachment = { id: generateUUIDv7(), thread_id: thread.id, message_id: message.id, evidence_reference: params.evidence_reference, mime_type: params.mime_type, size_bytes: params.size_bytes, scan_status: params.scan_status, data_classification: params.data_classification, created_at: new Date().toISOString() };
++    await ProfessionalMessagingService.repository.saveAttachment(a); return a;
++  }
++
++  public static async closeThread(threadId: string, actorProfessionalId: string): Promise<ProfessionalMessageThread> {
++    const thread = await ProfessionalMessagingService.getThread(threadId);
++    await RelationshipAccessEvaluator.assertAccess({
++      relationshipId: thread.care_relationship_id, professionalId: actorProfessionalId,
++      dataDomain: DataDomain.MESSAGING, action: ActionPermission.MESSAGE, purpose: 'CARE_COORDINATION'
++    });
++    if (thread.status === ProfessionalThreadStatus.CLOSED || thread.status === ProfessionalThreadStatus.ARCHIVED) return thread;
++    validateStateTransition('ProfessionalThreadStatus', thread.status, ProfessionalThreadStatus.CLOSED, thread.id, actorProfessionalId);
++    thread.status = ProfessionalThreadStatus.CLOSED; thread.closed_at = new Date().toISOString(); thread.version += 1;
++    await ProfessionalMessagingService.repository.saveThread(thread);
++    EventBus.enqueue('care.thread_closed', 'professional_messaging', thread.id, DataClassification.CLINICAL_RECORD, { thread_id: thread.id, relationship_id: thread.care_relationship_id });
++    return thread;
++  }
++
++  public static async reconcileRelationship(relationshipId: string): Promise<string[]> {
++    const relationship = await CareRelationshipService.getRelationship(relationshipId);
++    if (!relationship) return [];
++    if (![CareRelationshipState.TERMINATED, CareRelationshipState.REVOKED].includes(relationship.status)) return [];
++    const closed: string[] = [];
++    for (const thread of await ProfessionalMessagingService.repository.findThreadsByRelationshipId(relationshipId)) {
++      if (thread.status === ProfessionalThreadStatus.OPEN || thread.status === ProfessionalThreadStatus.PAUSED) {
++        // Reconciliation is system-governed; preserve history but prevent new messages immediately.
++        thread.status = ProfessionalThreadStatus.CLOSED; thread.closed_at = new Date().toISOString(); thread.version += 1;
++        await ProfessionalMessagingService.repository.saveThread(thread); closed.push(thread.id);
++        EventBus.enqueue('care.thread_closed', 'professional_messaging', thread.id, DataClassification.CLINICAL_RECORD, { thread_id: thread.id, relationship_id: relationshipId, reason: 'RELATIONSHIP_ENDED' });
++      }
++    }
++    return closed;
++  }
++
++  public static async getThread(threadId: string): Promise<ProfessionalMessageThread> {
++    ProfessionalMessagingService.assertRepository();
++    const t = await ProfessionalMessagingService.repository.findThreadById(threadId);
++    if (!t) throw new NotFoundError(`ProfessionalMessageThread ${threadId} not found.`);
++    return t;
++  }
++  public static async getMessage(messageId: string): Promise<ProfessionalMessage> {
++    ProfessionalMessagingService.assertRepository();
++    const m = await ProfessionalMessagingService.repository.findMessageById(messageId);
++    if (!m) throw new NotFoundError(`ProfessionalMessage ${messageId} not found.`);
++    return m;
++  }
++  public static async listMessages(threadId: string, actorId: string): Promise<ProfessionalMessage[]> {
++    const thread = await ProfessionalMessagingService.getThread(threadId);
++    const p = await ProfessionalMessagingService.repository.findParticipant(thread.id, actorId);
++    if (!p || p.status !== ThreadParticipantStatus.ACTIVE) throw new AuthorizationError('Only active thread participants may read messages.', { errorCode: 'AUTHZ_003' });
++    if (p.actor_type === ThreadParticipantType.PROFESSIONAL) {
++      await RelationshipAccessEvaluator.assertAccess({ relationshipId: thread.care_relationship_id, professionalId: actorId, dataDomain: DataDomain.MESSAGING, action: ActionPermission.READ, purpose: 'CARE_COORDINATION' });
++    }
++    return ProfessionalMessagingService.repository.findMessages(thread.id);
++  }
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/professional_messaging/domain/entities.ts /mnt/data/mindos-work/mindos/professional_messaging/domain/entities.ts
+--- /mnt/data/mindos-original/mindos/professional_messaging/domain/entities.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/professional_messaging/domain/entities.ts	2026-10-01 22:22:00.297514290 +0000
+@@ -0,0 +1,65 @@
++import {
++  ProfessionalThreadStatus,
++  MessageDeliveryStatus,
++  ProfessionalThreadType,
++  ThreadParticipantType,
++  ThreadParticipantStatus,
++  ProfessionalMessageType,
++  SafetyMonitoringStatus
++} from './types.js';
++
++export interface ProfessionalMessageThread {
++  id: string;
++  subject_user_id: string;
++  care_relationship_id: string;
++  thread_type: ProfessionalThreadType;
++  purpose: string;
++  status: ProfessionalThreadStatus;
++  created_by: string;
++  created_at: string;
++  closed_at?: string;
++  response_expectation_reference: string;
++  version: number;
++}
++
++export interface ProfessionalThreadParticipant {
++  id: string;
++  thread_id: string;
++  actor_type: ThreadParticipantType;
++  actor_id: string;
++  participant_role: string;
++  status: ThreadParticipantStatus;
++  joined_at: string;
++  left_at?: string;
++  access_scope: string[];
++}
++
++export interface ProfessionalMessage {
++  id: string;
++  thread_id: string;
++  sender_type: ThreadParticipantType;
++  sender_id: string;
++  message_type: ProfessionalMessageType;
++  content_reference: string;
++  status: MessageDeliveryStatus;
++  sent_at: string;
++  delivered_at?: string;
++  read_at?: string;
++  reply_to_message_id?: string;
++  clinical_significance: 'ROUTINE' | 'REVIEW_REQUIRED';
++  safety_monitoring_status: SafetyMonitoringStatus;
++  safety_reference?: string;
++  idempotency_key: string;
++}
++
++export interface ProfessionalMessageAttachment {
++  id: string;
++  thread_id: string;
++  message_id: string;
++  evidence_reference: string;
++  mime_type: string;
++  size_bytes: number;
++  scan_status: 'PENDING' | 'CLEAN' | 'QUARANTINED' | 'REJECTED';
++  data_classification: string;
++  created_at: string;
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/professional_messaging/domain/types.ts /mnt/data/mindos-work/mindos/professional_messaging/domain/types.ts
+--- /mnt/data/mindos-original/mindos/professional_messaging/domain/types.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/professional_messaging/domain/types.ts	2026-10-01 22:22:00.296796796 +0000
+@@ -0,0 +1,36 @@
++import { ProfessionalThreadStatus, MessageDeliveryStatus } from '../../platform/shared/state_machines.js';
++
++export { ProfessionalThreadStatus, MessageDeliveryStatus };
++
++export enum ProfessionalThreadType {
++  CARE_COMMUNICATION = 'CARE_COMMUNICATION',
++  FOLLOW_UP = 'FOLLOW_UP',
++  CARE_COORDINATION = 'CARE_COORDINATION',
++  ASSESSMENT_FOLLOW_UP = 'ASSESSMENT_FOLLOW_UP',
++  APPOINTMENT_FOLLOW_UP = 'APPOINTMENT_FOLLOW_UP'
++}
++
++export enum ThreadParticipantType {
++  USER = 'USER',
++  PROFESSIONAL = 'PROFESSIONAL',
++  SYSTEM = 'SYSTEM'
++}
++
++export enum ThreadParticipantStatus {
++  ACTIVE = 'ACTIVE',
++  REMOVED = 'REMOVED',
++  LEFT = 'LEFT'
++}
++
++export enum ProfessionalMessageType {
++  TEXT = 'TEXT',
++  SYSTEM = 'SYSTEM',
++  ATTACHMENT = 'ATTACHMENT',
++  CARE_PLAN_UPDATE = 'CARE_PLAN_UPDATE',
++  TASK_UPDATE = 'TASK_UPDATE',
++  APPOINTMENT_UPDATE = 'APPOINTMENT_UPDATE',
++  ASSESSMENT_UPDATE = 'ASSESSMENT_UPDATE'
++}
++
++export type SafetyMonitoringStatus = 'NOT_CONFIGURED' | 'EVALUATED_NO_SIGNAL' | 'CANDIDATE_SIGNAL_FORWARDED';
++export type MessagingAvailabilityState = 'AVAILABLE' | 'OUT_OF_HOURS' | 'UNKNOWN';
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/professional_messaging/index.ts /mnt/data/mindos-work/mindos/professional_messaging/index.ts
+--- /mnt/data/mindos-original/mindos/professional_messaging/index.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/professional_messaging/index.ts	2026-10-01 22:22:00.301277191 +0000
+@@ -0,0 +1,14 @@
++import { InMemoryProfessionalMessagingRepository } from './repositories/in_memory_professional_messaging_repository.js';
++import { ProfessionalMessagingService } from './application/professional_messaging_service.js';
++
++const defaultRepository = new InMemoryProfessionalMessagingRepository();
++ProfessionalMessagingService.setRepository(defaultRepository);
++
++export * from './domain/types.js';
++export * from './domain/entities.js';
++export * from './repositories/interfaces.js';
++export * from './repositories/in_memory_professional_messaging_repository.js';
++export * from './application/ports.js';
++export * from './application/professional_messaging_service.js';
++
++export function resetProfessionalMessagingForTesting(): void { defaultRepository.clear(); }
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/professional_messaging/repositories/in_memory_professional_messaging_repository.ts /mnt/data/mindos-work/mindos/professional_messaging/repositories/in_memory_professional_messaging_repository.ts
+--- /mnt/data/mindos-original/mindos/professional_messaging/repositories/in_memory_professional_messaging_repository.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/professional_messaging/repositories/in_memory_professional_messaging_repository.ts	2026-10-01 22:22:16.751128925 +0000
+@@ -0,0 +1,28 @@
++import { IProfessionalMessagingRepository } from './interfaces.js';
++import {
++  ProfessionalMessageThread,
++  ProfessionalThreadParticipant,
++  ProfessionalMessage,
++  ProfessionalMessageAttachment
++} from '../domain/entities.js';
++
++export class InMemoryProfessionalMessagingRepository implements IProfessionalMessagingRepository {
++  private threads = new Map<string, ProfessionalMessageThread>();
++  private participants = new Map<string, ProfessionalThreadParticipant>();
++  private messages = new Map<string, ProfessionalMessage>();
++  private attachments = new Map<string, ProfessionalMessageAttachment>();
++
++  async saveThread(thread: ProfessionalMessageThread): Promise<void> { this.threads.set(thread.id, structuredClone(thread)); }
++  async findThreadById(id: string): Promise<ProfessionalMessageThread | null> { const x=this.threads.get(id); return x?structuredClone(x):null; }
++  async findThreadsByRelationshipId(relationshipId: string): Promise<ProfessionalMessageThread[]> { return Array.from(this.threads.values()).filter(t=>t.care_relationship_id===relationshipId).map(x => structuredClone(x)); }
++  async saveParticipant(p: ProfessionalThreadParticipant): Promise<void> { this.participants.set(p.id, structuredClone(p)); }
++  async findParticipant(threadId: string, actorId: string): Promise<ProfessionalThreadParticipant | null> { const p=Array.from(this.participants.values()).find(x=>x.thread_id===threadId&&x.actor_id===actorId); return p?structuredClone(p):null; }
++  async findParticipants(threadId: string): Promise<ProfessionalThreadParticipant[]> { return Array.from(this.participants.values()).filter(p=>p.thread_id===threadId).map(x => structuredClone(x)); }
++  async saveMessage(message: ProfessionalMessage): Promise<void> { this.messages.set(message.id, structuredClone(message)); }
++  async findMessageById(id: string): Promise<ProfessionalMessage | null> { const x=this.messages.get(id); return x?structuredClone(x):null; }
++  async findMessageByIdempotencyKey(threadId: string, key: string): Promise<ProfessionalMessage | null> { const x=Array.from(this.messages.values()).find(m=>m.thread_id===threadId&&m.idempotency_key===key); return x?structuredClone(x):null; }
++  async findMessages(threadId: string): Promise<ProfessionalMessage[]> { return Array.from(this.messages.values()).filter(m=>m.thread_id===threadId).sort((a,b)=>a.sent_at.localeCompare(b.sent_at)||a.id.localeCompare(b.id)).map(x => structuredClone(x)); }
++  async saveAttachment(a: ProfessionalMessageAttachment): Promise<void> { this.attachments.set(a.id, structuredClone(a)); }
++  async findAttachments(messageId: string): Promise<ProfessionalMessageAttachment[]> { return Array.from(this.attachments.values()).filter(a=>a.message_id===messageId).map(x => structuredClone(x)); }
++  clear(): void { this.threads.clear(); this.participants.clear(); this.messages.clear(); this.attachments.clear(); }
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/mindos/professional_messaging/repositories/interfaces.ts /mnt/data/mindos-work/mindos/professional_messaging/repositories/interfaces.ts
+--- /mnt/data/mindos-original/mindos/professional_messaging/repositories/interfaces.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/mindos/professional_messaging/repositories/interfaces.ts	2026-10-01 22:22:00.298192591 +0000
+@@ -0,0 +1,22 @@
++import {
++  ProfessionalMessageThread,
++  ProfessionalThreadParticipant,
++  ProfessionalMessage,
++  ProfessionalMessageAttachment
++} from '../domain/entities.js';
++
++export interface IProfessionalMessagingRepository {
++  saveThread(thread: ProfessionalMessageThread): Promise<void>;
++  findThreadById(id: string): Promise<ProfessionalMessageThread | null>;
++  findThreadsByRelationshipId(relationshipId: string): Promise<ProfessionalMessageThread[]>;
++  saveParticipant(participant: ProfessionalThreadParticipant): Promise<void>;
++  findParticipant(threadId: string, actorId: string): Promise<ProfessionalThreadParticipant | null>;
++  findParticipants(threadId: string): Promise<ProfessionalThreadParticipant[]>;
++  saveMessage(message: ProfessionalMessage): Promise<void>;
++  findMessageById(id: string): Promise<ProfessionalMessage | null>;
++  findMessageByIdempotencyKey(threadId: string, idempotencyKey: string): Promise<ProfessionalMessage | null>;
++  findMessages(threadId: string): Promise<ProfessionalMessage[]>;
++  saveAttachment(attachment: ProfessionalMessageAttachment): Promise<void>;
++  findAttachments(messageId: string): Promise<ProfessionalMessageAttachment[]>;
++  clear(): void;
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/tests/canonical_care_plans_tasks_messaging_sprint22.test.ts /mnt/data/mindos-work/tests/canonical_care_plans_tasks_messaging_sprint22.test.ts
+--- /mnt/data/mindos-original/tests/canonical_care_plans_tasks_messaging_sprint22.test.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/tests/canonical_care_plans_tasks_messaging_sprint22.test.ts	2026-10-01 22:25:58.892882828 +0000
+@@ -0,0 +1,156 @@
++import { describe, it, before } from 'node:test';
++import assert from 'node:assert/strict';
++
++import {
++  CareRelationshipService,
++  CareRelationshipType,
++  CareRelationshipOriginType,
++  resetCareRelationshipsForTesting
++} from '../mindos/care_relationships/index.js';
++import { ConsentService } from '../mindos/consent/index.js';
++import { ProfessionalService } from '../mindos/professionals/service.js';
++import {
++  ProfessionalType,
++  ProfessionalState,
++  ProfessionalVerificationState,
++  DeliveryMode,
++  ProfileVisibility
++} from '../mindos/professionals/domain/types.js';
++import {
++  ClinicalTaskService,
++  ClinicalTaskType,
++  ClinicalTaskAssigneeType,
++  ClinicalTaskCompletionAuthority,
++  ClinicalTaskEvidenceType,
++  ClinicalTaskState,
++  resetClinicalTasksForTesting
++} from '../mindos/clinical_tasks/index.js';
++import {
++  ProfessionalMessagingService,
++  ProfessionalThreadType,
++  ThreadParticipantType,
++  ProfessionalMessageType,
++  ProfessionalThreadStatus,
++  resetProfessionalMessagingForTesting
++} from '../mindos/professional_messaging/index.js';
++import { CarePlanService, resetCarePlansForTesting, CarePlanType } from '../mindos/care_plans/index.js';
++import { AuthorizationError, DomainInvariantError } from '../mindos/platform/errors/index.js';
++
++const userId = 'user-s22-0001';
++const professionalId = 'prof-s22-0001';
++let relationshipId = '';
++
++describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professional Messaging', () => {
++  before(async () => {
++    ConsentService.resetForTesting();
++    resetCareRelationshipsForTesting();
++    resetClinicalTasksForTesting();
++    resetProfessionalMessagingForTesting();
++    resetCarePlansForTesting();
++
++    ConsentService.recordConsent({ userId, consentType: 'CLINICAL_CONSULTATION', status: 'GRANTED' });
++    await ProfessionalService.getRepository().saveProfile({
++      id: professionalId,
++      user_id: 'user-prof-s22-0001',
++      professional_type: ProfessionalType.CLINICAL_PSYCHOLOGIST,
++      display_name: 'Sprint 22 Test Clinician',
++      legal_name_reference: 'Sprint 22 Test Clinician',
++      status: ProfessionalState.ACTIVE,
++      verification_status: ProfessionalVerificationState.VERIFIED,
++      jurisdictions: ['KE'], languages: ['en'], specialties: ['TEST'],
++      delivery_modes: [DeliveryMode.TELEHEALTH], organization_refs: [],
++      profile_visibility: ProfileVisibility.INTERNAL_ONLY,
++      created_at: new Date().toISOString(), updated_at: new Date().toISOString()
++    });
++    const relationship = await CareRelationshipService.createRelationship({
++      subjectUserId: userId,
++      primaryProviderId: professionalId,
++      relationshipType: CareRelationshipType.PSYCHOLOGY,
++      originType: CareRelationshipOriginType.CARE_NAVIGATION,
++      originReference: 'sprint-22-reconciliation',
++      jurisdiction: 'KE', purpose: 'CARE_DELIVERY', activateImmediately: true,
++      actorId: professionalId
++    });
++    relationshipId = relationship.id;
++  });
++
++  it('does not invent a care-plan review cadence', async () => {
++    await assert.rejects(
++      () => CarePlanService.createDraftPlan({
++        relationshipId, authorProfessionalId: professionalId,
++        planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
++        summary: 'Governed plan', actorId: professionalId
++      }),
++      (err: Error) => err instanceof DomainInvariantError && /review frequency/i.test(err.message)
++    );
++  });
++
++  it('enforces task dependencies and rejects cycles', async () => {
++    const first = await ClinicalTaskService.createTask({
++      care_relationship_id: relationshipId,
++      task_type: ClinicalTaskType.USER_ACTION,
++      assigned_to_type: ClinicalTaskAssigneeType.USER,
++      assigned_to_id: userId,
++      title: 'First governed action', instruction_reference: 'instruction:first',
++      source_type: 'CARE_PLAN', source_reference: 'plan:test', policy_version: 'test-v1',
++      creator_professional_id: professionalId
++    });
++    assert.equal(first.status, ClinicalTaskState.READY);
++
++    const second = await ClinicalTaskService.createTask({
++      care_relationship_id: relationshipId,
++      task_type: ClinicalTaskType.USER_ACTION,
++      assigned_to_type: ClinicalTaskAssigneeType.USER,
++      assigned_to_id: userId,
++      title: 'Dependent action', instruction_reference: 'instruction:second',
++      source_type: 'CARE_PLAN', source_reference: 'plan:test', policy_version: 'test-v1',
++      dependency_task_ids: [first.id], creator_professional_id: professionalId
++    });
++    assert.equal(second.status, ClinicalTaskState.BLOCKED);
++    await assert.rejects(() => ClinicalTaskService.addDependency(first.id, second.id), DomainInvariantError);
++  });
++
++  it('requires owner-domain evidence for assessment task completion', async () => {
++    const task = await ClinicalTaskService.createTask({
++      care_relationship_id: relationshipId, task_type: ClinicalTaskType.ASSESSMENT,
++      assigned_to_type: ClinicalTaskAssigneeType.USER, assigned_to_id: userId,
++      title: 'Assessment', instruction_reference: 'assessment:PHQ9',
++      source_type: 'CARE_PLAN', source_reference: 'plan:test', policy_version: 'test-v1',
++      completion_authority: ClinicalTaskCompletionAuthority.OWNER_DOMAIN,
++      owner_domain: 'assessments', creator_professional_id: professionalId
++    });
++    await assert.rejects(() => ClinicalTaskService.completeTask({
++      task_id: task.id, actor_id: userId, actor_type: ClinicalTaskAssigneeType.USER,
++      evidence_type: ClinicalTaskEvidenceType.USER_ATTESTATION, evidence_reference: 'self-report'
++    }), AuthorizationError);
++    const completed = await ClinicalTaskService.completeTask({
++      task_id: task.id, actor_id: 'assessment-service', actor_type: ClinicalTaskAssigneeType.SYSTEM,
++      completion_source: 'assessments', evidence_type: ClinicalTaskEvidenceType.DOMAIN_EVENT,
++      evidence_reference: 'assessment.completed:event-1'
++    });
++    assert.equal(completed.status, ClinicalTaskState.COMPLETED);
++  });
++
++  it('creates relationship-scoped care messaging without pretending safety monitoring is configured', async () => {
++    const thread = await ProfessionalMessagingService.openThread({
++      care_relationship_id: relationshipId, thread_type: ProfessionalThreadType.CARE_COMMUNICATION,
++      purpose: 'CARE_COORDINATION', created_by: userId, creator_type: ThreadParticipantType.USER,
++      professional_id: professionalId
++    });
++    assert.equal(thread.status, ProfessionalThreadStatus.OPEN);
++    assert.equal(thread.response_expectation_reference, 'MESSAGING_NOT_EMERGENCY_MONITORING');
++
++    const message = await ProfessionalMessagingService.sendMessage({
++      thread_id: thread.id, sender_type: ThreadParticipantType.USER, sender_id: userId,
++      message_type: ProfessionalMessageType.TEXT, content_reference: 'protected-message:001',
++      idempotency_key: 's22-message-001'
++    });
++    assert.equal(message.safety_monitoring_status, 'NOT_CONFIGURED');
++    const retry = await ProfessionalMessagingService.sendMessage({
++      thread_id: thread.id, sender_type: ThreadParticipantType.USER, sender_id: userId,
++      message_type: ProfessionalMessageType.TEXT, content_reference: 'protected-message:001',
++      idempotency_key: 's22-message-001'
++    });
++    assert.equal(retry.id, message.id);
++  });
++});
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=build' /mnt/data/mindos-original/tests/canonical_longitudinal_outcomes_sprint23.test.ts /mnt/data/mindos-work/tests/canonical_longitudinal_outcomes_sprint23.test.ts
+--- /mnt/data/mindos-original/tests/canonical_longitudinal_outcomes_sprint23.test.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/mindos-work/tests/canonical_longitudinal_outcomes_sprint23.test.ts	2026-10-01 22:25:58.893857563 +0000
+@@ -0,0 +1,69 @@
++import { describe, it, beforeEach } from 'node:test';
++import assert from 'node:assert/strict';
++import { OutcomeTrendEngine } from '../mindos/outcomes/trends/trend_engine.js';
++import { ClinicalChangeRuleRegistry } from '../mindos/outcomes/trends/clinical_change_rules.js';
++import {
++  OutcomeDirectionality,
++  OutcomeMeasureType,
++  OutcomeValueType,
++  OutcomeMeasurementValidity,
++  ClinicalProvenance,
++  OutcomeTrendState
++} from '../mindos/outcomes/domain/types.js';
++import { OutcomeSeries } from '../mindos/outcomes/domain/entities.js';
++
++function series(directionality: OutcomeDirectionality, values: number[]): OutcomeSeries {
++  const now = new Date().toISOString();
++  return {
++    subject_user_id: 'user-s23', measure_code: 'TEST_MEASURE',
++    measure_definition: {
++      id: 'measure-test', measure_code: 'TEST_MEASURE', name: 'Test Measure', description: 'Synthetic only',
++      measure_type: OutcomeMeasureType.PROFESSIONAL_RATING, unit: 'score', value_type: OutcomeValueType.DECIMAL,
++      directionality, population: 'TEST', jurisdiction: 'KE', source_domain: 'test',
++      comparability_policy_id: 'policy-test', status: 'ACTIVE', created_at: now
++    },
++    measurements: values.map((value, i) => ({
++      id: `m-${i}`, subject_user_id: 'user-s23', measure_definition_id: 'measure-test', measure_code: 'TEST_MEASURE',
++      value, unit: 'score', measured_at: new Date(Date.now()+i*1000).toISOString(), recorded_at: now,
++      source_type: 'TEST', source_reference: `source-${i}`, provenance: ClinicalProvenance.PROFESSIONAL_RECORDED,
++      validity_status: OutcomeMeasurementValidity.VALID, created_at: now
++    })),
++    comparability_status: 'COMPARABLE', baseline_measurement_id: 'm-0', latest_measurement_id: `m-${values.length-1}`,
++    series_version: 1
++  };
++}
++
++describe('MindOS Sprint 23 reconciliation: governed longitudinal outcome interpretation', () => {
++  beforeEach(() => ClinicalChangeRuleRegistry.clear());
++
++  it('returns UNKNOWN instead of inventing clinical thresholds when no approved rule exists', () => {
++    const trend = OutcomeTrendEngine.evaluateSeries(series(OutcomeDirectionality.LOWER_IS_BETTER, [10, 14]));
++    assert.equal(trend.trend_state, OutcomeTrendState.UNKNOWN);
++    assert.equal(trend.is_clinically_significant, false);
++    assert.equal(trend.requires_review, true);
++    assert.ok(trend.reason_codes.includes('CLINICAL_CHANGE_RULE_NOT_CONFIGURED'));
++  });
++
++  it('uses an explicitly approved, versioned clinical rule when one is registered', () => {
++    ClinicalChangeRuleRegistry.register({
++      rule: { measure_code: 'TEST_MEASURE', mcid: 3, critical_worsening_threshold: 6 },
++      clinical_artifact_id: 'clinical-artifact-test', clinical_artifact_version: '1',
++      approved_by: 'qualified-test-reviewer', approved_at: new Date().toISOString(), policy_version: 'test-policy-v1'
++    });
++    const trend = OutcomeTrendEngine.evaluateSeries(series(OutcomeDirectionality.LOWER_IS_BETTER, [10, 14]));
++    assert.equal(trend.trend_state, OutcomeTrendState.WORSENING);
++    assert.equal(trend.is_clinically_significant, true);
++    assert.ok(trend.reason_codes.some(code => code.startsWith('GOVERNED_RULE:')));
++  });
++
++  it('does not invent a target range for TARGET_RANGE measures', () => {
++    ClinicalChangeRuleRegistry.register({
++      rule: { measure_code: 'TEST_MEASURE', mcid: 1 },
++      clinical_artifact_id: 'clinical-artifact-test', clinical_artifact_version: '1',
++      approved_by: 'qualified-test-reviewer', approved_at: new Date().toISOString(), policy_version: 'test-policy-v1'
++    });
++    const trend = OutcomeTrendEngine.evaluateSeries(series(OutcomeDirectionality.TARGET_RANGE, [5, 7]));
++    assert.equal(trend.trend_state, OutcomeTrendState.UNKNOWN);
++    assert.ok(trend.reason_codes.includes('APPROVED_TARGET_RANGE_NOT_CONFIGURED'));
++  });
++});
