@@ -28,7 +28,7 @@
       "number": "22",
       "title": "Care Plans, Clinical Tasks & Professional Messaging",
       "status": "PARTIAL",
-      "note": "Reconciliation patch prepared: Care Plans corrected, canonical Clinical Tasks added, Professional Messaging added, migration 020 and Sprint-22 reconciliation tests added. Full dependency-backed test run and runtime wiring still pending."
+      "note": "Product experience + actual Clinical Tasks + Professional Messaging source, migration 020 and Sprint-22 tests are now committed to GitHub. Care Plan reconciliation is published in the patch. Full baseline import, PostgreSQL adapters, API/runtime wiring and executable regression remain pending."
     },
     {
       "number": "23",
@@ -44,6 +44,16 @@
     }
   ],
   "timeline": [
+    {
+      "date": "02 Oct 2026",
+      "title": "Sprint 22 source committed",
+      "detail": "Clinical Tasks, Professional Messaging, migration 020 and Sprint-22 tests committed at canonical repository paths; full reconciliation patch published."
+    },
+    {
+      "date": "02 Oct 2026",
+      "title": "Product experience committed",
+      "detail": "GitHub Pages root now contains the interactive User, Professional and Operations MindOS experience; engineering tracker moved to /tracker.html."
+    },
     {
       "date": "02 Oct 2026",
       "title": "Prototype absorbed",
@@ -74,5 +84,16 @@
       "title": "Pages deployment prepared",
       "detail": "Tracker workflow is committed. Repository Settings → Pages must select GitHub Actions before deployment can succeed."
     }
-  ]
+  ],
+  "experience": {
+    "status": "IMPLEMENTED_IN_GITHUB",
+    "root": "docs/index.html",
+    "workspaces": [
+      "User",
+      "Professional",
+      "Operations"
+    ],
+    "tracker": "docs/tracker.html",
+    "note": "Static interactive prototype is committed. Pages deployment remains blocked until repository Pages is enabled with GitHub Actions."
+  }
 }
