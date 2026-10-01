@@ -42,7 +42,7 @@
       <section>
         <div class="eyebrow">MindOS / Engineering Control Surface</div>
         <h1>Build Tracker</h1>
-        <div class="lede">Live implementation status for the MindOS prototype. This page tracks what exists in code, what has been reconciled against the canonical sprint specification, and what is still blocked—separately from documentation progress.</div>
+        <div class="lede">Live implementation status for the MindOS prototype. This page tracks what exists in code, what has been reconciled against the canonical sprint specification, and what is still blocked—separately from documentation progress.</div><div id="pages-state" class="notice" style="display:none"></div>
       </section>
       <aside class="meta">
         <small>Repository baseline</small>
@@ -118,7 +118,7 @@ const badge = s => {
   return '<span class="status '+(map[s]||'blue')+'">'+s.replaceAll('_',' ')+'</span>';
 };
 fetch('./status.json',{cache:'no-store'}).then(r=>r.json()).then(data=>{
-  document.getElementById('updated').textContent='Updated '+data.updated;
+  document.getElementById('updated').textContent='Updated '+data.updated; if(data.pages && data.pages.activation!=='ENABLED'){const el=document.getElementById('pages-state');el.style.display='block';el.textContent='Pages activation required: '+data.pages.note;}
   document.getElementById('sprints').innerHTML=data.sprints.map(s=>'<div class="sprint"><div class="sprint-num">S'+s.number+'</div><div><h3>'+s.title+'</h3><p>'+s.note+'</p></div>'+badge(s.status)+'</div>').join('');
   document.getElementById('timeline').innerHTML=data.timeline.map(e=>'<div class="event"><time>'+e.date+'</time><h3>'+e.title+'</h3><div class="muted">'+e.detail+'</div></div>').join('');
 }).catch(()=>{
