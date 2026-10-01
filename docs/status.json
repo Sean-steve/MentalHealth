@@ -1,5 +1,10 @@
 {
   "updated": "2026-10-02",
+  "pages": {
+    "deployment": "READY",
+    "activation": "REQUIRES_REPOSITORY_SETTINGS",
+    "note": "Static tracker and GitHub Actions workflow are committed. The connected GitHub integration cannot enable Pages because repository administration permission is not available."
+  },
   "sprints": [
     {
       "number": "1–18",
@@ -23,13 +28,13 @@
       "number": "22",
       "title": "Care Plans, Clinical Tasks & Professional Messaging",
       "status": "PARTIAL",
-      "note": "Care Plan implementation is reusable. Clinical Tasks are incomplete and Professional Messaging is absent. Not accepted as complete."
+      "note": "Reconciliation patch prepared: Care Plans corrected, canonical Clinical Tasks added, Professional Messaging added, migration 020 and Sprint-22 reconciliation tests added. Full dependency-backed test run and runtime wiring still pending."
     },
     {
       "number": "23",
       "title": "Longitudinal Clinical Record & Outcomes",
       "status": "PARTIAL",
-      "note": "Strong prototype foundation exists, but clinical-threshold governance, persistence, API wiring and canonical tests require reconciliation."
+      "note": "Reconciliation patch prepared: hard-coded clinical thresholds removed, governance-supplied change rules required, authorization typing and event/audit minimization corrected, migration 021 and Sprint-23 tests added. Full dependency-backed test run/runtime wiring still pending."
     },
     {
       "number": "24",
@@ -51,18 +56,23 @@
     },
     {
       "date": "02 Oct 2026",
-      "title": "Sprint 22/23 pre-work identified",
-      "detail": "Later-domain files found and classified as unaccepted pre-existing implementation rather than completed sprints."
+      "title": "Sprint 22 structurally reconciled",
+      "detail": "Care Plan clinical defaults/fail-open behavior corrected; Clinical Tasks and relationship-scoped Professional Messaging boundaries added in the reconciled prototype."
     },
     {
       "date": "02 Oct 2026",
-      "title": "Reconciliation started",
-      "detail": "Missing domain boundaries, persistence/API gaps, authorization typing and clinical-rule governance issues identified."
+      "title": "Sprint 23 safety reconciliation",
+      "detail": "Invented clinical thresholds removed. Outcome interpretation now requires explicit approved governance rules; authorization and clinical-data minimization issues corrected."
     },
     {
       "date": "02 Oct 2026",
-      "title": "Pages tracker prepared",
-      "detail": "This public-safe implementation tracker is now versioned with the repository."
+      "title": "Persistence/test reconciliation",
+      "detail": "Migrations 020/021 and reconciliation tests created; targeted TypeScript analysis found zero new non-environment errors."
+    },
+    {
+      "date": "02 Oct 2026",
+      "title": "Pages deployment prepared",
+      "detail": "Tracker workflow is committed. Repository Settings → Pages must select GitHub Actions before deployment can succeed."
     }
   ]
 }
