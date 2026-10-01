@@ -1,0 +1,48 @@
+import { ClinicalTaskState } from '../../platform/shared/state_machines.js';
+
+export { ClinicalTaskState };
+
+export enum ClinicalTaskType {
+  USER_ACTION = 'USER_ACTION',
+  PROFESSIONAL_FOLLOW_UP = 'PROFESSIONAL_FOLLOW_UP',
+  ASSESSMENT = 'ASSESSMENT',
+  CONTENT = 'CONTENT',
+  EXERCISE = 'EXERCISE',
+  APPOINTMENT = 'APPOINTMENT',
+  CARE_REVIEW = 'CARE_REVIEW',
+  SAFETY_FOLLOW_UP = 'SAFETY_FOLLOW_UP',
+  CARE_COORDINATION = 'CARE_COORDINATION',
+  DOCUMENT_REVIEW = 'DOCUMENT_REVIEW'
+}
+
+export enum ClinicalTaskAssigneeType {
+  USER = 'USER',
+  PROFESSIONAL = 'PROFESSIONAL',
+  CARE_TEAM_ROLE = 'CARE_TEAM_ROLE',
+  SYSTEM = 'SYSTEM'
+}
+
+export enum ClinicalTaskPriority {
+  ROUTINE = 'ROUTINE',
+  NORMAL = 'NORMAL',
+  HIGH = 'HIGH',
+  CRITICAL = 'CRITICAL'
+}
+
+export enum ClinicalTaskCompletionAuthority {
+  USER_SELF_REPORT = 'USER_SELF_REPORT',
+  PROFESSIONAL = 'PROFESSIONAL',
+  OWNER_DOMAIN = 'OWNER_DOMAIN',
+  SYSTEM = 'SYSTEM'
+}
+
+export enum ClinicalTaskDependencyType {
+  COMPLETION_REQUIRED = 'COMPLETION_REQUIRED'
+}
+
+export enum ClinicalTaskEvidenceType {
+  USER_ATTESTATION = 'USER_ATTESTATION',
+  PROFESSIONAL_ATTESTATION = 'PROFESSIONAL_ATTESTATION',
+  DOMAIN_EVENT = 'DOMAIN_EVENT',
+  RESOURCE_REFERENCE = 'RESOURCE_REFERENCE'
+}
