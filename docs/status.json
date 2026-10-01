@@ -1,0 +1,68 @@
+{
+  "updated": "2026-10-02",
+  "sprints": [
+    {
+      "number": "1–18",
+      "title": "Platform through Care Navigation",
+      "status": "PROTOTYPE",
+      "note": "Substantial source and canonical test coverage exist. Full clean-environment regression verification is still required."
+    },
+    {
+      "number": "19–20",
+      "title": "Professional Network & Appointments",
+      "status": "PROTOTYPE",
+      "note": "Domain code, canonical tests and migrations exist; main runtime wiring still lags the domain implementation."
+    },
+    {
+      "number": "21",
+      "title": "Care Relationships & Clinical Workspace",
+      "status": "PARTIAL",
+      "note": "Domain code and canonical Sprint-21 tests exist. Production persistence and main API/runtime integration remain reconciliation work."
+    },
+    {
+      "number": "22",
+      "title": "Care Plans, Clinical Tasks & Professional Messaging",
+      "status": "PARTIAL",
+      "note": "Care Plan implementation is reusable. Clinical Tasks are incomplete and Professional Messaging is absent. Not accepted as complete."
+    },
+    {
+      "number": "23",
+      "title": "Longitudinal Clinical Record & Outcomes",
+      "status": "PARTIAL",
+      "note": "Strong prototype foundation exists, but clinical-threshold governance, persistence, API wiring and canonical tests require reconciliation."
+    },
+    {
+      "number": "24",
+      "title": "Clinical Operations & Human Escalation",
+      "status": "PLANNED",
+      "note": "Canonical sprint prompt exists; implementation has not started in the audited prototype."
+    }
+  ],
+  "timeline": [
+    {
+      "date": "02 Oct 2026",
+      "title": "Prototype absorbed",
+      "detail": "Uploaded Sprint-21 prototype unpacked and statically audited."
+    },
+    {
+      "date": "02 Oct 2026",
+      "title": "GitHub baseline established",
+      "detail": "Private Sean-steve/MentalHealth repository initialized as the MindOS working record."
+    },
+    {
+      "date": "02 Oct 2026",
+      "title": "Sprint 22/23 pre-work identified",
+      "detail": "Later-domain files found and classified as unaccepted pre-existing implementation rather than completed sprints."
+    },
+    {
+      "date": "02 Oct 2026",
+      "title": "Reconciliation started",
+      "detail": "Missing domain boundaries, persistence/API gaps, authorization typing and clinical-rule governance issues identified."
+    },
+    {
+      "date": "02 Oct 2026",
+      "title": "Pages tracker prepared",
+      "detail": "This public-safe implementation tracker is now versioned with the repository."
+    }
+  ]
+}
