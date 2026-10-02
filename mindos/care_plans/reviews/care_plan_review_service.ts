@@ -82,7 +82,7 @@ export class CarePlanReviewService {
     }
 
     await CarePlanReviewService.repository.savePlanReview(review);
-    EventBus.enqueue('care.plan_review_completed','care_plans',review.id,DataClassification.RESTRICTED,{
+    EventBus.enqueue('care.plan_review_completed','care_plans',review.id,DataClassification.CLINICAL_RECORD,{
       review_id:review.id,plan_id:review.care_plan_id,outcome:review.outcome,new_version_id:review.new_version_id
     });
     AuditService.record({
