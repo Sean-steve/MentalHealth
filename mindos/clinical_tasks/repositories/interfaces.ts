@@ -4,6 +4,7 @@ export interface IClinicalTaskRepository {
   saveTask(task: ClinicalTask): Promise<void>;
   findTaskById(id: string): Promise<ClinicalTask | null>;
   findTasksByRelationshipId(relationshipId: string): Promise<ClinicalTask[]>;
+  findTasksByPlanId(planId: string): Promise<ClinicalTask[]>;
   findTasksByAssignee(assigneeType: string, assigneeId: string): Promise<ClinicalTask[]>;
   findTaskByIdempotencyKey(key: string): Promise<ClinicalTask | null>;
   saveDependency(dependency: ClinicalTaskDependency): Promise<void>;
