@@ -1,6 +1,6 @@
 import { getPool } from '../../platform/database/index.js';
 import { IClinicalTaskRepository } from './interfaces.js';
-import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence } from '../domain/entities.js';
+import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence, ClinicalTaskReminderReceipt } from '../domain/entities.js';
 import {
   ClinicalTaskState,
   ClinicalTaskType,
@@ -29,6 +29,9 @@ type TaskRow = {
   started_at: string | null;
   completed_at: string | null;
   recurrence_rule: string | null;
+  recurrence_parent_task_id: string | null;
+  recurrence_sequence: number;
+  created_by_professional_id: string;
   source_type: string;
   source_reference: string;
   completion_authority: string;
@@ -55,6 +58,14 @@ type EvidenceRow = {
   recorded_at: string;
 };
 
+type ReminderReceiptRow = {
+  id: string;
+  task_id: string;
+  reminder_key: string;
+  notification_reference: string | null;
+  sent_at: string;
+};
+
 const toTask = (row: TaskRow): ClinicalTask => ({
   id: row.id,
   subject_user_id: row.subject_user_id,
@@ -73,6 +84,9 @@ const toTask = (row: TaskRow): ClinicalTask => ({
   started_at: row.started_at || undefined,
   completed_at: row.completed_at || undefined,
   recurrence_rule: row.recurrence_rule || undefined,
+  recurrence_parent_task_id: row.recurrence_parent_task_id || undefined,
+  recurrence_sequence: Number(row.recurrence_sequence || 0),
+  created_by_professional_id: row.created_by_professional_id,
   source_type: row.source_type,
   source_reference: row.source_reference,
   completion_authority: row.completion_authority as ClinicalTaskCompletionAuthority,
@@ -99,16 +113,25 @@ const toEvidence = (row: EvidenceRow): ClinicalTaskEvidence => ({
   recorded_at: row.recorded_at
 });
 
+const toReminderReceipt = (row: ReminderReceiptRow): ClinicalTaskReminderReceipt => ({
+  id: row.id,
+  task_id: row.task_id,
+  reminder_key: row.reminder_key,
+  notification_reference: row.notification_reference || undefined,
+  sent_at: row.sent_at
+});
+
 export class PgClinicalTaskRepository implements IClinicalTaskRepository {
   public async saveTask(task: ClinicalTask): Promise<void> {
     const pool = getPool();
     await pool.query(
-      'INSERT INTO clinical_tasks (id, subject_user_id, care_relationship_id, care_plan_id, care_goal_id, task_type, assigned_to_type, assigned_to_id, status, priority, title, instruction_reference, due_at, started_at, completed_at, recurrence_rule, source_type, source_reference, completion_authority, owner_domain, policy_version, idempotency_key, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, priority=EXCLUDED.priority, title=EXCLUDED.title, instruction_reference=EXCLUDED.instruction_reference, due_at=EXCLUDED.due_at, started_at=EXCLUDED.started_at, completed_at=EXCLUDED.completed_at, recurrence_rule=EXCLUDED.recurrence_rule, assigned_to_type=EXCLUDED.assigned_to_type, assigned_to_id=EXCLUDED.assigned_to_id, completion_authority=EXCLUDED.completion_authority, owner_domain=EXCLUDED.owner_domain, updated_at=EXCLUDED.updated_at',
+      'INSERT INTO clinical_tasks (id, subject_user_id, care_relationship_id, care_plan_id, care_goal_id, task_type, assigned_to_type, assigned_to_id, status, priority, title, instruction_reference, due_at, started_at, completed_at, recurrence_rule, recurrence_parent_task_id, recurrence_sequence, created_by_professional_id, source_type, source_reference, completion_authority, owner_domain, policy_version, idempotency_key, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27) ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, priority=EXCLUDED.priority, title=EXCLUDED.title, instruction_reference=EXCLUDED.instruction_reference, due_at=EXCLUDED.due_at, started_at=EXCLUDED.started_at, completed_at=EXCLUDED.completed_at, recurrence_rule=EXCLUDED.recurrence_rule, recurrence_parent_task_id=EXCLUDED.recurrence_parent_task_id, recurrence_sequence=EXCLUDED.recurrence_sequence, assigned_to_type=EXCLUDED.assigned_to_type, assigned_to_id=EXCLUDED.assigned_to_id, completion_authority=EXCLUDED.completion_authority, owner_domain=EXCLUDED.owner_domain, updated_at=EXCLUDED.updated_at',
       [
         task.id, task.subject_user_id, task.care_relationship_id, task.care_plan_id || null,
         task.care_goal_id || null, task.task_type, task.assigned_to_type, task.assigned_to_id,
         task.status, task.priority, task.title, task.instruction_reference, task.due_at || null,
         task.started_at || null, task.completed_at || null, task.recurrence_rule || null,
+        task.recurrence_parent_task_id || null, task.recurrence_sequence || 0, task.created_by_professional_id,
         task.source_type, task.source_reference, task.completion_authority, task.owner_domain || null,
         task.policy_version, task.idempotency_key || null, task.created_at, task.updated_at
       ]
@@ -187,6 +210,21 @@ export class PgClinicalTaskRepository implements IClinicalTaskRepository {
     return res.rows.map(toEvidence);
   }
 
+  public async saveReminderReceipt(receipt: ClinicalTaskReminderReceipt): Promise<void> {
+    await getPool().query(
+      'INSERT INTO clinical_task_reminder_receipts (id, task_id, reminder_key, notification_reference, sent_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (task_id, reminder_key) DO NOTHING',
+      [receipt.id, receipt.task_id, receipt.reminder_key, receipt.notification_reference || null, receipt.sent_at]
+    );
+  }
+
+  public async findReminderReceipt(taskId: string, reminderKey: string): Promise<ClinicalTaskReminderReceipt | null> {
+    const res = await getPool().query<ReminderReceiptRow>(
+      'SELECT * FROM clinical_task_reminder_receipts WHERE task_id = $1 AND reminder_key = $2',
+      [taskId, reminderKey]
+    );
+    return res.rows[0] ? toReminderReceipt(res.rows[0]) : null;
+  }
+
   public async listTasks(): Promise<ClinicalTask[]> {
     const res = await getPool().query<TaskRow>('SELECT * FROM clinical_tasks ORDER BY created_at ASC, id ASC');
     return res.rows.map(toTask);
@@ -194,6 +232,7 @@ export class PgClinicalTaskRepository implements IClinicalTaskRepository {
 
   public async clear(): Promise<void> {
     const pool = getPool();
+    await pool.query('DELETE FROM clinical_task_reminder_receipts');
     await pool.query('DELETE FROM clinical_task_evidence');
     await pool.query('DELETE FROM clinical_task_dependencies');
     await pool.query('DELETE FROM clinical_tasks');
