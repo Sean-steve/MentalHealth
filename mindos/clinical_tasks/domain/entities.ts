@@ -26,6 +26,9 @@ export interface ClinicalTask {
   started_at?: string;
   completed_at?: string;
   recurrence_rule?: string;
+  recurrence_parent_task_id?: string;
+  recurrence_sequence?: number;
+  created_by_professional_id: string;
   source_type: string;
   source_reference: string;
   completion_authority: ClinicalTaskCompletionAuthority;
@@ -50,4 +53,12 @@ export interface ClinicalTaskEvidence {
   evidence_reference: string;
   recorded_by: string;
   recorded_at: string;
+}
+
+export interface ClinicalTaskReminderReceipt {
+  id: string;
+  task_id: string;
+  reminder_key: string;
+  notification_reference?: string;
+  sent_at: string;
 }
