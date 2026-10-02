@@ -10,8 +10,17 @@ export interface ProfessionalMessagingSafetyPort {
   }): Promise<{ configured: boolean; candidate_signal: boolean; safety_reference?: string }>;
 }
 
+export interface ProfessionalMessagingNotificationRecipient {
+  actor_type: ThreadParticipantType;
+  actor_id: string;
+}
+
 export interface ProfessionalMessagingNotificationPort {
-  notifyNewMessage(params: { thread_id: string; message_id: string; recipient_ids: string[] }): Promise<{ accepted: boolean }>;
+  notifyNewMessage(params: {
+    thread_id: string;
+    message_id: string;
+    recipients: ProfessionalMessagingNotificationRecipient[];
+  }): Promise<{ accepted: boolean }>;
 }
 
 export interface MessagingAvailabilityPolicyPort {
