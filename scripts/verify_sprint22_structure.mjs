@@ -13,6 +13,9 @@ const required=[
   'mindos/care_plans/api/routes.ts',
   'mindos/clinical_tasks/domain/types.ts',
   'mindos/clinical_tasks/application/clinical_task_service.ts',
+  'mindos/clinical_tasks/adapters/notification_adapter.ts',
+  'mindos/clinical_tasks/application/clinical_task_scheduler.ts',
+  'mindos/clinical_tasks/application/ports.ts',
   'mindos/clinical_tasks/repositories/interfaces.ts',
   'mindos/clinical_tasks/repositories/in_memory_clinical_task_repository.ts',
   'mindos/clinical_tasks/repositories/pg_clinical_task_repository.ts',
@@ -36,6 +39,8 @@ for(const p of required) if(!fs.existsSync(path.join(root,p))) failures.push(`mi
 if(failures.length===0){
   const plan=read('mindos/care_plans/plans/care_plan_service.ts');
   const task=read('mindos/clinical_tasks/application/clinical_task_service.ts');
+  const scheduler=read('mindos/clinical_tasks/application/clinical_task_scheduler.ts');
+  const taskPorts=read('mindos/clinical_tasks/application/ports.ts');
   const taskApi=read('mindos/clinical_tasks/api/routes.ts');
   const progress=read('mindos/care_plans/progress/care_plan_progress_service.ts');
   const messaging=read('mindos/professional_messaging/application/professional_messaging_service.ts');
@@ -55,6 +60,9 @@ if(failures.length===0){
   if(!plan.includes('createPlanWithInitialVersion')) failures.push('care plan creation is not atomic');
   if(/reviewFrequencyDays\s*\?\?\s*30|reviewFrequencyDays\s*\|\|\s*30/.test(plan)) failures.push('care plan invents a 30-day review cadence');
   if(!task.includes('trusted system actor')) failures.push('owner-domain completion is not restricted to trusted system actors');
+  if(!scheduler.includes('Creates at most one next occurrence')||!scheduler.includes('recurrence:')) failures.push('bounded recurrence scheduler missing');
+  if(!scheduler.includes('findReminderReceipt')||!migration.includes('clinical_task_reminder_receipts')) failures.push('reminder idempotency persistence missing');
+  if(!taskPorts.includes('RECURRENCE_POLICY_NOT_CONFIGURED')) failures.push('recurrence does not fail explicitly when policy is absent');
   if(taskApi.includes('complete-as-domain')) {
     const activeRoute=/\.post\([^\n]*complete-as-domain/.test(taskApi);
     if(activeRoute) failures.push('external owner-domain completion route exists');
