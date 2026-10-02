@@ -1,4 +1,4 @@
-import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence } from '../domain/entities.js';
+import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence, ClinicalTaskReminderReceipt } from '../domain/entities.js';
 
 export interface IClinicalTaskRepository {
   saveTask(task: ClinicalTask): Promise<void>;
@@ -12,6 +12,8 @@ export interface IClinicalTaskRepository {
   findDependents(taskId: string): Promise<ClinicalTaskDependency[]>;
   saveEvidence(evidence: ClinicalTaskEvidence): Promise<void>;
   findEvidence(taskId: string): Promise<ClinicalTaskEvidence[]>;
+  saveReminderReceipt(receipt: ClinicalTaskReminderReceipt): Promise<void>;
+  findReminderReceipt(taskId: string, reminderKey: string): Promise<ClinicalTaskReminderReceipt | null>;
   listTasks(): Promise<ClinicalTask[]>;
   clear(): void;
 }
