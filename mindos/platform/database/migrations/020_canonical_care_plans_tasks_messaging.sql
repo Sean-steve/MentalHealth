@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS care_interventions (
   intervention_type VARCHAR(80) NOT NULL,
   reference_type VARCHAR(80),
   reference_id VARCHAR(160),
+  title VARCHAR(240) NOT NULL,
   frequency TEXT NOT NULL,
   duration TEXT,
   schedule_reference VARCHAR(240),
