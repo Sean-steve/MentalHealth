@@ -212,8 +212,13 @@ export class ProfessionalMessagingService {
       });
     }
     const recipients = (await ProfessionalMessagingService.repository.findParticipants(thread.id))
-      .filter(p => p.status === ThreadParticipantStatus.ACTIVE && p.actor_id !== params.sender_id).map(p => p.actor_id);
-    await ProfessionalMessagingService.notificationPort.notifyNewMessage({ thread_id: thread.id, message_id: message.id, recipient_ids: recipients });
+      .filter(p => p.status === ThreadParticipantStatus.ACTIVE && p.actor_id !== params.sender_id)
+      .map(p => ({ actor_type: p.actor_type, actor_id: p.actor_id }));
+    await ProfessionalMessagingService.notificationPort.notifyNewMessage({
+      thread_id: thread.id,
+      message_id: message.id,
+      recipients
+    });
     return message;
   }
 
