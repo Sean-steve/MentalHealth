@@ -20,6 +20,8 @@ const required=[
   'mindos/professional_messaging/application/professional_messaging_service.ts',
   'mindos/professional_messaging/repositories/pg_professional_messaging_repository.ts',
   'mindos/professional_messaging/adapters/notification_adapter.ts',
+  'mindos/professional_messaging/adapters/safety_adapter.ts',
+  'mindos/professional_messaging/adapters/attachment_policy.ts',
   'mindos/professional_messaging/api/routes.ts',
   'mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql',
   'mindos/sprint22/runtime.ts',
@@ -37,6 +39,8 @@ if(failures.length===0){
   const taskApi=read('mindos/clinical_tasks/api/routes.ts');
   const progress=read('mindos/care_plans/progress/care_plan_progress_service.ts');
   const messaging=read('mindos/professional_messaging/application/professional_messaging_service.ts');
+  const messagingSafety=read('mindos/professional_messaging/adapters/safety_adapter.ts');
+  const attachmentPolicy=read('mindos/professional_messaging/adapters/attachment_policy.ts');
   const migration=read('mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql');
   const runtime=read('mindos/sprint22/runtime.ts');
   const server=read('server.ts');
@@ -57,6 +61,12 @@ if(failures.length===0){
   }
   if(!progress.includes('ClinicalTaskService.listTasksForPlan')) failures.push('care plan progress is not linked to real clinical tasks');
   if(!messaging.includes('NOT_CONFIGURED')) failures.push('messaging safety-unconfigured state is not explicit');
+  if(!messagingSafety.includes('ProtectedMessageSafetyScannerPort')||!messagingSafety.includes('SafetySignalForwarderPort')) failures.push('privacy-preserving messaging Safety bridge incomplete');
+  if(!attachmentPolicy.includes('DenyByDefaultMessagingAttachmentPolicy')||!messaging.includes('attachmentPolicyPort.validate')) failures.push('attachment policy is not deny-by-default');
+  for (const [name, source] of [['migration', migration], ['messaging', messaging]]) {
+    if (/;\\\\n|,\\\\n/.test(source)) failures.push(`${name} contains a literal \\n patch artifact`);
+    if (/[,;]\+\s{2,}/.test(source)) failures.push(`${name} contains a stray + patch artifact`);
+  }
   if(!runtime.includes('PgCarePlanRepository')||!runtime.includes('PgClinicalTaskRepository')||!runtime.includes('PgProfessionalMessagingRepository')){
     failures.push('Sprint 22 PostgreSQL runtime bootstrap incomplete');
   }
