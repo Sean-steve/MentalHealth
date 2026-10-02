@@ -286,6 +286,47 @@ export class ProfessionalMessagingService {
     if (!t) throw new NotFoundError(`ProfessionalMessageThread ${threadId} not found.`);
     return t;
   }
+  public static async getThreadForActor(threadId: string, actorId: string): Promise<ProfessionalMessageThread> {
+    const thread = await ProfessionalMessagingService.getThread(threadId);
+    const participant = await ProfessionalMessagingService.repository.findParticipant(thread.id, actorId);
+    if (!participant || participant.status !== ThreadParticipantStatus.ACTIVE) {
+      throw new AuthorizationError('Only active thread participants may access this care thread.', { errorCode: 'AUTHZ_003' });
+    }
+    if (participant.actor_type === ThreadParticipantType.USER) {
+      if (thread.subject_user_id !== actorId) {
+        throw new AuthorizationError('User may only access their own care thread.', { errorCode: 'AUTHZ_003' });
+      }
+    } else if (participant.actor_type === ThreadParticipantType.PROFESSIONAL) {
+      await RelationshipAccessEvaluator.assertAccess({
+        relationshipId: thread.care_relationship_id,
+        professionalId: actorId,
+        dataDomain: DataDomain.MESSAGING,
+        action: ActionPermission.READ,
+        purpose: 'CARE_COORDINATION'
+      });
+    }
+    return thread;
+  }
+
+  public static async listThreadsForRelationship(
+    relationshipId: string,
+    actorId: string
+  ): Promise<ProfessionalMessageThread[]> {
+    ProfessionalMessagingService.assertRepository();
+    const threads = await ProfessionalMessagingService.repository.findThreadsByRelationshipId(relationshipId);
+    const visible: ProfessionalMessageThread[] = [];
+    for (const thread of threads) {
+      try {
+        await ProfessionalMessagingService.getThreadForActor(thread.id, actorId);
+        visible.push(thread);
+      } catch (err) {
+        if (err instanceof AuthorizationError) continue;
+        throw err;
+      }
+    }
+    return visible;
+  }
+
   public static async getMessage(messageId: string): Promise<ProfessionalMessage> {
     ProfessionalMessagingService.assertRepository();
     const m = await ProfessionalMessagingService.repository.findMessageById(messageId);
