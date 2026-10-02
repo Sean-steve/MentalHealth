@@ -1,4 +1,5 @@
 import { DomainInvariantError } from '../../platform/errors/index.js';
+import { generateUUIDv7 } from '../../platform/database/uuid.js';
 import {
   ClinicalTaskState,
   ClinicalTaskAssigneeType
@@ -132,7 +133,7 @@ export class ClinicalTaskScheduler {
       }
 
       const receipt: ClinicalTaskReminderReceipt = {
-        id: await ClinicalTaskService.newId(),
+        id: generateUUIDv7(),
         task_id: task.id,
         reminder_key: key,
         notification_reference: result.notification_reference,
