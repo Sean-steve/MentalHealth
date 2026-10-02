@@ -27,6 +27,10 @@ import {
 } from '../domain/types.js';
 import { IProfessionalMessagingRepository } from '../repositories/interfaces.js';
 import {
+  ProfessionalMessagingAttachmentPolicyPort,
+  DenyByDefaultMessagingAttachmentPolicy
+} from '../adapters/attachment_policy.js';
+import {
   ProfessionalMessagingSafetyPort,
   ProfessionalMessagingNotificationPort,
   MessagingAvailabilityPolicyPort,
@@ -60,11 +64,13 @@ export class ProfessionalMessagingService {
   private static safetyPort: ProfessionalMessagingSafetyPort = new UnconfiguredMessagingSafetyAdapter();
   private static notificationPort: ProfessionalMessagingNotificationPort = new NoopProfessionalMessagingNotificationAdapter();
   private static availabilityPort: MessagingAvailabilityPolicyPort = new UnknownMessagingAvailabilityAdapter();
+  private static attachmentPolicyPort: ProfessionalMessagingAttachmentPolicyPort = new DenyByDefaultMessagingAttachmentPolicy();
 
   public static setRepository(repo: IProfessionalMessagingRepository): void { ProfessionalMessagingService.repository = repo; }
   public static setSafetyPort(port: ProfessionalMessagingSafetyPort): void { ProfessionalMessagingService.safetyPort = port; }
   public static setNotificationPort(port: ProfessionalMessagingNotificationPort): void { ProfessionalMessagingService.notificationPort = port; }
   public static setAvailabilityPolicyPort(port: MessagingAvailabilityPolicyPort): void { ProfessionalMessagingService.availabilityPort = port; }
+  public static setAttachmentPolicyPort(port: ProfessionalMessagingAttachmentPolicyPort): void { ProfessionalMessagingService.attachmentPolicyPort = port; }
 
   private static assertRepository(): void {
     if (!ProfessionalMessagingService.repository) throw new DomainInvariantError('ProfessionalMessagingRepository not initialized.');
