@@ -265,8 +265,13 @@ export class ClinicalTaskService {
   public static async completeTask(params: CompleteClinicalTaskParams): Promise<ClinicalTask> {
     const task = await ClinicalTaskService.getTask(params.task_id);
     if (task.completion_authority === ClinicalTaskCompletionAuthority.OWNER_DOMAIN) {
-      if (!params.completion_source || params.completion_source !== task.owner_domain) {
-        throw new AuthorizationError('This task can only be completed by its authoritative owning domain.', { errorCode: 'AUTHZ_004' });
+      if (params.actor_type !== ClinicalTaskAssigneeType.SYSTEM ||
+          !params.completion_source ||
+          params.completion_source !== task.owner_domain) {
+        throw new AuthorizationError(
+          'This task can only be completed by its authoritative owning domain through a trusted system actor.',
+          { errorCode: 'AUTHZ_004' }
+        );
       }
     } else if (task.completion_authority === ClinicalTaskCompletionAuthority.USER_SELF_REPORT) {
       if (params.actor_type !== ClinicalTaskAssigneeType.USER || params.actor_id !== task.assigned_to_id) {
