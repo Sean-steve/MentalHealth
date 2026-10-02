@@ -199,6 +199,11 @@ export class ClinicalTaskService {
     return ClinicalTaskService.repository.findTasksByRelationshipId(relationshipId);
   }
 
+  public static async listTasksForPlan(planId: string): Promise<ClinicalTask[]> {
+    ClinicalTaskService.assertRepository();
+    return ClinicalTaskService.repository.findTasksByPlanId(planId);
+  }
+
   public static async addDependency(taskId: string, dependsOnTaskId: string): Promise<ClinicalTaskDependency> {
     ClinicalTaskService.assertRepository();
     if (taskId === dependsOnTaskId) throw new DomainInvariantError('Clinical task cannot depend on itself.');
