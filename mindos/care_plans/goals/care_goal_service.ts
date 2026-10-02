@@ -67,7 +67,7 @@ export class CareGoalService {
       reason_codes:params.reasonCodes,notes_reference:params.notesReference
     };
     await CareGoalService.repository.saveGoalReview(review);
-    EventBus.enqueue('care.goal_updated','care_plans',goal.id,DataClassification.RESTRICTED,{
+    EventBus.enqueue('care.goal_updated','care_plans',goal.id,DataClassification.CLINICAL_RECORD,{
       goal_id:goal.id,previous_status:previous,new_status:params.newStatus
     });
     return {goal,review};
