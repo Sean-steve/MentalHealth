@@ -17,14 +17,16 @@ import {
 export interface Sprint22RuntimeStatus {
   persistence: 'POSTGRES' | 'IN_MEMORY_DEFAULT';
   professional_messaging_notifications: 'CONFIGURED';
-  professional_messaging_safety: 'EXPLICIT_PORT_REQUIRED';
+  professional_messaging_safety: 'EXPLICIT_SCANNER_AND_FORWARDER_REQUIRED';
+  professional_messaging_attachments: 'DENY_BY_DEFAULT';
 }
 
 let configured = false;
 let status: Sprint22RuntimeStatus = {
   persistence: 'IN_MEMORY_DEFAULT',
   professional_messaging_notifications: 'CONFIGURED',
-  professional_messaging_safety: 'EXPLICIT_PORT_REQUIRED'
+  professional_messaging_safety: 'EXPLICIT_SCANNER_AND_FORWARDER_REQUIRED',
+  professional_messaging_attachments: 'DENY_BY_DEFAULT'
 };
 
 export function configureSprint22Runtime(options: {
@@ -51,7 +53,8 @@ export function configureSprint22Runtime(options: {
   status = {
     persistence: usePostgres ? 'POSTGRES' : 'IN_MEMORY_DEFAULT',
     professional_messaging_notifications: 'CONFIGURED',
-    professional_messaging_safety: 'EXPLICIT_PORT_REQUIRED'
+    professional_messaging_safety: 'EXPLICIT_SCANNER_AND_FORWARDER_REQUIRED',
+    professional_messaging_attachments: 'DENY_BY_DEFAULT'
   };
   return { ...status };
 }
