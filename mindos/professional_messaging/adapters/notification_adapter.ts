@@ -1,17 +1,37 @@
 import { NotificationService } from '../../notifications/index.js';
-import { ProfessionalMessagingNotificationPort } from '../application/ports.js';
+import { ProfessionalService } from '../../professionals/service.js';
+import {
+  ProfessionalMessagingNotificationPort,
+  ProfessionalMessagingNotificationRecipient
+} from '../application/ports.js';
+import { ThreadParticipantType } from '../domain/types.js';
 
 export class NotificationServiceMessagingAdapter implements ProfessionalMessagingNotificationPort {
+  private async resolveUserId(recipient: ProfessionalMessagingNotificationRecipient): Promise<string | null> {
+    if (recipient.actor_type === ThreadParticipantType.USER) return recipient.actor_id;
+    if (recipient.actor_type === ThreadParticipantType.PROFESSIONAL) {
+      const profile = await ProfessionalService.getRepository().findProfileById(recipient.actor_id);
+      return profile?.user_id || null;
+    }
+    return null;
+  }
+
   public async notifyNewMessage(params: {
     thread_id: string;
     message_id: string;
-    recipient_ids: string[];
+    recipients: ProfessionalMessagingNotificationRecipient[];
   }): Promise<{ accepted: boolean }> {
-    if (params.recipient_ids.length === 0) return { accepted: true };
+    if (params.recipients.length === 0) return { accepted: true };
 
-    for (const recipientId of params.recipient_ids) {
+    let accepted = true;
+    for (const recipient of params.recipients) {
+      const userId = await this.resolveUserId(recipient);
+      if (!userId) {
+        accepted = false;
+        continue;
+      }
       await NotificationService.sendNotification({
-        userId: recipientId,
+        userId,
         channel: 'IN_APP',
         category: 'REMINDER',
         title: 'New care message',
@@ -19,7 +39,6 @@ export class NotificationServiceMessagingAdapter implements ProfessionalMessagin
         containsHealthSensitiveContent: true
       });
     }
-
-    return { accepted: true };
+    return { accepted };
   }
 }
