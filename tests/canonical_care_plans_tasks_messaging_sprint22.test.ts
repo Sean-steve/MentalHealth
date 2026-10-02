@@ -33,7 +33,7 @@ import {
   ProfessionalThreadStatus,
   resetProfessionalMessagingForTesting
 } from '../mindos/professional_messaging/index.js';
-import { CarePlanService, resetCarePlansForTesting, CarePlanType } from '../mindos/care_plans/index.js';
+import { CarePlanService, CarePlanProgressService, resetCarePlansForTesting, CarePlanType } from '../mindos/care_plans/index.js';
 import { AuthorizationError, DomainInvariantError } from '../mindos/platform/errors/index.js';
 
 const userId = 'user-s22-0001';
@@ -121,7 +121,8 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
     });
     await assert.rejects(() => ClinicalTaskService.completeTask({
       task_id: task.id, actor_id: userId, actor_type: ClinicalTaskAssigneeType.USER,
-      evidence_type: ClinicalTaskEvidenceType.USER_ATTESTATION, evidence_reference: 'self-report'
+      completion_source: 'assessments',
+      evidence_type: ClinicalTaskEvidenceType.USER_ATTESTATION, evidence_reference: 'spoofed-assessment-completion'
     }), AuthorizationError);
     const completed = await ClinicalTaskService.completeTask({
       task_id: task.id, actor_id: 'assessment-service', actor_type: ClinicalTaskAssigneeType.SYSTEM,
@@ -129,6 +130,51 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
       evidence_reference: 'assessment.completed:event-1'
     });
     assert.equal(completed.status, ClinicalTaskState.COMPLETED);
+  });
+
+
+  it('projects real clinical-task state into Care Plan progress without calling task completion a clinical outcome', async () => {
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'Sprint 22 progress projection plan',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+    await CarePlanService.activatePlan(plan.id, professionalId);
+
+    const task = await ClinicalTaskService.createTask({
+      care_relationship_id: relationshipId,
+      care_plan_id: plan.id,
+      task_type: ClinicalTaskType.USER_ACTION,
+      assigned_to_type: ClinicalTaskAssigneeType.USER,
+      assigned_to_id: userId,
+      title: 'User-reported routine action',
+      instruction_reference: 'instruction:routine',
+      source_type: 'CARE_PLAN',
+      source_reference: plan.id,
+      policy_version: 'test-v1',
+      creator_professional_id: professionalId
+    });
+
+    let projection = await CarePlanProgressService.getProgress(plan.id);
+    assert.equal(projection.tasks_summary.total, 1);
+    assert.equal(projection.tasks_summary.pending, 1);
+    assert.equal(projection.tasks_summary.completed, 0);
+
+    await ClinicalTaskService.completeTask({
+      task_id: task.id,
+      actor_id: userId,
+      actor_type: ClinicalTaskAssigneeType.USER,
+      evidence_type: ClinicalTaskEvidenceType.USER_ATTESTATION,
+      evidence_reference: 'user-report:routine-done'
+    });
+
+    projection = await CarePlanProgressService.getProgress(plan.id);
+    assert.equal(projection.tasks_summary.total, 1);
+    assert.equal(projection.tasks_summary.pending, 0);
+    assert.equal(projection.tasks_summary.completed, 1);
   });
 
   it('creates relationship-scoped care messaging without pretending safety monitoring is configured', async () => {
