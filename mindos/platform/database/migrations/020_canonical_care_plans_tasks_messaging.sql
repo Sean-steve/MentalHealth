@@ -169,6 +169,9 @@ CREATE TABLE IF NOT EXISTS clinical_tasks (
   started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
   recurrence_rule TEXT,
+  recurrence_parent_task_id UUID REFERENCES clinical_tasks(id) ON DELETE SET NULL,
+  recurrence_sequence INTEGER NOT NULL DEFAULT 0 CHECK (recurrence_sequence >= 0),
+  created_by_professional_id UUID NOT NULL REFERENCES professional_profiles(id) ON DELETE RESTRICT,
   source_type VARCHAR(80) NOT NULL,
   source_reference VARCHAR(240) NOT NULL,
   completion_authority VARCHAR(60) NOT NULL,
@@ -189,6 +192,15 @@ CREATE TABLE IF NOT EXISTS clinical_task_dependencies (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CHECK (task_id <> depends_on_task_id),
   UNIQUE(task_id, depends_on_task_id)
+);
+
+CREATE TABLE IF NOT EXISTS clinical_task_reminder_receipts (
+  id UUID PRIMARY KEY,
+  task_id UUID NOT NULL REFERENCES clinical_tasks(id) ON DELETE CASCADE,
+  reminder_key VARCHAR(240) NOT NULL,
+  notification_reference VARCHAR(240),
+  sent_at TIMESTAMPTZ NOT NULL,
+  UNIQUE(task_id, reminder_key)
 );
 
 CREATE TABLE IF NOT EXISTS clinical_task_evidence (
@@ -266,6 +278,7 @@ DROP TABLE IF EXISTS professional_message_attachments CASCADE;
 DROP TABLE IF EXISTS professional_messages CASCADE;
 DROP TABLE IF EXISTS professional_thread_participants CASCADE;
 DROP TABLE IF EXISTS professional_message_threads CASCADE;
+DROP TABLE IF EXISTS clinical_task_reminder_receipts CASCADE;
 DROP TABLE IF EXISTS clinical_task_evidence CASCADE;
 DROP TABLE IF EXISTS clinical_task_dependencies CASCADE;
 DROP TABLE IF EXISTS clinical_tasks CASCADE;
