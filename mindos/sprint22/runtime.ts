@@ -7,7 +7,12 @@ import {
   CarePlanProgressService
 } from '../care_plans/index.js';
 import { PgCarePlanRepository } from '../care_plans/repositories/pg_care_plan_repository.js';
-import { ClinicalTaskService, PgClinicalTaskRepository } from '../clinical_tasks/index.js';
+import {
+  ClinicalTaskService,
+  ClinicalTaskScheduler,
+  PgClinicalTaskRepository,
+  NotificationServiceClinicalTaskReminderAdapter
+} from '../clinical_tasks/index.js';
 import {
   ProfessionalMessagingService,
   PgProfessionalMessagingRepository,
@@ -19,6 +24,8 @@ export interface Sprint22RuntimeStatus {
   professional_messaging_notifications: 'CONFIGURED';
   professional_messaging_safety: 'EXPLICIT_SCANNER_AND_FORWARDER_REQUIRED';
   professional_messaging_attachments: 'DENY_BY_DEFAULT';
+  clinical_task_reminders: 'CONFIGURED';
+  clinical_task_recurrence: 'EXPLICIT_POLICY_REQUIRED';
 }
 
 let configured = false;
@@ -26,7 +33,9 @@ let status: Sprint22RuntimeStatus = {
   persistence: 'IN_MEMORY_DEFAULT',
   professional_messaging_notifications: 'CONFIGURED',
   professional_messaging_safety: 'EXPLICIT_SCANNER_AND_FORWARDER_REQUIRED',
-  professional_messaging_attachments: 'DENY_BY_DEFAULT'
+  professional_messaging_attachments: 'DENY_BY_DEFAULT',
+  clinical_task_reminders: 'CONFIGURED',
+  clinical_task_recurrence: 'EXPLICIT_POLICY_REQUIRED'
 };
 
 export function configureSprint22Runtime(options: {
@@ -48,13 +57,16 @@ export function configureSprint22Runtime(options: {
   }
 
   ProfessionalMessagingService.setNotificationPort(new NotificationServiceMessagingAdapter());
+  ClinicalTaskScheduler.setReminderPort(new NotificationServiceClinicalTaskReminderAdapter());
 
   configured = true;
   status = {
     persistence: usePostgres ? 'POSTGRES' : 'IN_MEMORY_DEFAULT',
     professional_messaging_notifications: 'CONFIGURED',
     professional_messaging_safety: 'EXPLICIT_SCANNER_AND_FORWARDER_REQUIRED',
-    professional_messaging_attachments: 'DENY_BY_DEFAULT'
+    professional_messaging_attachments: 'DENY_BY_DEFAULT',
+    clinical_task_reminders: 'CONFIGURED',
+    clinical_task_recurrence: 'EXPLICIT_POLICY_REQUIRED'
   };
   return { ...status };
 }
