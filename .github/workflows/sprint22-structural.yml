@@ -1,0 +1,27 @@
+name: Verify Sprint 22 structure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mindos/care_plans/**'
+      - 'mindos/clinical_tasks/**'
+      - 'mindos/professional_messaging/**'
+      - 'mindos/sprint22/**'
+      - 'mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql'
+      - 'tests/canonical_care_plans_tasks_messaging_sprint22.test.ts'
+      - 'server.ts'
+      - 'scripts/verify_sprint22_structure.mjs'
+      - '.github/workflows/sprint22-structural.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Sprint 22 architecture and safety invariants
+        run: node scripts/verify_sprint22_structure.mjs
