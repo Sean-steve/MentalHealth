@@ -13,6 +13,11 @@ export class InMemoryClinicalTaskRepository implements IClinicalTaskRepository {
   async findTasksByRelationshipId(relationshipId: string): Promise<ClinicalTask[]> {
     return Array.from(this.tasks.values()).filter(t => t.care_relationship_id === relationshipId).map(x => structuredClone(x));
   }
+  async findTasksByPlanId(planId: string): Promise<ClinicalTask[]> {
+    return Array.from(this.tasks.values())
+      .filter(t => t.care_plan_id === planId)
+      .map(x => structuredClone(x));
+  }
   async findTasksByAssignee(assigneeType: string, assigneeId: string): Promise<ClinicalTask[]> {
     return Array.from(this.tasks.values()).filter(t => t.assigned_to_type === assigneeType && t.assigned_to_id === assigneeId).map(x => structuredClone(x));
   }
