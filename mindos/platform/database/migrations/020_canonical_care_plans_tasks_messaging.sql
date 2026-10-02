@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS clinical_tasks (
   policy_version VARCHAR(80) NOT NULL,
   idempotency_key VARCHAR(160),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),+  UNIQUE(idempotency_key)
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n  UNIQUE(idempotency_key)
 );
 CREATE INDEX IF NOT EXISTS idx_clinical_tasks_subject_status_due ON clinical_tasks(subject_user_id, status, due_at);
 CREATE INDEX IF NOT EXISTS idx_clinical_tasks_assignee_status_due ON clinical_tasks(assigned_to_type, assigned_to_id, status, due_at);
