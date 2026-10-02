@@ -1,10 +1,11 @@
 import { IClinicalTaskRepository } from './interfaces.js';
-import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence } from '../domain/entities.js';
+import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence, ClinicalTaskReminderReceipt } from '../domain/entities.js';
 
 export class InMemoryClinicalTaskRepository implements IClinicalTaskRepository {
   private tasks = new Map<string, ClinicalTask>();
   private dependencies = new Map<string, ClinicalTaskDependency>();
   private evidence = new Map<string, ClinicalTaskEvidence>();
+  private reminders = new Map<string, ClinicalTaskReminderReceipt>();
 
   async saveTask(task: ClinicalTask): Promise<void> { this.tasks.set(task.id, structuredClone(task)); }
   async findTaskById(id: string): Promise<ClinicalTask | null> {
@@ -35,6 +36,13 @@ export class InMemoryClinicalTaskRepository implements IClinicalTaskRepository {
   async findEvidence(taskId: string): Promise<ClinicalTaskEvidence[]> {
     return Array.from(this.evidence.values()).filter(e => e.task_id === taskId).map(x => structuredClone(x));
   }
+  async saveReminderReceipt(receipt: ClinicalTaskReminderReceipt): Promise<void> {
+    this.reminders.set(`${receipt.task_id}:${receipt.reminder_key}`, structuredClone(receipt));
+  }
+  async findReminderReceipt(taskId: string, reminderKey: string): Promise<ClinicalTaskReminderReceipt | null> {
+    const receipt = this.reminders.get(`${taskId}:${reminderKey}`);
+    return receipt ? structuredClone(receipt) : null;
+  }
   async listTasks(): Promise<ClinicalTask[]> { return Array.from(this.tasks.values()).map(x => structuredClone(x)); }
-  clear(): void { this.tasks.clear(); this.dependencies.clear(); this.evidence.clear(); }
+  clear(): void { this.tasks.clear(); this.dependencies.clear(); this.evidence.clear(); this.reminders.clear(); }
 }
