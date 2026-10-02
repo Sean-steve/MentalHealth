@@ -156,6 +156,49 @@ export class ClinicalTaskService {
     return task;
   }
 
+  public static async getTaskForActor(
+    taskId: string,
+    actorId: string,
+    actorType: ClinicalTaskAssigneeType.USER | ClinicalTaskAssigneeType.PROFESSIONAL
+  ): Promise<ClinicalTask> {
+    const task = await ClinicalTaskService.getTask(taskId);
+    if (actorType === ClinicalTaskAssigneeType.USER) {
+      if (task.subject_user_id !== actorId) {
+        throw new AuthorizationError('User may only access their own clinical tasks.', { errorCode: 'AUTHZ_003' });
+      }
+      return task;
+    }
+    await RelationshipAccessEvaluator.assertAccess({
+      relationshipId: task.care_relationship_id,
+      professionalId: actorId,
+      dataDomain: DataDomain.CARE_PLANS,
+      action: ActionPermission.READ,
+      purpose: 'CARE_DELIVERY'
+    });
+    return task;
+  }
+
+  public static async listTasksForUser(userId: string): Promise<ClinicalTask[]> {
+    ClinicalTaskService.assertRepository();
+    const assigned = await ClinicalTaskService.repository.findTasksByAssignee(ClinicalTaskAssigneeType.USER, userId);
+    return assigned.filter(task => task.subject_user_id === userId);
+  }
+
+  public static async listTasksForRelationship(
+    relationshipId: string,
+    professionalId: string
+  ): Promise<ClinicalTask[]> {
+    ClinicalTaskService.assertRepository();
+    await RelationshipAccessEvaluator.assertAccess({
+      relationshipId,
+      professionalId,
+      dataDomain: DataDomain.CARE_PLANS,
+      action: ActionPermission.READ,
+      purpose: 'CARE_DELIVERY'
+    });
+    return ClinicalTaskService.repository.findTasksByRelationshipId(relationshipId);
+  }
+
   public static async addDependency(taskId: string, dependsOnTaskId: string): Promise<ClinicalTaskDependency> {
     ClinicalTaskService.assertRepository();
     if (taskId === dependsOnTaskId) throw new DomainInvariantError('Clinical task cannot depend on itself.');
