@@ -41,6 +41,12 @@ if(failures.length===0){
   const runtime=read('mindos/sprint22/runtime.ts');
   const server=read('server.ts');
   const tests=read('tests/canonical_care_plans_tasks_messaging_sprint22.test.ts');
+  const carePlanSources=[
+    plan,
+    read('mindos/care_plans/goals/care_goal_service.ts'),
+    read('mindos/care_plans/assignments/assignment_service.ts'),
+    read('mindos/care_plans/reviews/care_plan_review_service.ts')
+  ].join('\n');
 
   if(!plan.includes('createPlanWithInitialVersion')) failures.push('care plan creation is not atomic');
   if(/reviewFrequencyDays\s*\?\?\s*30|reviewFrequencyDays\s*\|\|\s*30/.test(plan)) failures.push('care plan invents a 30-day review cadence');
@@ -60,6 +66,8 @@ if(failures.length===0){
   for(const table of ['care_plans','care_plan_versions','care_goals','care_interventions','clinical_tasks','professional_message_threads','professional_messages']){
     if(!migration.includes(`CREATE TABLE IF NOT EXISTS ${table}`)) failures.push(`migration missing table: ${table}`);
   }
+  if(carePlanSources.includes('DataClassification.RESTRICTED')) failures.push('care plan events use non-canonical RESTRICTED classification');
+  if(!carePlanSources.includes('DataClassification.CLINICAL_RECORD')) failures.push('care plan events are not classified as CLINICAL_RECORD');
   if(!tests.includes('spoofed-assessment-completion')) failures.push('anti-spoof owner-domain completion regression missing');
   if(!tests.includes('projects real clinical-task state')) failures.push('care-plan task projection regression missing');
 }
