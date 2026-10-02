@@ -44,7 +44,7 @@ export class AssignmentService {
       due_date:params.dueDate,created_at:new Date().toISOString()
     };
     await AssignmentService.repository.saveContentAssignment(assignment);
-    EventBus.enqueue('care.assignment_created','care_plans',assignment.id,DataClassification.RESTRICTED,{
+    EventBus.enqueue('care.assignment_created','care_plans',assignment.id,DataClassification.CLINICAL_RECORD,{
       assignment_id:assignment.id,plan_id:plan.id,assignment_type:'CONTENT',resource_id:params.contentId
     });
     AuditService.record({
@@ -84,7 +84,7 @@ export class AssignmentService {
       status:'PENDING',created_at:new Date().toISOString()
     };
     await AssignmentService.repository.saveAssessmentAssignment(assignment);
-    EventBus.enqueue('care.assignment_created','care_plans',assignment.id,DataClassification.RESTRICTED,{
+    EventBus.enqueue('care.assignment_created','care_plans',assignment.id,DataClassification.CLINICAL_RECORD,{
       assignment_id:assignment.id,plan_id:plan.id,assignment_type:'ASSESSMENT',instrument_type:params.instrumentType
     });
     AuditService.record({
