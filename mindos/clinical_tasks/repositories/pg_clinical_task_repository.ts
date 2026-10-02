@@ -128,6 +128,14 @@ export class PgClinicalTaskRepository implements IClinicalTaskRepository {
     return res.rows.map(toTask);
   }
 
+  public async findTasksByPlanId(planId: string): Promise<ClinicalTask[]> {
+    const res = await getPool().query<TaskRow>(
+      'SELECT * FROM clinical_tasks WHERE care_plan_id = $1 ORDER BY due_at NULLS LAST, created_at ASC, id ASC',
+      [planId]
+    );
+    return res.rows.map(toTask);
+  }
+
   public async findTasksByAssignee(assigneeType: string, assigneeId: string): Promise<ClinicalTask[]> {
     const res = await getPool().query<TaskRow>(
       'SELECT * FROM clinical_tasks WHERE assigned_to_type = $1 AND assigned_to_id = $2 ORDER BY due_at NULLS LAST, created_at ASC, id ASC',
