@@ -10,7 +10,7 @@ import {
   DataDomain,
   ActionPermission
 } from '../../care_relationships/index.js';
-import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence } from '../domain/entities.js';
+import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence, ClinicalTaskReminderReceipt } from '../domain/entities.js';
 import {
   ClinicalTaskState,
   ClinicalTaskType,
@@ -42,6 +42,8 @@ export interface CreateClinicalTaskParams {
   instruction_reference: string;
   due_at?: string;
   recurrence_rule?: string;
+  recurrence_parent_task_id?: string;
+  recurrence_sequence?: number;
   source_type: string;
   source_reference: string;
   completion_authority?: ClinicalTaskCompletionAuthority;
@@ -118,6 +120,9 @@ export class ClinicalTaskService {
       created_at: now,
       due_at: params.due_at,
       recurrence_rule: params.recurrence_rule,
+      recurrence_parent_task_id: params.recurrence_parent_task_id,
+      recurrence_sequence: params.recurrence_sequence || 0,
+      created_by_professional_id: params.creator_professional_id,
       source_type: params.source_type,
       source_reference: params.source_reference,
       completion_authority: completionAuthority,
@@ -202,6 +207,22 @@ export class ClinicalTaskService {
   public static async listTasksForPlan(planId: string): Promise<ClinicalTask[]> {
     ClinicalTaskService.assertRepository();
     return ClinicalTaskService.repository.findTasksByPlanId(planId);
+  }
+
+  /** Internal scheduler boundary; not exposed directly through the HTTP API. */
+  public static async listTasksForScheduler(): Promise<ClinicalTask[]> {
+    ClinicalTaskService.assertRepository();
+    return ClinicalTaskService.repository.listTasks();
+  }
+
+  public static async saveReminderReceipt(receipt: ClinicalTaskReminderReceipt): Promise<void> {
+    ClinicalTaskService.assertRepository();
+    return ClinicalTaskService.repository.saveReminderReceipt(receipt);
+  }
+
+  public static async findReminderReceipt(taskId: string, reminderKey: string): Promise<ClinicalTaskReminderReceipt | null> {
+    ClinicalTaskService.assertRepository();
+    return ClinicalTaskService.repository.findReminderReceipt(taskId, reminderKey);
   }
 
   public static async addDependency(taskId: string, dependsOnTaskId: string): Promise<ClinicalTaskDependency> {
