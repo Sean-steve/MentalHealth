@@ -60,14 +60,16 @@ CREATE TABLE IF NOT EXISTS care_goals (
   priority VARCHAR(40) NOT NULL,
   target_type VARCHAR(80),
   target_value JSONB,
-  baseline_reference VARCHAR(240),
+  baseline_reference JSONB,
+  current_value JSONB,
   status VARCHAR(60) NOT NULL,
   provenance VARCHAR(60),
   started_at TIMESTAMPTZ,
   target_date TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
   created_by UUID,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_care_goals_plan_status ON care_goals(care_plan_version_id, status);
 
@@ -90,8 +92,8 @@ CREATE TABLE IF NOT EXISTS care_interventions (
   intervention_type VARCHAR(80) NOT NULL,
   reference_type VARCHAR(80),
   reference_id VARCHAR(160),
-  frequency JSONB,
-  duration JSONB,
+  frequency TEXT NOT NULL,
+  duration TEXT,
   schedule_reference VARCHAR(240),
   responsible_actor_type VARCHAR(60),
   responsible_actor_id VARCHAR(160),
@@ -140,10 +142,12 @@ CREATE TABLE IF NOT EXISTS assessment_assignments (
   subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   assigned_by UUID NOT NULL,
   instrument_type VARCHAR(120) NOT NULL,
-  instrument_version VARCHAR(120),
+  instrument_version INTEGER,
   assignment_purpose VARCHAR(160) NOT NULL,
   due_window JSONB NOT NULL,
   status VARCHAR(60) NOT NULL,
+  completed_assessment_id UUID,
+  completed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
