@@ -139,7 +139,7 @@ export class CarePlanService {
       await CarePlanService.repository.saveIntervention(intervention);
     }
 
-    EventBus.enqueue('care.plan_created','care_plans',plan.id,DataClassification.RESTRICTED,{
+    EventBus.enqueue('care.plan_created','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{
       plan_id: plan.id,
       relationship_id: plan.care_relationship_id,
       status: plan.status,
@@ -168,7 +168,7 @@ export class CarePlanService {
     plan.status=CarePlanState.ACTIVE; plan.updated_at=now; plan.version+=1;
     await CarePlanService.repository.savePlan(plan);
 
-    EventBus.enqueue('care.plan_activated','care_plans',plan.id,DataClassification.RESTRICTED,{
+    EventBus.enqueue('care.plan_activated','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{
       plan_id:plan.id,version_id:version.id,activated_at:now
     });
     AuditService.record({
@@ -242,7 +242,7 @@ export class CarePlanService {
     plan.current_version_id=id; plan.status=CarePlanState.ACTIVE; plan.updated_at=now; plan.version+=1;
     await CarePlanService.repository.savePlan(plan);
 
-    EventBus.enqueue('care.plan_updated','care_plans',plan.id,DataClassification.RESTRICTED,{
+    EventBus.enqueue('care.plan_updated','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{
       plan_id:plan.id,new_version_id:id,new_version_number:versionNumber,superseded_version_id:current?.id
     });
     AuditService.record({
@@ -260,7 +260,7 @@ export class CarePlanService {
     validateStateTransition('CarePlanState',plan.status,CarePlanState.PAUSED,plan.id,actorId);
     plan.status=CarePlanState.PAUSED;plan.updated_at=new Date().toISOString();plan.version+=1;
     await CarePlanService.repository.savePlan(plan);
-    EventBus.enqueue('care.plan_paused','care_plans',plan.id,DataClassification.RESTRICTED,{plan_id:plan.id,reason});
+    EventBus.enqueue('care.plan_paused','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{plan_id:plan.id,reason});
     return plan;
   }
 
@@ -271,7 +271,7 @@ export class CarePlanService {
     const now=new Date().toISOString();
     plan.status=CarePlanState.COMPLETED;plan.completed_at=now;plan.updated_at=now;plan.version+=1;
     await CarePlanService.repository.savePlan(plan);
-    EventBus.enqueue('care.plan_completed','care_plans',plan.id,DataClassification.RESTRICTED,{plan_id:plan.id,completed_at:now});
+    EventBus.enqueue('care.plan_completed','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{plan_id:plan.id,completed_at:now});
     return plan;
   }
 
@@ -282,7 +282,7 @@ export class CarePlanService {
     const now=new Date().toISOString();
     plan.status=CarePlanState.TERMINATED;plan.terminated_at=now;plan.updated_at=now;plan.version+=1;
     await CarePlanService.repository.savePlan(plan);
-    EventBus.enqueue('care.plan_terminated','care_plans',plan.id,DataClassification.RESTRICTED,{plan_id:plan.id,reason,terminated_at:now});
+    EventBus.enqueue('care.plan_terminated','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{plan_id:plan.id,reason,terminated_at:now});
     return plan;
   }
 
