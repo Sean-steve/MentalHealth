@@ -251,7 +251,7 @@ export class ProfessionalMessagingService {
     if (message.thread_id !== thread.id) throw new DomainInvariantError('Attachment message/thread mismatch.');
     const participant = await ProfessionalMessagingService.repository.findParticipant(thread.id, params.actor_id);
     if (!participant || participant.status !== ThreadParticipantStatus.ACTIVE) throw new AuthorizationError('Only an active participant may attach files.', { errorCode: 'AUTHZ_003' });
-    if (params.scan_status !== 'CLEAN') throw new DomainInvariantError('Only malware-scanned CLEAN attachments may be linked to a care message.');+    const a: ProfessionalMessageAttachment = { id: generateUUIDv7(), thread_id: thread.id, message_id: message.id, evidence_reference: params.evidence_reference, mime_type: params.mime_type, size_bytes: params.size_bytes, scan_status: params.scan_status, data_classification: params.data_classification, created_at: new Date().toISOString() };
+    if (params.scan_status !== 'CLEAN') throw new DomainInvariantError('Only malware-scanned CLEAN attachments may be linked to a care message.');\n    const a: ProfessionalMessageAttachment = { id: generateUUIDv7(), thread_id: thread.id, message_id: message.id, evidence_reference: params.evidence_reference, mime_type: params.mime_type, size_bytes: params.size_bytes, scan_status: params.scan_status, data_classification: params.data_classification, created_at: new Date().toISOString() };
     await ProfessionalMessagingService.repository.saveAttachment(a); return a;
   }
 
