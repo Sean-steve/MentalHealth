@@ -10,6 +10,9 @@ export * from './repositories/interfaces.js';
 export * from './repositories/in_memory_clinical_task_repository.js';
 export * from './repositories/pg_clinical_task_repository.js';
 export * from './api/routes.js';
+export * from './application/ports.js';
+export * from './application/clinical_task_scheduler.js';
+export * from './adapters/notification_adapter.js';
 export * from './application/clinical_task_service.js';
 
 export function resetClinicalTasksForTesting(): void { defaultRepository.clear(); }
