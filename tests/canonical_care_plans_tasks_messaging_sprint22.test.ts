@@ -480,4 +480,48 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
     );
   });
 
+
+  it('rejects a reply reference that points into another care thread', async () => {
+    const firstThread = await ProfessionalMessagingService.openThread({
+      care_relationship_id: relationshipId,
+      thread_type: ProfessionalThreadType.CARE_COMMUNICATION,
+      purpose: 'CARE_COORDINATION',
+      created_by: userId,
+      creator_type: ThreadParticipantType.USER,
+      professional_id: professionalId
+    });
+    const secondThread = await ProfessionalMessagingService.openThread({
+      care_relationship_id: relationshipId,
+      thread_type: ProfessionalThreadType.FOLLOW_UP,
+      purpose: 'CARE_COORDINATION',
+      created_by: userId,
+      creator_type: ThreadParticipantType.USER,
+      professional_id: professionalId
+    });
+
+    const firstMessage = await ProfessionalMessagingService.sendMessage({
+      thread_id: firstThread.id,
+      sender_type: ThreadParticipantType.USER,
+      sender_id: userId,
+      message_type: ProfessionalMessageType.TEXT,
+      content_reference: 'protected-message:reply-origin',
+      idempotency_key: 's22-reply-origin'
+    });
+
+    await assert.rejects(
+      () => ProfessionalMessagingService.sendMessage({
+        thread_id: secondThread.id,
+        sender_type: ThreadParticipantType.USER,
+        sender_id: userId,
+        message_type: ProfessionalMessageType.TEXT,
+        content_reference: 'protected-message:cross-thread-reply',
+        idempotency_key: 's22-cross-thread-reply',
+        reply_to_message_id: firstMessage.id
+      }),
+      (err: Error) =>
+        err instanceof DomainInvariantError &&
+        /same care thread/i.test(err.message)
+    );
+  });
+
 });
