@@ -5,7 +5,8 @@ import { generateUUIDv7 } from '../../platform/database/uuid.js';
 import { EventBus } from '../../platform/events/index.js';
 import { AuditService } from '../../platform/audit/index.js';
 import { DataClassification } from '../../platform/shared/data_classification.js';
-import { NotFoundError, DomainInvariantError } from '../../platform/errors/index.js';
+import { AuthorizationError, NotFoundError, DomainInvariantError } from '../../platform/errors/index.js';
+import { RelationshipAccessEvaluator, DataDomain, ActionPermission } from '../../care_relationships/index.js';
 import { ContentAssignment, AssessmentAssignment } from '../domain/entities.js';
 import { ICarePlanRepository } from '../repositories/interfaces.js';
 import { CarePlanService } from '../plans/care_plan_service.js';
@@ -25,10 +26,50 @@ export class AssignmentService {
   private static repository:ICarePlanRepository;
   public static setRepository(repo:ICarePlanRepository):void{AssignmentService.repository=repo;}
 
-  public static async assignContent(params:AssignContentParams):Promise<ContentAssignment>{
+  private static async assertAssignmentContext(params:{
+    planId:string;
+    assignedBy:string;
+    interventionId?:string;
+  }):Promise<NonNullable<Awaited<ReturnType<typeof CarePlanService.getPlan>>>>{
     const plan=await CarePlanService.getPlan(params.planId);
     if(!plan) throw new NotFoundError(`CarePlan ${params.planId} not found.`);
-    CarePlanInvariants.assertPlanActive(plan,'content assignment');
+
+    await RelationshipAccessEvaluator.assertAccess({
+      relationshipId:plan.care_relationship_id,
+      professionalId:params.assignedBy,
+      dataDomain:DataDomain.CARE_PLANS,
+      action:ActionPermission.WRITE,
+      purpose:'CARE_DELIVERY'
+    });
+
+    CarePlanInvariants.assertPlanActive(plan,'care assignment');
+
+    if(params.interventionId){
+      const intervention=await AssignmentService.repository.findInterventionById(params.interventionId);
+      if(!intervention) throw new NotFoundError(`CareIntervention ${params.interventionId} not found.`);
+      if(intervention.care_plan_version_id!==plan.current_version_id){
+        throw new AuthorizationError(
+          'Care assignment intervention does not belong to the current Care Plan version.',
+          {errorCode:'AUTHZ_003'}
+        );
+      }
+    }
+
+    return plan;
+  }
+
+  public static async assignContent(params:AssignContentParams):Promise<ContentAssignment>{
+    const plan=await AssignmentService.assertAssignmentContext({
+      planId:params.planId,
+      assignedBy:params.assignedBy,
+      interventionId:params.interventionId
+    });
+    if(!Number.isInteger(params.contentVersion)||params.contentVersion<1){
+      throw new DomainInvariantError('Content assignment requires a positive governed content version.');
+    }
+    if(params.dueDate!==undefined&&Number.isNaN(Date.parse(params.dueDate))){
+      throw new DomainInvariantError('Content assignment due date must be a valid ISO date-time.');
+    }
 
     const content=ContentApplicationService.getContentDetail(params.contentId);
     if(!content?.version) throw new DomainInvariantError(`Content ${params.contentId} has no active governed version.`);
@@ -57,9 +98,16 @@ export class AssignmentService {
   }
 
   public static async assignAssessment(params:AssignAssessmentParams):Promise<AssessmentAssignment>{
-    const plan=await CarePlanService.getPlan(params.planId);
-    if(!plan) throw new NotFoundError(`CarePlan ${params.planId} not found.`);
-    CarePlanInvariants.assertPlanActive(plan,'assessment assignment');
+    const plan=await AssignmentService.assertAssignmentContext({
+      planId:params.planId,
+      assignedBy:params.assignedBy,
+      interventionId:params.interventionId
+    });
+
+    if(Number.isNaN(Date.parse(params.dueWindow.startDate))||
+       Number.isNaN(Date.parse(params.dueWindow.endDate))){
+      throw new DomainInvariantError('Assessment assignment due-window dates must be valid ISO date-times.');
+    }
 
     const definition=AssessmentRegistry.getDefinition(params.instrumentType);
     const active=AssessmentRegistry.getActiveVersion(definition.id);
