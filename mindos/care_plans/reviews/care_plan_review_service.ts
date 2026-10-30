@@ -56,6 +56,7 @@ export class CarePlanReviewService {
     const review=await CarePlanReviewService.repository.findPlanReviewById(params.reviewId);
     if(!review) throw new NotFoundError(`CarePlanReview ${params.reviewId} not found.`);
     await CarePlanReviewService.authorize(review.care_plan_id,params.reviewerId);
+    if(review.completed_at) return review;
     const plan=await CarePlanService.getPlan(review.care_plan_id);
     if(!plan) throw new NotFoundError(`CarePlan ${review.care_plan_id} not found.`);
 
@@ -92,6 +93,10 @@ export class CarePlanReviewService {
       metadata:{outcome:review.outcome,newVersionCreated:Boolean(review.new_version_id)}
     });
     return review;
+  }
+
+  public static async getReview(reviewId:string):Promise<CarePlanReview|null>{
+    return CarePlanReviewService.repository.findPlanReviewById(reviewId);
   }
 
   public static async listReviewsForPlan(planId:string):Promise<CarePlanReview[]>{
