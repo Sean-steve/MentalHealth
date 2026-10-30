@@ -25,14 +25,18 @@ import {
   SafetyKernelMessagingAdapter,
   CrisisResponseSafetySignalForwarder,
   CanonicalAcuteDistressProtectedMessageScanner,
-  RepositoryProtectedMessageContentResolver
+  RepositoryProtectedMessageContentResolver,
+  ConfiguredMessagingAttachmentPolicy,
+  MessagingAttachmentPolicyConfig,
+  parseMessagingAttachmentPolicyConfig,
+  DenyByDefaultMessagingAttachmentPolicy
 } from '../professional_messaging/index.js';
 
 export interface Sprint22RuntimeStatus {
   persistence: 'POSTGRES' | 'IN_MEMORY_DEFAULT';
   professional_messaging_notifications: 'CONFIGURED';
   professional_messaging_safety: 'CONFIGURED';
-  professional_messaging_attachments: 'DENY_BY_DEFAULT';
+  professional_messaging_attachments: 'CONFIGURED' | 'DENY_BY_DEFAULT';
   clinical_task_reminders: 'CONFIGURED';
   clinical_task_recurrence: 'CONFIGURED' | 'EXPLICIT_POLICY_REQUIRED';
 }
@@ -51,6 +55,7 @@ export function configureSprint22Runtime(options: {
   usePostgres?: boolean;
   recurrencePolicies?: ClinicalTaskRecurrencePolicy[];
   messagingSafetyScanner?: ProtectedMessageSafetyScannerPort;
+  attachmentPolicyConfig?: MessagingAttachmentPolicyConfig;
 } = {}): Sprint22RuntimeStatus {
   const usePostgres = options.usePostgres ?? process.env.NODE_ENV === 'production';
 
@@ -84,6 +89,21 @@ export function configureSprint22Runtime(options: {
     )
   );
 
+  const attachmentPolicyConfig =
+    options.attachmentPolicyConfig ??
+    parseMessagingAttachmentPolicyConfig(
+      process.env.MINDOS_MESSAGE_ATTACHMENT_POLICY_JSON
+    );
+  if (attachmentPolicyConfig) {
+    ProfessionalMessagingService.setAttachmentPolicyPort(
+      new ConfiguredMessagingAttachmentPolicy(attachmentPolicyConfig)
+    );
+  } else {
+    ProfessionalMessagingService.setAttachmentPolicyPort(
+      new DenyByDefaultMessagingAttachmentPolicy()
+    );
+  }
+
   const recurrencePolicies =
     options.recurrencePolicies ??
     parseClinicalTaskRecurrencePolicies(process.env.MINDOS_TASK_RECURRENCE_POLICIES_JSON);
@@ -102,7 +122,7 @@ export function configureSprint22Runtime(options: {
     persistence: usePostgres ? 'POSTGRES' : 'IN_MEMORY_DEFAULT',
     professional_messaging_notifications: 'CONFIGURED',
     professional_messaging_safety: 'CONFIGURED',
-    professional_messaging_attachments: 'DENY_BY_DEFAULT',
+    professional_messaging_attachments: attachmentPolicyConfig ? 'CONFIGURED' : 'DENY_BY_DEFAULT',
     clinical_task_reminders: 'CONFIGURED',
     clinical_task_recurrence: recurrencePolicies.length > 0 ? 'CONFIGURED' : 'EXPLICIT_POLICY_REQUIRED'
   };
