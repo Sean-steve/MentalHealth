@@ -212,6 +212,13 @@ export class InMemoryCarePlanRepository implements ICarePlanRepository {
     return Array.from(this.interventions.values()).filter(i=>i.care_plan_version_id===versionId).map(i=>({...i}));
   }
 
+  public async beginPlanReviewExecution(review: CarePlanReview): Promise<boolean> {
+    const current = this.planReviews.get(review.id);
+    if (!current || current.started_at || current.completed_at) return false;
+    this.planReviews.set(review.id, structuredClone(review));
+    return true;
+  }
+
   public async savePlanReviewTransactional(review: CarePlanReview): Promise<void> { this.planReviews.set(review.id,structuredClone(review)); }
   public async savePlanReview(review: CarePlanReview): Promise<void> { this.planReviews.set(review.id,{...review}); }
   public async findPlanReviewById(id: string): Promise<CarePlanReview | null> { const r=this.planReviews.get(id); return r?{...r}:null; }
