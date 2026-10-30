@@ -94,7 +94,7 @@ export class CarePlanReviewService {
   }
 
   public static async executeReview(params:ExecuteReviewParams):Promise<CarePlanReview>{
-    const review=await CarePlanReviewService.repository.findPlanReviewById(params.reviewId);
+    let review=await CarePlanReviewService.repository.findPlanReviewById(params.reviewId);
     if(!review) throw new NotFoundError(`CarePlanReview ${params.reviewId} not found.`);
     await CarePlanReviewService.authorize(review.care_plan_id,params.reviewerId);
     if(review.completed_at) return review;
@@ -152,9 +152,26 @@ export class CarePlanReviewService {
         review.new_version_id=generateUUIDv7();
       }
 
-      // Persist the review intent before any plan mutation. If a process stops
-      // after the plan action, the same review can resume deterministically.
-      await CarePlanReviewService.repository.savePlanReview(review);
+      // Atomically claim the review intent before any plan mutation. This makes
+      // reviewer/outcome selection deterministic under concurrent execution.
+      const began=await CarePlanReviewService.repository.beginPlanReviewExecution(review);
+      if(!began){
+        const claimed=await CarePlanReviewService.repository.findPlanReviewById(review.id);
+        if(!claimed) throw new NotFoundError(`CarePlanReview ${review.id} not found after concurrent start.`);
+        if(claimed.completed_at) return claimed;
+        if(claimed.reviewer_id!==params.reviewerId){
+          throw new AuthorizationError(
+            'Care Plan review was concurrently started by another reviewer.',
+            {errorCode:'AUTHZ_003'}
+          );
+        }
+        if(claimed.outcome!==params.outcome){
+          throw new DomainInvariantError(
+            'Care Plan review was concurrently started with a different outcome.'
+          );
+        }
+        review=claimed;
+      }
     }
 
     plan=await CarePlanService.getPlan(review.care_plan_id);
