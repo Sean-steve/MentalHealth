@@ -2,7 +2,8 @@ import {
   ProfessionalMessageThread,
   ProfessionalThreadParticipant,
   ProfessionalMessage,
-  ProfessionalMessageAttachment
+  ProfessionalMessageAttachment,
+  ProfessionalMessageContent
 } from '../domain/entities.js';
 import {
   MessageDeliveryStatus,
@@ -55,6 +56,8 @@ export interface IProfessionalMessagingRepository {
   findMessageById(id: string): Promise<ProfessionalMessage | null>;
   findMessageByIdempotencyKey(threadId: string, idempotencyKey: string): Promise<ProfessionalMessage | null>;
   findMessages(threadId: string): Promise<ProfessionalMessage[]>;
+  saveProtectedContent(content: ProfessionalMessageContent, tx?: DatabaseClient): Promise<void>;
+  findProtectedContentByReference(contentReference: string): Promise<ProfessionalMessageContent | null>;
   saveAttachment(attachment: ProfessionalMessageAttachment): Promise<void>;
   findAttachments(messageId: string): Promise<ProfessionalMessageAttachment[]>;
   clear(): void;
