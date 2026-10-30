@@ -126,7 +126,7 @@ export class OutcomeReviewService {
     if (!authDecision.allowed) {
       throw new AuthorizationError(
         `Professional ${params.reviewer_id} cannot complete outcome review for subject ${review.subject_user_id}: ${authDecision.reason}`,
-        { errorCode: authDecision.reasonCode || 'AUTHZ_RELATIONSHIP_REQUIRED' }
+        { errorCode: authDecision.reasonCode || 'AUTHZ_003' }
       );
     }
 
