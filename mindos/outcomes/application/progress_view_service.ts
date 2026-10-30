@@ -140,7 +140,7 @@ export class ProgressViewService {
     if (!authDecision.allowed) {
       throw new AuthorizationError(
         `Professional ${params.professional_id} cannot access outcome dashboard for user ${params.subject_user_id}: ${authDecision.reason}`,
-        { errorCode: authDecision.reasonCode || 'AUTHZ_RELATIONSHIP_REQUIRED' }
+        { errorCode: authDecision.reasonCode || 'AUTHZ_003' }
       );
     }
 
