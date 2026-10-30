@@ -80,6 +80,8 @@ jobs:
       ANALYTICS_ENABLED: "false"
       STRICT_RELEASE_GATES: "true"
       SAFETY_POLICY_VERSION: 2.0.0
+      MINDOS_MESSAGE_ATTACHMENT_POLICY_JSON: '{"max_bytes":1048576,"allowed_mime_types":["application/pdf","image/jpeg","image/png"],"allowed_data_classifications":["HEALTH_SENSITIVE","CLINICAL_RECORD"]}'
+      MINDOS_TASK_RECURRENCE_POLICIES_JSON: '[{"rule_key":"TEST_DAILY","interval_minutes":1440,"anchor":"PRIOR_DUE_AT","max_occurrences":3,"policy_version":"TEST-1"}]'
 
     steps:
       - uses: actions/checkout@v4
