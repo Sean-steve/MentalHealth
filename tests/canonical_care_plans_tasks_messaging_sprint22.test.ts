@@ -33,6 +33,10 @@ import {
   ThreadParticipantType,
   ProfessionalMessageType,
   ProfessionalThreadStatus,
+  CanonicalAcuteDistressProtectedMessageScanner,
+  RepositoryProtectedMessageContentResolver,
+  SafetyKernelMessagingAdapter,
+  UnconfiguredMessagingSafetyAdapter,
   resetProfessionalMessagingForTesting
 } from '../mindos/professional_messaging/index.js';
 import {
@@ -370,6 +374,91 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
       idempotency_key: 's22-message-001'
     });
     assert.equal(retry.id, message.id);
+  });
+
+
+  it('encrypts care-message content and forwards acute distress through the governed Safety bridge', async () => {
+    const thread = await ProfessionalMessagingService.openThread({
+      care_relationship_id: relationshipId,
+      thread_type: ProfessionalThreadType.CARE_COMMUNICATION,
+      purpose: 'CARE_COORDINATION',
+      created_by: userId,
+      creator_type: ThreadParticipantType.USER,
+      professional_id: professionalId
+    });
+
+    const forwarded: any[] = [];
+    const scanner = new CanonicalAcuteDistressProtectedMessageScanner(
+      new RepositoryProtectedMessageContentResolver(
+        ProfessionalMessagingService.getRepository()
+      )
+    );
+    ProfessionalMessagingService.setSafetyPort(
+      new SafetyKernelMessagingAdapter(scanner, {
+        async forwardCandidate(candidate: any) {
+          forwarded.push(candidate);
+          return { safety_reference: `TEST_SAFETY:${candidate.source_reference}` };
+        }
+      })
+    );
+
+    try {
+      const benign = await ProfessionalMessagingService.storeProtectedContent({
+        thread_id: thread.id,
+        actor_id: userId,
+        actor_type: ThreadParticipantType.USER,
+        content: 'I had a difficult day but I am safe and want to discuss coping strategies.'
+      });
+      assert.match(benign.content_reference, /^care-message-content:/);
+      const benignMessage = await ProfessionalMessagingService.sendMessage({
+        thread_id: thread.id,
+        sender_type: ThreadParticipantType.USER,
+        sender_id: userId,
+        message_type: ProfessionalMessageType.TEXT,
+        content_reference: benign.content_reference,
+        idempotency_key: 's22-safety-benign'
+      });
+      assert.equal(benignMessage.safety_monitoring_status, 'EVALUATED_NO_SIGNAL');
+      assert.equal(forwarded.length, 0);
+
+      const acute = await ProfessionalMessagingService.storeProtectedContent({
+        thread_id: thread.id,
+        actor_id: userId,
+        actor_type: ThreadParticipantType.USER,
+        content: 'I want to die right now.'
+      });
+      const acuteMessage = await ProfessionalMessagingService.sendMessage({
+        thread_id: thread.id,
+        sender_type: ThreadParticipantType.USER,
+        sender_id: userId,
+        message_type: ProfessionalMessageType.TEXT,
+        content_reference: acute.content_reference,
+        idempotency_key: 's22-safety-acute'
+      });
+      assert.equal(acuteMessage.safety_monitoring_status, 'CANDIDATE_SIGNAL_FORWARDED');
+      assert.equal(forwarded.length, 1);
+      assert.equal(forwarded[0].source_type, 'USER_SELF_REPORT');
+      assert.equal(forwarded[0].provenance, 'USER_REPORTED');
+      assert.equal(forwarded[0].signal_code, 'SIG_SUICIDAL_INTENT_ACTIVE');
+
+      await assert.rejects(
+        () => ProfessionalMessagingService.sendMessage({
+          thread_id: thread.id,
+          sender_type: ThreadParticipantType.USER,
+          sender_id: userId,
+          message_type: ProfessionalMessageType.TEXT,
+          content_reference: 'care-message-content:missing',
+          idempotency_key: 's22-safety-missing-content'
+        }),
+        (err: Error) =>
+          err instanceof DomainInvariantError &&
+          /could not be resolved/i.test(err.message)
+      );
+    } finally {
+      ProfessionalMessagingService.setSafetyPort(
+        new UnconfiguredMessagingSafetyAdapter()
+      );
+    }
   });
 
   it('generates one idempotent next occurrence from an explicit recurrence policy', async () => {
