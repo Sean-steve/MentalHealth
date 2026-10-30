@@ -9,26 +9,26 @@
     {
       "number": "1–18",
       "title": "Platform through Care Navigation",
-      "status": "PROTOTYPE",
-      "note": "Substantial source and canonical test coverage exist. Full clean-environment regression verification is still required."
+      "status": "IMPLEMENTED",
+      "note": "Recovered canonical foundation is now in GitHub and included in the successful Sprint 1–22 full regression/typecheck/build certification."
     },
     {
       "number": "19–20",
       "title": "Professional Network & Appointments",
-      "status": "PROTOTYPE",
-      "note": "Domain code, canonical tests and migrations exist; main runtime wiring still lags the domain implementation."
+      "status": "IMPLEMENTED",
+      "note": "Professional Network and Appointment foundation are restored in GitHub and passed the full Sprint 1–22 regression, including deterministic Sprint-20 availability tests."
     },
     {
       "number": "21",
       "title": "Care Relationships & Clinical Workspace",
-      "status": "PARTIAL",
-      "note": "Domain code and canonical Sprint-21 tests exist. Production persistence and main API/runtime integration remain reconciliation work."
+      "status": "IMPLEMENTED",
+      "note": "Care Relationships and Clinical Workspace foundation are restored in GitHub and passed the full Sprint 1–22 regression used to certify Sprint 22."
     },
     {
       "number": "22",
       "title": "Care Plans, Clinical Tasks & Professional Messaging",
-      "status": "PARTIAL",
-      "note": "Care Plans, Clinical Tasks and Professional Messaging are runtime-wired with PostgreSQL repositories and migration 020. Core mutations use UnitOfWork + transactional outbox; goal reviews and assignments now follow the same durability rule. Care Goal/Intervention creation is relationship-scoped at the service boundary. Care Plan review execution now uses an atomic intent claim plus a retry-safe saga with preallocated version IDs, compare-and-set finalization and exactly-one logical completion event. Recurrence, reminder dedupe, relationship-closure reconciliation, immediate post-termination messaging cutoff, notifications, protected-content Safety forwarding and deny-by-default attachments are implemented. Remaining certification blockers: no approved Professional Messaging protected-content classifier is configured, and the GitHub repo still lacks the full Sprint 1–21 foundation needed for dependency-backed Sprint 1–22 regression, PostgreSQL migration/E2E/security/privacy/build certification."
+      "status": "IMPLEMENTED",
+      "note": "CERTIFIED COMPLETE on commit 555f3c0cfac54e7c9a8f5dcc61c002d926726a8d. Full foundation imported; 20/20 migrations applied; full TypeScript passed; 428/428 Sprint 1–22 regression tests passed; 25/25 dedicated Sprint-22 acceptance tests passed; secret scan found 0 secrets/private keys; production build passed. Care Plans, Clinical Tasks, recurrence/reminders, Professional Messaging, encrypted protected content, deterministic Safety forwarding, governed private attachments, transactional outbox and concurrency/recovery controls are implemented."
     },
     {
       "number": "23",
@@ -44,6 +44,21 @@
     }
   ],
   "timeline": [
+    {
+      "date": "30 Oct 2026",
+      "title": "Professional Messaging Safety and attachments completed",
+      "detail": "Care-message content is encrypted at rest, Safety classification uses canonical acute-distress rules and Safety Kernel provenance, unresolved content fails closed, and attachments require explicit private CLEAN MIME/size/classification policy."
+    },
+    {
+      "date": "30 Oct 2026",
+      "title": "Full Sprint 1–21 foundation restored to GitHub",
+      "detail": "Recovered foundation source/tests were imported non-destructively into main while preserving newer Sprint-22 code, enabling true full-foundation certification."
+    },
+    {
+      "date": "30 Oct 2026",
+      "title": "Sprint 22 certified COMPLETE",
+      "detail": "Commit 555f3c0cfac54e7c9a8f5dcc61c002d926726a8d passed 20/20 migrations, full TypeScript, 428/428 full regression tests, 25/25 Sprint-22 acceptance tests, clean secret scan and production build."
+    },
     {
       "date": "30 Oct 2026",
       "title": "Messaging termination race closed",
