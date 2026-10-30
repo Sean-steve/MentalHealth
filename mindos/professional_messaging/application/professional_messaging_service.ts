@@ -74,6 +74,20 @@ export class ProfessionalMessagingService {
   public static setAvailabilityPolicyPort(port: MessagingAvailabilityPolicyPort): void { ProfessionalMessagingService.availabilityPort = port; }
   public static setAttachmentPolicyPort(port: ProfessionalMessagingAttachmentPolicyPort): void { ProfessionalMessagingService.attachmentPolicyPort = port; }
 
+  private static async assertThreadRelationshipActiveForMutation(
+    thread: ProfessionalMessageThread
+  ): Promise<void> {
+    const relationship = await CareRelationshipService.getRelationship(
+      thread.care_relationship_id
+    );
+    if (!relationship || relationship.status !== CareRelationshipState.ACTIVE) {
+      throw new AuthorizationError(
+        'New care-thread mutations require an active care relationship.',
+        { errorCode: 'AUTHZ_003' }
+      );
+    }
+  }
+
   private static assertRepository(): void {
     if (!ProfessionalMessagingService.repository) throw new DomainInvariantError('ProfessionalMessagingRepository not initialized.');
   }
@@ -423,6 +437,7 @@ export class ProfessionalMessagingService {
     const existing = await ProfessionalMessagingService.repository.findMessageByIdempotencyKey(params.thread_id, params.idempotency_key);
     if (existing) return existing;
     const thread = await ProfessionalMessagingService.getThread(params.thread_id);
+    await ProfessionalMessagingService.assertThreadRelationshipActiveForMutation(thread);
     if (thread.status !== ProfessionalThreadStatus.OPEN) {
       throw new DomainInvariantError(`Cannot send message to ${thread.status} care thread.`);
     }
@@ -605,6 +620,10 @@ export class ProfessionalMessagingService {
 
   public static async addAttachment(params: { thread_id: string; message_id: string; actor_id: string; evidence_reference: string; mime_type: string; size_bytes: number; scan_status: ProfessionalMessageAttachment['scan_status']; data_classification: string; }): Promise<ProfessionalMessageAttachment> {
     const thread = await ProfessionalMessagingService.getThread(params.thread_id);
+    await ProfessionalMessagingService.assertThreadRelationshipActiveForMutation(thread);
+    if (thread.status !== ProfessionalThreadStatus.OPEN) {
+      throw new DomainInvariantError(`Cannot attach files to ${thread.status} care thread.`);
+    }
     const message = await ProfessionalMessagingService.getMessage(params.message_id);
     if (message.thread_id !== thread.id) throw new DomainInvariantError('Attachment message/thread mismatch.');
     const participant = await ProfessionalMessagingService.repository.findParticipant(thread.id, params.actor_id);
