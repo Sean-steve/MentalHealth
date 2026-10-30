@@ -1,0 +1,123 @@
+name: Verify Sprint 22 PostgreSQL migration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql'
+      - '.github/workflows/sprint22-migration-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sprint22-migration-main
+  cancel-in-progress: true
+
+jobs:
+  migration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: mindos_sprint22
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mindos_sprint22"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGDATABASE: mindos_sprint22
+      PGUSER: postgres
+      PGPASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Create minimal Sprint 21 prerequisite schema
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE TABLE users (
+            id UUID PRIMARY KEY
+          );
+          CREATE TABLE care_relationships (
+            id UUID PRIMARY KEY
+          );
+          CREATE TABLE professional_profiles (
+            id UUID PRIMARY KEY
+          );
+          SQL
+
+      - name: Apply migration 020 UP
+        run: |
+          awk '/^-- DOWN --/{exit} {print}'             mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql             > /tmp/sprint22_up.sql
+          psql -v ON_ERROR_STOP=1 -f /tmp/sprint22_up.sql
+
+      - name: Verify Sprint 22 tables and key constraints
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE
+            required_table TEXT;
+            required_tables TEXT[] := ARRAY[
+              'care_plans',
+              'care_plan_versions',
+              'care_goals',
+              'care_interventions',
+              'care_plan_reviews',
+              'content_assignments',
+              'assessment_assignments',
+              'clinical_tasks',
+              'clinical_task_dependencies',
+              'clinical_task_reminder_receipts',
+              'clinical_task_evidence',
+              'professional_message_threads',
+              'professional_thread_participants',
+              'professional_messages',
+              'professional_message_attachments'
+            ];
+          BEGIN
+            FOREACH required_table IN ARRAY required_tables LOOP
+              IF to_regclass('public.' || required_table) IS NULL THEN
+                RAISE EXCEPTION 'Missing Sprint 22 table: %', required_table;
+              END IF;
+            END LOOP;
+          END $$;
+
+          SELECT conname
+          FROM pg_constraint
+          WHERE conrelid = 'clinical_tasks'::regclass
+            AND contype IN ('u','f')
+          ORDER BY conname;
+
+          SELECT conname
+          FROM pg_constraint
+          WHERE conrelid = 'professional_messages'::regclass
+            AND contype = 'u'
+          ORDER BY conname;
+          SQL
+
+      - name: Execute migration 020 DOWN
+        run: |
+          awk 'found{print} /^-- DOWN --/{found=1; next}'             mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql             > /tmp/sprint22_down.sql
+          psql -v ON_ERROR_STOP=1 -f /tmp/sprint22_down.sql
+
+      - name: Verify DOWN removed Sprint 22 aggregate tables
+        run: |
+          test "$(psql -Atc "SELECT to_regclass('public.care_plans') IS NULL")" = "t"
+          test "$(psql -Atc "SELECT to_regclass('public.clinical_tasks') IS NULL")" = "t"
+          test "$(psql -Atc "SELECT to_regclass('public.professional_messages') IS NULL")" = "t"
