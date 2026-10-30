@@ -623,6 +623,26 @@ export class PgCarePlanRepository implements ICarePlanRepository {
     );
   }
 
+  public async completePlanReviewTransactional(
+    review: CarePlanReview,
+    tx?: DatabaseClient
+  ): Promise<boolean> {
+    const client = this.requireTransactionClient(tx);
+    const updated = await client.query<{ id: string }>(
+      'UPDATE care_plan_reviews SET completed_at=$1, reviewer_id=$2, outcome=$3, goal_reviews=$4, recommended_changes=$5, new_version_id=$6 WHERE id=$7 AND completed_at IS NULL RETURNING id',
+      [
+        review.completed_at || null,
+        review.reviewer_id,
+        review.outcome,
+        JSON.stringify(review.goal_reviews || []),
+        JSON.stringify(review.recommended_changes || []),
+        review.new_version_id || null,
+        review.id
+      ]
+    );
+    return updated.length === 1;
+  }
+
   public async savePlanReview(review: CarePlanReview): Promise<void> {
     await getPool().query(
       'INSERT INTO care_plan_reviews (id, care_plan_id, care_plan_version_id, review_type, scheduled_for, started_at, completed_at, reviewer_id, outcome, goal_reviews, recommended_changes, new_version_id, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (id) DO UPDATE SET started_at=EXCLUDED.started_at, completed_at=EXCLUDED.completed_at, reviewer_id=EXCLUDED.reviewer_id, outcome=EXCLUDED.outcome, goal_reviews=EXCLUDED.goal_reviews, recommended_changes=EXCLUDED.recommended_changes, new_version_id=EXCLUDED.new_version_id',
