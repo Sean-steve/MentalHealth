@@ -693,6 +693,127 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
   });
 
 
+  it('resumes a MODIFY review after completion persistence fails without duplicating the plan version', async () => {
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'Review saga failure plan',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+    await CarePlanService.activatePlan(plan.id, professionalId);
+
+    const review = await CarePlanReviewService.scheduleReview({
+      planId: plan.id,
+      reviewType: CarePlanReviewType.SCHEDULED,
+      scheduledFor: new Date().toISOString(),
+      reviewerId: professionalId
+    });
+
+    const repository = CarePlanService.getRepository() as any;
+    const originalFinalize = repository.savePlanReviewTransactional.bind(repository);
+    let failFinalizeOnce = true;
+    repository.savePlanReviewTransactional = async (...args: any[]) => {
+      if (failFinalizeOnce) {
+        failFinalizeOnce = false;
+        throw new Error('SIMULATED_REVIEW_COMPLETION_PERSISTENCE_FAILURE');
+      }
+      return originalFinalize(...args);
+    };
+
+    const request = {
+      reviewId: review.id,
+      outcome: CarePlanReviewOutcome.MODIFY,
+      goalReviews: [],
+      reviewerId: professionalId,
+      recommendedChanges: ['Adjust governed plan'],
+      newVersionParams: {
+        summary: 'Review-created replacement version',
+        goals: [],
+        interventions: [],
+        changeRationale: 'Failure-injection review modification',
+        reviewFrequencyDays: 14
+      }
+    };
+
+    try {
+      await assert.rejects(
+        () => CarePlanReviewService.executeReview(request),
+        /SIMULATED_REVIEW_COMPLETION_PERSISTENCE_FAILURE/
+      );
+
+      const started = await CarePlanReviewService.getReview(review.id);
+      const afterAction = await CarePlanService.getPlan(plan.id);
+      assert.ok(started?.started_at);
+      assert.equal(started?.completed_at, undefined);
+      assert.ok(started?.new_version_id);
+      assert.equal(afterAction?.current_version_id, started?.new_version_id);
+
+      repository.savePlanReviewTransactional = originalFinalize;
+      const completed = await CarePlanReviewService.executeReview(request);
+      assert.ok(completed.completed_at);
+      assert.equal(completed.new_version_id, started?.new_version_id);
+
+      const versions = await repository.findVersionsByPlanId(plan.id);
+      assert.equal(versions.length, 2);
+    } finally {
+      repository.savePlanReviewTransactional = originalFinalize;
+    }
+  });
+
+  it('does not allow an in-progress Care Plan review to change outcome on retry', async () => {
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'Review outcome lock plan',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+    await CarePlanService.activatePlan(plan.id, professionalId);
+
+    const review = await CarePlanReviewService.scheduleReview({
+      planId: plan.id,
+      reviewType: CarePlanReviewType.SCHEDULED,
+      scheduledFor: new Date().toISOString(),
+      reviewerId: professionalId
+    });
+
+    const repository = CarePlanService.getRepository() as any;
+    const originalFinalize = repository.savePlanReviewTransactional.bind(repository);
+    repository.savePlanReviewTransactional = async () => {
+      throw new Error('SIMULATED_REVIEW_FINALIZE_FAILURE');
+    };
+
+    try {
+      await assert.rejects(
+        () => CarePlanReviewService.executeReview({
+          reviewId: review.id,
+          outcome: CarePlanReviewOutcome.CONTINUE,
+          goalReviews: [],
+          reviewerId: professionalId
+        }),
+        /SIMULATED_REVIEW_FINALIZE_FAILURE/
+      );
+
+      repository.savePlanReviewTransactional = originalFinalize;
+      await assert.rejects(
+        () => CarePlanReviewService.executeReview({
+          reviewId: review.id,
+          outcome: CarePlanReviewOutcome.TERMINATE,
+          goalReviews: [],
+          reviewerId: professionalId
+        }),
+        (err: Error) =>
+          err instanceof DomainInvariantError &&
+          /different outcome/i.test(err.message)
+      );
+    } finally {
+      repository.savePlanReviewTransactional = originalFinalize;
+    }
+  });
+
   it('makes completed Care Plan review retries idempotent', async () => {
     const plan = await CarePlanService.createDraftPlan({
       relationshipId,
