@@ -89,6 +89,43 @@ export class InMemoryCarePlanRepository implements ICarePlanRepository {
     }
   }
 
+  public async savePlanAndVersionAggregate(
+    plan: CarePlan,
+    version: CarePlanVersion,
+    expectedPlanVersion: number
+  ): Promise<void> {
+    const storedPlan = this.plans.get(plan.id);
+    if (!storedPlan || storedPlan.version !== expectedPlanVersion) {
+      throw new Error(
+        'CONCURRENCY_CONFLICT: Care Plan changed before lifecycle update.'
+      );
+    }
+
+    const plansSnapshot = new Map(this.plans);
+    const versionsSnapshot = new Map(this.versions);
+    try {
+      this.versions.set(version.id, structuredClone(version));
+      this.plans.set(plan.id, structuredClone(plan));
+    } catch (error) {
+      this.plans = plansSnapshot;
+      this.versions = versionsSnapshot;
+      throw error;
+    }
+  }
+
+  public async savePlanWithExpectedVersion(
+    plan: CarePlan,
+    expectedPlanVersion: number
+  ): Promise<void> {
+    const storedPlan = this.plans.get(plan.id);
+    if (!storedPlan || storedPlan.version !== expectedPlanVersion) {
+      throw new Error(
+        'CONCURRENCY_CONFLICT: Care Plan changed before lifecycle update.'
+      );
+    }
+    this.plans.set(plan.id, structuredClone(plan));
+  }
+
   public async savePlan(plan: CarePlan): Promise<void> { this.plans.set(plan.id, { ...plan }); }
   public async findPlanById(id: string): Promise<CarePlan | null> { const p=this.plans.get(id); return p?{...p}:null; }
 
