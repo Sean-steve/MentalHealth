@@ -3,9 +3,11 @@
  * Sprint 22
  */
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
+import { UnitOfWork } from '../../platform/database/index.js';
 import { EventBus } from '../../platform/events/index.js';
 import { AuditService } from '../../platform/audit/index.js';
 import { DataClassification } from '../../platform/shared/data_classification.js';
+import { CorrelationManager } from '../../platform/shared/correlation.js';
 import { DomainInvariantError, AuthorizationError, NotFoundError } from '../../platform/errors/index.js';
 import { validateStateTransition } from '../../platform/shared/state_machines.js';
 import { CarePlan, CarePlanVersion, CareGoal, CareIntervention } from '../domain/entities.js';
@@ -128,25 +130,56 @@ export class CarePlanService {
       version: 1
     };
 
-    // Required for PostgreSQL: care_plans.current_version_id and care_plan_versions.care_plan_id
-    // are mutually related, so the repository must create both in one transaction.
-    await CarePlanService.repository.createPlanWithInitialVersion(plan, version);
-
-    for (const goal of params.goals || []) {
-      goal.care_plan_version_id = versionId;
-      await CarePlanService.repository.saveGoal(goal);
-    }
-    for (const intervention of params.interventions || []) {
+    const goals = params.goals || [];
+    const interventions = params.interventions || [];
+    for (const goal of goals) goal.care_plan_version_id = versionId;
+    for (const intervention of interventions) {
       intervention.care_plan_version_id = versionId;
-      await CarePlanService.repository.saveIntervention(intervention);
     }
 
-    EventBus.enqueue('care.plan_created','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{
+    const createdEventPayload = {
       plan_id: plan.id,
       relationship_id: plan.care_relationship_id,
       status: plan.status,
       version: 1
-    });
+    };
+
+    if (CarePlanService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await CarePlanService.repository.createPlanAggregate(
+          plan,
+          version,
+          goals,
+          interventions,
+          uow.getClient()
+        );
+        uow.registerOutboxEvent(
+          'care.plan_created',
+          'care_plans',
+          plan.id,
+          createdEventPayload,
+          {
+            correlation_id: CorrelationManager.getCorrelationId(),
+            data_classification: DataClassification.CLINICAL_RECORD,
+            producer_domain: 'care_plans'
+          }
+        );
+      });
+    } else {
+      await CarePlanService.repository.createPlanAggregate(
+        plan,
+        version,
+        goals,
+        interventions
+      );
+      EventBus.enqueue(
+        'care.plan_created',
+        'care_plans',
+        plan.id,
+        DataClassification.CLINICAL_RECORD,
+        createdEventPayload
+      );
+    }
     AuditService.record({
       actor_type:'STAFF', actor_id:params.actorId, action:'CARE_PLAN.DRAFT_CREATED',
       resource_type:'care_plan', resource_id:plan.id, purpose:'Care Plan Formulation',
@@ -257,9 +290,9 @@ export class CarePlanService {
     const id=generateUUIDv7();
     const versionNumber=(current?.version||1)+1;
 
+    const expectedPlanVersion = plan.version;
     current.status=CarePlanVersionStatus.SUPERSEDED;
     current.effective_until=now;
-    await CarePlanService.repository.saveVersion(current);
 
     const next:CarePlanVersion={
       id,care_plan_id:plan.id,version:versionNumber,status:CarePlanVersionStatus.ACTIVE,
@@ -271,21 +304,69 @@ export class CarePlanService {
       effective_from:now,authored_by:params.authorProfessionalId,approved_by:params.actorId,
       supersedes_id:current.id,created_at:now
     };
-    await CarePlanService.repository.saveVersion(next);
-    for(const goal of params.goals){goal.care_plan_version_id=id;await CarePlanService.repository.saveGoal(goal);}
-    for(const intervention of params.interventions){intervention.care_plan_version_id=id;await CarePlanService.repository.saveIntervention(intervention);}
+
+    for(const goal of params.goals) goal.care_plan_version_id=id;
+    for(const intervention of params.interventions) {
+      intervention.care_plan_version_id=id;
+    }
 
     plan.current_version_id=id;
     if(plan.status!==CarePlanState.ACTIVE){
       validateStateTransition('CarePlanState',plan.status,CarePlanState.ACTIVE,plan.id,params.actorId);
       plan.status=CarePlanState.ACTIVE;
     }
-    plan.updated_at=now; plan.version+=1;
-    await CarePlanService.repository.savePlan(plan);
+    plan.updated_at=now;
+    plan.version=expectedPlanVersion+1;
 
-    EventBus.enqueue('care.plan_updated','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{
-      plan_id:plan.id,new_version_id:id,new_version_number:versionNumber,superseded_version_id:current.id
-    });
+    const updatedEventPayload = {
+      plan_id:plan.id,
+      new_version_id:id,
+      new_version_number:versionNumber,
+      superseded_version_id:current.id
+    };
+
+    if(CarePlanService.repository.requiresUnitOfWork()){
+      await UnitOfWork.run(async uow=>{
+        await CarePlanService.repository.replaceActiveVersionAggregate(
+          {
+            plan,
+            current_version:current,
+            next_version:next,
+            goals:params.goals,
+            interventions:params.interventions,
+            expected_plan_version:expectedPlanVersion
+          },
+          uow.getClient()
+        );
+        uow.registerOutboxEvent(
+          'care.plan_updated',
+          'care_plans',
+          plan.id,
+          updatedEventPayload,
+          {
+            correlation_id:CorrelationManager.getCorrelationId(),
+            data_classification:DataClassification.CLINICAL_RECORD,
+            producer_domain:'care_plans'
+          }
+        );
+      },'SERIALIZABLE');
+    }else{
+      await CarePlanService.repository.replaceActiveVersionAggregate({
+        plan,
+        current_version:current,
+        next_version:next,
+        goals:params.goals,
+        interventions:params.interventions,
+        expected_plan_version:expectedPlanVersion
+      });
+      EventBus.enqueue(
+        'care.plan_updated',
+        'care_plans',
+        plan.id,
+        DataClassification.CLINICAL_RECORD,
+        updatedEventPayload
+      );
+    }
     AuditService.record({
       actor_type:'STAFF',actor_id:params.actorId,action:'CARE_PLAN.NEW_VERSION_CREATED',
       resource_type:'care_plan',resource_id:plan.id,purpose:'Care Plan Clinical Revision',
