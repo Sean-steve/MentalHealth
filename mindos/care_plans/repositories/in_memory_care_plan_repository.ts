@@ -220,6 +220,13 @@ export class InMemoryCarePlanRepository implements ICarePlanRepository {
   }
 
   public async savePlanReviewTransactional(review: CarePlanReview): Promise<void> { this.planReviews.set(review.id,structuredClone(review)); }
+  public async completePlanReviewTransactional(review: CarePlanReview): Promise<boolean> {
+    const current = this.planReviews.get(review.id);
+    if (!current || current.completed_at) return false;
+    this.planReviews.set(review.id, structuredClone(review));
+    return true;
+  }
+
   public async savePlanReview(review: CarePlanReview): Promise<void> { this.planReviews.set(review.id,{...review}); }
   public async findPlanReviewById(id: string): Promise<CarePlanReview | null> { const r=this.planReviews.get(id); return r?{...r}:null; }
   public async findPlanReviewsByPlanId(planId: string): Promise<CarePlanReview[]> {
