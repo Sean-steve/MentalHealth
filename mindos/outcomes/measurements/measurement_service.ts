@@ -125,7 +125,7 @@ export class OutcomeMeasurementService {
       source_id: measurementId,
       provenance: params.provenance,
       clinical_significance: 'ROUTINE',
-      summary_reference: `${definition.name}: ${params.value} ${params.unit}`,
+      summary_reference: `outcome-measurement:${measurementId}`,
       visibility_scope: TimelineVisibilityScope.USER, // Visible to user and professional
       care_relationship_id: params.care_relationship_id,
       care_plan_id: params.care_plan_id,
@@ -142,8 +142,6 @@ export class OutcomeMeasurementService {
         measurement_id: measurementId,
         subject_user_id: params.subject_user_id,
         measure_code: params.measure_code,
-        value: params.value,
-        unit: params.unit,
         provenance: params.provenance,
         source_type: params.source_type
       }
@@ -159,7 +157,7 @@ export class OutcomeMeasurementService {
       purpose: 'Clinical Outcome Tracking',
       authorization_basis: { measureCode: params.measure_code, sourceType: params.source_type },
       result: 'ALLOWED',
-      metadata: { value: params.value, unit: params.unit, provenance: params.provenance }
+      metadata: { measureCode: params.measure_code, provenance: params.provenance, sourceType: params.source_type }
     });
 
     // Recompute trend and evaluate deterioration alerts (Sections 44, 60, 61, 144, 145)
@@ -198,7 +196,6 @@ export class OutcomeMeasurementService {
             await SafetyKernelOutcomeAdapter.emitSafetySignal({
               subject_user_id: params.subject_user_id,
               measure_code: params.measure_code,
-              value: params.value,
               trend,
               measurement_id: measurementId
             });

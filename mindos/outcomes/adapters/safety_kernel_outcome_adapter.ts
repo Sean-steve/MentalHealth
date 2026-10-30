@@ -20,7 +20,6 @@ export class SafetyKernelOutcomeAdapter {
   public static async emitSafetySignal(params: {
     subject_user_id: string;
     measure_code: string;
-    value: number | string | boolean;
     trend: OutcomeTrend;
     measurement_id: string;
   }): Promise<void> {
@@ -38,7 +37,7 @@ export class SafetyKernelOutcomeAdapter {
       result: 'ALLOWED',
       metadata: {
         subjectUserId: params.subject_user_id,
-        value: params.value,
+        measurementId: params.measurement_id,
         trendState: params.trend.trend_state,
         deteriorationSeverity: params.trend.deterioration_severity
       }
@@ -68,8 +67,9 @@ export class SafetyKernelOutcomeAdapter {
           signalType: 'CLINICAL_OUTCOME_DETERIORATION',
           payload: {
             measureCode: params.measure_code,
-            value: params.value,
-            trend: params.trend
+            measurementReference: params.measurement_id,
+            trendState: params.trend.trend_state,
+            deteriorationSeverity: params.trend.deterioration_severity
           }
         });
       }

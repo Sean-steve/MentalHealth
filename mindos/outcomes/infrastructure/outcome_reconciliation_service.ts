@@ -89,7 +89,7 @@ export class OutcomeReconciliationService {
           provenance: m.provenance,
           clinical_significance: 'ROUTINE',
           safety_significance: 'NONE',
-          summary_reference: `${m.measure_code}: ${m.value} ${m.unit}`,
+          summary_reference: `outcome-measurement:${m.id}`,
           visibility_scope: 'USER' as any,
           created_at: m.created_at
         });

@@ -69,7 +69,7 @@ export class ClinicalObservationService {
       source_id: observationId,
       provenance: params.provenance,
       clinical_significance: params.clinical_significance,
-      summary_reference: `${params.observation_name}: ${params.value}${params.unit ? ' ' + params.unit : ''}`,
+      summary_reference: `clinical-observation:${observationId}`,
       visibility_scope: TimelineVisibilityScope.PROFESSIONAL,
       care_relationship_id: params.care_relationship_id,
       actor_id: params.recorded_by
