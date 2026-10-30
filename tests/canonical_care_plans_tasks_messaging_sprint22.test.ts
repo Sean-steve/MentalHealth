@@ -35,7 +35,7 @@ import {
   ProfessionalThreadStatus,
   resetProfessionalMessagingForTesting
 } from '../mindos/professional_messaging/index.js';
-import { CarePlanService, CarePlanProgressService, resetCarePlansForTesting, CarePlanType, CarePlanState } from '../mindos/care_plans/index.js';
+import { CarePlanService, CarePlanProgressService, CarePlanReviewService, resetCarePlansForTesting, CarePlanType, CarePlanState, CarePlanReviewType, CarePlanReviewOutcome } from '../mindos/care_plans/index.js';
 import { reconcileSprint22RelationshipClosure } from '../mindos/sprint22/index.js';
 import { AuthorizationError, DomainInvariantError } from '../mindos/platform/errors/index.js';
 
@@ -521,6 +521,85 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
       (err: Error) =>
         err instanceof DomainInvariantError &&
         /same care thread/i.test(err.message)
+    );
+  });
+
+
+  it('makes completed Care Plan review retries idempotent', async () => {
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'Review retry plan',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+    await CarePlanService.activatePlan(plan.id, professionalId);
+
+    const review = await CarePlanReviewService.scheduleReview({
+      planId: plan.id,
+      reviewType: CarePlanReviewType.SCHEDULED,
+      scheduledFor: new Date().toISOString(),
+      reviewerId: professionalId
+    });
+
+    const first = await CarePlanReviewService.executeReview({
+      reviewId: review.id,
+      outcome: CarePlanReviewOutcome.CONTINUE,
+      goalReviews: [],
+      reviewerId: professionalId
+    });
+    const retry = await CarePlanReviewService.executeReview({
+      reviewId: review.id,
+      outcome: CarePlanReviewOutcome.TERMINATE,
+      goalReviews: [],
+      reviewerId: professionalId
+    });
+
+    assert.equal(retry.id, first.id);
+    assert.equal(retry.completed_at, first.completed_at);
+    assert.equal(retry.outcome, CarePlanReviewOutcome.CONTINUE);
+  });
+
+  it('rejects a stale Care Plan review after the current plan version changes', async () => {
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'Stale review plan',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+    await CarePlanService.activatePlan(plan.id, professionalId);
+
+    const review = await CarePlanReviewService.scheduleReview({
+      planId: plan.id,
+      reviewType: CarePlanReviewType.SCHEDULED,
+      scheduledFor: new Date().toISOString(),
+      reviewerId: professionalId
+    });
+
+    await CarePlanService.createNewVersion({
+      planId: plan.id,
+      authorProfessionalId: professionalId,
+      summary: 'Newer plan version',
+      goals: [],
+      interventions: [],
+      changeRationale: 'Test stale review protection',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+
+    await assert.rejects(
+      () => CarePlanReviewService.executeReview({
+        reviewId: review.id,
+        outcome: CarePlanReviewOutcome.CONTINUE,
+        goalReviews: [],
+        reviewerId: professionalId
+      }),
+      (err: Error) =>
+        err instanceof DomainInvariantError &&
+        /stale/i.test(err.message)
     );
   });
 
