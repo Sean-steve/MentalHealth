@@ -42,6 +42,7 @@ for(const p of required) if(!fs.existsSync(path.join(root,p))) failures.push(`mi
 if(failures.length===0){
   const plan=read('mindos/care_plans/plans/care_plan_service.ts');
   const carePlanApi=read('mindos/care_plans/api/routes.ts');
+  const carePlanReview=read('mindos/care_plans/reviews/care_plan_review_service.ts');
   const task=read('mindos/clinical_tasks/application/clinical_task_service.ts');
   const scheduler=read('mindos/clinical_tasks/application/clinical_task_scheduler.ts');
   const taskPorts=read('mindos/clinical_tasks/application/ports.ts');
@@ -68,6 +69,9 @@ if(failures.length===0){
   if(!carePlanApi.includes('normalizeProfessionalGoals')||
      !carePlanApi.includes('normalizeProfessionalInterventions')||
      !carePlanApi.includes('generateUUIDv7')) failures.push('Care Plan API does not normalize client domain records');
+  if(!carePlanReview.includes('Care Plan review is stale because the current plan version has changed')||
+     !carePlanReview.includes('Care Goal review does not belong to the Care Plan version under review')||
+     !carePlanReview.includes('if(review.completed_at) return review;')) failures.push('Care Plan review version/goal integrity guards missing');
   if(!carePlanApi.includes('Invalid plan_type')||
      !carePlanApi.includes('Invalid review_type')||
      !carePlanApi.includes('Invalid Care Plan review outcome')) failures.push('Care Plan API enum validation incomplete');
@@ -132,6 +136,8 @@ if(failures.length===0){
   if(!tests.includes('denies task action immediately after relationship termination')) failures.push('termination race regression missing');
   if(!tests.includes('rejects cross-user task assignment outside the care relationship subject')) failures.push('cross-user task assignment denial regression missing');
   if(!tests.includes('rejects a reply reference that points into another care thread')) failures.push('cross-thread reply regression missing');
+  if(!tests.includes('makes completed Care Plan review retries idempotent')) failures.push('Care Plan review retry regression missing');
+  if(!tests.includes('rejects a stale Care Plan review')) failures.push('stale Care Plan review regression missing');
   if(!tests.includes('generates only one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
   if(!tests.includes('deduplicates policy-driven task reminders')) failures.push('reminder deduplication regression missing');
   if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
