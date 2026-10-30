@@ -28,6 +28,7 @@ import { RelationshipAccessEvaluator } from '../../care_relationships/access/rel
 import { OutcomeSeriesService } from '../series/outcome_series_service.js';
 import { OutcomeTrendEngine } from '../trends/trend_engine.js';
 import { CarePlanOutcomeAdapter } from '../adapters/care_plan_outcome_adapter.js';
+import { CarePlanService } from '../../care_plans/index.js';
 import { createHash } from 'node:crypto';
 
 export interface ScheduleReviewParams {
@@ -155,18 +156,20 @@ export class OutcomeReviewService {
     const snapshotPayload = JSON.stringify({ reviewId: review.id, measureStates, trendStates, frozenAt });
     const hash = createHash('sha256').update(snapshotPayload).digest('hex');
 
+    const activePlanVersion = review.care_plan_id
+      ? await CarePlanService.getActiveVersion(review.care_plan_id)
+      : null;
+
     const snapshot: OutcomeSnapshot = {
       id: snapshotId,
       review_id: review.id,
       subject_user_id: review.subject_user_id,
       measure_states: measureStates,
       trend_states: trendStates,
-      care_plan_version_id: review.care_plan_id,
+      care_plan_version_id: activePlanVersion?.id,
       frozen_at: frozenAt,
       hash
     };
-
-    await OutcomeReviewService.repository.saveSnapshot(snapshot);
 
     // Update review entity
     review.status = OutcomeReviewState.COMPLETED;
@@ -185,7 +188,7 @@ export class OutcomeReviewService {
     review.completed_at = frozenAt;
     review.updated_at = frozenAt;
 
-    await OutcomeReviewService.repository.saveReview(review);
+    await OutcomeReviewService.repository.saveCompletedReviewWithSnapshot(review, snapshot);
 
     // Enqueue review completion event
     EventBus.enqueue(

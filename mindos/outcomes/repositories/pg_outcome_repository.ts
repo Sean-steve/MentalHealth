@@ -175,6 +175,35 @@ export class PgOutcomeRepository implements IOutcomeRepository {
        s.care_plan_version_id||null,s.frozen_at,s.hash]
     );
   }
+  async saveCompletedReviewWithSnapshot(v:OutcomeReview,s:OutcomeSnapshot):Promise<void>{
+    const client=await getPool().connect();
+    try{
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO outcome_snapshots
+         (id,review_id,subject_user_id,measure_states,trend_states,care_plan_version_id,frozen_at,hash)
+         VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7,$8) ON CONFLICT(review_id) DO NOTHING`,
+        [s.id,s.review_id,s.subject_user_id,JSON.stringify(s.measure_states),JSON.stringify(s.trend_states),
+         s.care_plan_version_id||null,s.frozen_at,s.hash]
+      );
+      await client.query(
+        `INSERT INTO outcome_reviews
+         (id,subject_user_id,care_relationship_id,care_plan_id,review_type,status,reviewer_id,measurement_refs,trend_refs,
+          scheduled_for,started_at,completed_at,decision,reason_codes,clinical_notes,recommended_actions,snapshot_id,created_at,updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13,$14::jsonb,$15,$16::jsonb,$17,$18,$19)
+         ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,reviewer_id=EXCLUDED.reviewer_id,
+         measurement_refs=EXCLUDED.measurement_refs,trend_refs=EXCLUDED.trend_refs,scheduled_for=EXCLUDED.scheduled_for,
+         started_at=EXCLUDED.started_at,completed_at=EXCLUDED.completed_at,decision=EXCLUDED.decision,
+         reason_codes=EXCLUDED.reason_codes,clinical_notes=EXCLUDED.clinical_notes,
+         recommended_actions=EXCLUDED.recommended_actions,snapshot_id=EXCLUDED.snapshot_id,updated_at=EXCLUDED.updated_at`,
+        [v.id,v.subject_user_id,v.care_relationship_id,v.care_plan_id||null,v.review_type,v.status,v.reviewer_id||null,
+         JSON.stringify(v.measurement_refs),JSON.stringify(v.trend_refs),v.scheduled_for||null,v.started_at||null,
+         v.completed_at||null,v.decision||null,JSON.stringify(v.reason_codes),v.clinical_notes||null,
+         JSON.stringify(v.recommended_actions),v.snapshot_id||null,v.created_at,v.updated_at]
+      );
+      await client.query('COMMIT');
+    }catch(err){await client.query('ROLLBACK');throw err;}finally{client.release();}
+  }
   async findSnapshotById(id:string):Promise<OutcomeSnapshot|null>{
     const r=await getPool().query('SELECT * FROM outcome_snapshots WHERE id=$1',[id]);
     return r.rows[0]?toSnapshot(r.rows[0]):null;

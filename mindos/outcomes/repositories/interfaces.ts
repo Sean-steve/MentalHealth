@@ -33,6 +33,7 @@ export interface IOutcomeRepository {
   findAlertsByUser(userId: string, status?: string): Promise<OutcomeAlert[]>;
 
   saveSnapshot(snapshot: OutcomeSnapshot): Promise<void>;
+  saveCompletedReviewWithSnapshot(review: OutcomeReview, snapshot: OutcomeSnapshot): Promise<void>;
   findSnapshotById(id: string): Promise<OutcomeSnapshot | null>;
 
   clear(): void;

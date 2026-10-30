@@ -161,6 +161,13 @@ export class InMemoryOutcomeRepository implements IOutcomeRepository {
     this.snapshots.set(snapshot.id, structuredClone(snapshot));
   }
 
+  public async saveCompletedReviewWithSnapshot(review: OutcomeReview, snapshot: OutcomeSnapshot): Promise<void> {
+    const reviewCopy=structuredClone(review);
+    const snapshotCopy=structuredClone(snapshot);
+    this.snapshots.set(snapshot.id,snapshotCopy);
+    this.reviews.set(review.id,reviewCopy);
+  }
+
   public async findSnapshotById(id: string): Promise<OutcomeSnapshot | null> {
     const s = this.snapshots.get(id);
     return s ? structuredClone(s) : null;
