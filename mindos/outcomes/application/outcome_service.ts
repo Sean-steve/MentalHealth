@@ -49,7 +49,7 @@ export class OutcomeService {
       professionalId: params.established_by,
       purpose: 'MEASUREMENT_BASED_CARE_BASELINE',
       action: 'WRITE',
-      dataDomain: 'CLINICAL_RECORDS'
+      dataDomain: 'CLINICAL_NOTES'
     });
     if (!authDecision.allowed) {
       throw new AuthorizationError(

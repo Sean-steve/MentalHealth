@@ -81,7 +81,7 @@ export class ClinicalRecordProjectionService {
       professionalId: params.professional_id,
       purpose: params.purpose,
       action: 'READ',
-      dataDomain: 'CLINICAL_RECORDS'
+      dataDomain: 'CLINICAL_NOTES'
     });
 
     if (!authDecision.allowed) {

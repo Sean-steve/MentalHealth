@@ -22,6 +22,7 @@ export * from './domain/entities.js';
 export * from './domain/invariants.js';
 export * from './repositories/interfaces.js';
 export * from './repositories/in_memory_clinical_record_repository.js';
+export * from './repositories/pg_clinical_record_repository.js';
 export * from './timeline/clinical_timeline_service.js';
 export * from './observations/clinical_observation_service.js';
 export * from './projections/clinical_record_projection_service.js';

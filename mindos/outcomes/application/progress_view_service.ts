@@ -134,7 +134,7 @@ export class ProgressViewService {
       professionalId: params.professional_id,
       purpose: params.purpose || 'CLINICAL_WORKFLOW',
       action: 'READ',
-      dataDomain: 'CLINICAL_RECORDS'
+      dataDomain: 'CLINICAL_NOTES'
     });
 
     if (!authDecision.allowed) {

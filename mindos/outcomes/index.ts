@@ -30,6 +30,8 @@ export * from './measures/measure_registry.js';
 export * from './measures/seed_measures.js';
 export * from './repositories/interfaces.js';
 export * from './repositories/in_memory_outcome_repository.js';
+export * from './repositories/pg_outcome_repository.js';
+export * from './repositories/pg_outcome_governance_repository.js';
 export * from './measurements/measurement_service.js';
 export * from './series/comparability_service.js';
 export * from './series/outcome_series_service.js';
@@ -37,6 +39,7 @@ export * from './trends/clinical_change_rules.js';
 export * from './trends/trend_engine.js';
 export * from './reviews/outcome_review_service.js';
 export * from './alerts/outcome_alert_service.js';
+export * from './alerts/outcome_alert_policy.js';
 export * from './adapters/assessment_outcome_adapter.js';
 export * from './adapters/care_plan_outcome_adapter.js';
 export * from './adapters/safety_kernel_outcome_adapter.js';
@@ -47,4 +50,6 @@ export * from './infrastructure/outcome_reconciliation_service.js';
 export function resetOutcomesForTesting(): void {
   defaultRepository.clear();
   MeasureRegistry.resetForTesting();
+  ClinicalChangeRuleRegistry.resetForTesting();
+  OutcomeAlertPolicyRegistry.clear();
 }

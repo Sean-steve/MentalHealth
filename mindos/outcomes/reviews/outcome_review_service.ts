@@ -120,7 +120,7 @@ export class OutcomeReviewService {
       professionalId: params.reviewer_id,
       purpose: 'MEASUREMENT_BASED_CARE_REVIEW',
       action: 'WRITE',
-      dataDomain: 'CLINICAL_RECORDS'
+      dataDomain: 'CLINICAL_NOTES'
     });
 
     if (!authDecision.allowed) {
