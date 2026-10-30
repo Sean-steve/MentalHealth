@@ -41,6 +41,9 @@ for(const p of required) if(!fs.existsSync(path.join(root,p))) failures.push(`mi
 
 if(failures.length===0){
   const plan=read('mindos/care_plans/plans/care_plan_service.ts');
+  const carePlanRepositoryInterface=read('mindos/care_plans/repositories/interfaces.ts');
+  const carePlanPgRepository=read('mindos/care_plans/repositories/pg_care_plan_repository.ts');
+  const carePlanInMemoryRepository=read('mindos/care_plans/repositories/in_memory_care_plan_repository.ts');
   const carePlanApi=read('mindos/care_plans/api/routes.ts');
   const carePlanReview=read('mindos/care_plans/reviews/care_plan_review_service.ts');
   const assignmentService=read('mindos/care_plans/assignments/assignment_service.ts');
@@ -93,6 +96,20 @@ if(failures.length===0){
      !plan.includes('Current Care Plan version')) failures.push('terminal/stale Care Plan revision guard missing');
   if(!assignmentService.includes('RelationshipAccessEvaluator.assertAccess')||
      !assignmentService.includes('does not belong to the current Care Plan version')) failures.push('assignment service authorization/version binding missing');
+  if(!assignmentService.includes('UnitOfWork.run')||
+     !assignmentService.includes('saveContentAssignmentTransactional')||
+     !assignmentService.includes('saveAssessmentAssignmentTransactional')||
+     !assignmentService.includes('registerOutboxEvent')) failures.push('assignment persistence/outbox is not Unit-of-Work atomic');
+  if(!carePlanRepositoryInterface.includes('reviewGoalAggregate')||
+     !carePlanRepositoryInterface.includes('saveContentAssignmentTransactional')||
+     !carePlanRepositoryInterface.includes('saveAssessmentAssignmentTransactional')) failures.push('Care Plan repository transactional sub-aggregate contract incomplete');
+  if(!carePlanPgRepository.includes('public async reviewGoalAggregate')||
+     !carePlanPgRepository.includes('public async saveContentAssignmentTransactional')||
+     !carePlanPgRepository.includes('public async saveAssessmentAssignmentTransactional')||
+     !carePlanPgRepository.includes('Care Goal')||
+     !carePlanPgRepository.includes('expectedStatus')) failures.push('PostgreSQL Care Plan repository transactional sub-aggregate implementation incomplete');
+  if(!carePlanInMemoryRepository.includes('this.goalReviews.get(goal.id)')||
+     !carePlanInMemoryRepository.includes('this.goalReviews.set(goal.id, reviews)')) failures.push('in-memory goal review aggregate storage is inconsistent');
   if(!task.includes('trusted system actor')) failures.push('owner-domain completion is not restricted to trusted system actors');
   if(!task.includes('UnitOfWork.run')||
      !task.includes('createTaskAggregate')||
