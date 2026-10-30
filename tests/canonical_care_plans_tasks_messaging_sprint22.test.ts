@@ -407,4 +407,58 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
     assert.equal(retry.professional_messaging.closed_threads.length, 0);
   });
 
+
+  it('denies task action immediately after relationship termination before reconciliation', async () => {
+    const raceUserId = 'user-s22-race';
+    ConsentService.recordConsent({
+      userId: raceUserId,
+      consentType: 'CLINICAL_CONSULTATION',
+      status: 'GRANTED'
+    });
+
+    const relationship = await CareRelationshipService.createRelationship({
+      subjectUserId: raceUserId,
+      primaryProviderId: professionalId,
+      relationshipType: CareRelationshipType.PSYCHOLOGY,
+      originType: CareRelationshipOriginType.CARE_NAVIGATION,
+      originReference: 'sprint-22-race',
+      jurisdiction: 'KE',
+      purpose: 'CARE_DELIVERY',
+      activateImmediately: true,
+      actorId: professionalId
+    });
+
+    const task = await ClinicalTaskService.createTask({
+      care_relationship_id: relationship.id,
+      task_type: ClinicalTaskType.USER_ACTION,
+      assigned_to_type: ClinicalTaskAssigneeType.USER,
+      assigned_to_id: raceUserId,
+      title: 'Race-condition task',
+      instruction_reference: 'instruction:race',
+      source_type: 'CARE_PLAN',
+      source_reference: 'plan:race',
+      policy_version: 'test-v1',
+      creator_professional_id: professionalId
+    });
+
+    await CareRelationshipService.terminateRelationship(
+      relationship.id,
+      'Test immediate authorization cutoff',
+      professionalId
+    );
+
+    await assert.rejects(
+      () => ClinicalTaskService.startTask(
+        task.id,
+        raceUserId,
+        ClinicalTaskAssigneeType.USER
+      ),
+      AuthorizationError
+    );
+
+    await reconcileSprint22RelationshipClosure(relationship.id);
+    const reconciled = await ClinicalTaskService.getTask(task.id);
+    assert.equal(reconciled.status, ClinicalTaskState.CANCELLED);
+  });
+
 });
