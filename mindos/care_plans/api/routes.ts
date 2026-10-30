@@ -7,16 +7,186 @@ import {
   CarePlanType,
   CarePlanState,
   CarePlanReviewType,
-  CarePlanReviewOutcome
+  CarePlanReviewOutcome,
+  CareGoalType,
+  CareGoalProvenance,
+  GoalPriority,
+  GoalTargetType,
+  CareInterventionType,
+  CareGoalStatus,
+  CareGoal,
+  CareIntervention
 } from '../index.js';
 import {
   RelationshipAccessEvaluator,
   DataDomain,
   ActionPermission
 } from '../../care_relationships/index.js';
-import { AuthorizationError, NotFoundError } from '../../platform/errors/index.js';
+import { AuthorizationError, DomainInvariantError, NotFoundError } from '../../platform/errors/index.js';
+import { generateUUIDv7 } from '../../platform/database/uuid.js';
 
 export const carePlanRouter = Router();
+
+function isEnumValue<T extends Record<string, string>>(
+  enumeration: T,
+  value: unknown
+): value is T[keyof T] {
+  return typeof value === 'string' &&
+    Object.values(enumeration).includes(value as T[keyof T]);
+}
+
+function normalizeProfessionalGoals(raw: unknown, actorId: string): CareGoal[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    throw new DomainInvariantError('goals must be an array.');
+  }
+
+  return raw.map((entry, index) => {
+    if (!entry || typeof entry !== 'object') {
+      throw new DomainInvariantError(`Goal at index ${index} must be an object.`);
+    }
+    const goal = entry as Record<string, unknown>;
+    if (!isEnumValue(CareGoalType, goal.goal_type)) {
+      throw new DomainInvariantError(`Goal at index ${index} has invalid goal_type.`);
+    }
+    if (!isEnumValue(GoalPriority, goal.priority)) {
+      throw new DomainInvariantError(`Goal at index ${index} has invalid priority.`);
+    }
+    if (!isEnumValue(GoalTargetType, goal.target_type)) {
+      throw new DomainInvariantError(`Goal at index ${index} has invalid target_type.`);
+    }
+
+    const provenance =
+      goal.provenance === undefined
+        ? CareGoalProvenance.PROFESSIONAL_RECOMMENDED
+        : goal.provenance;
+    if (
+      provenance !== CareGoalProvenance.PROFESSIONAL_RECOMMENDED &&
+      provenance !== CareGoalProvenance.COLLABORATIVE
+    ) {
+      throw new DomainInvariantError(
+        'Professional Care Plan API may only record PROFESSIONAL_RECOMMENDED or COLLABORATIVE goal provenance.'
+      );
+    }
+
+    const title = String(goal.title || '').trim();
+    const descriptionReference = String(goal.description_reference || '').trim();
+    if (!title || !descriptionReference) {
+      throw new DomainInvariantError(
+        `Goal at index ${index} requires title and description_reference.`
+      );
+    }
+
+    const now = new Date().toISOString();
+    return {
+      id: generateUUIDv7(),
+      care_plan_version_id: 'PENDING_VERSION_ASSIGNMENT',
+      goal_code: String(goal.goal_code || ''),
+      goal_type: goal.goal_type,
+      title,
+      description_reference: descriptionReference,
+      priority: goal.priority,
+      target_type: goal.target_type,
+      target_value:
+        typeof goal.target_value === 'string' || typeof goal.target_value === 'number'
+          ? goal.target_value
+          : undefined,
+      baseline_reference:
+        typeof goal.baseline_reference === 'string' || typeof goal.baseline_reference === 'number'
+          ? goal.baseline_reference
+          : undefined,
+      status: CareGoalStatus.NOT_STARTED,
+      provenance,
+      started_at: now,
+      target_date: typeof goal.target_date === 'string' ? goal.target_date : undefined,
+      created_by: actorId,
+      created_at: now,
+      updated_at: now
+    };
+  });
+}
+
+function normalizeProfessionalInterventions(
+  raw: unknown,
+  status: CareIntervention['status']
+): CareIntervention[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    throw new DomainInvariantError('interventions must be an array.');
+  }
+
+  const referenceTypes = new Set([
+    'CONTENT_VERSION',
+    'EXERCISE_DEFINITION',
+    'ASSESSMENT_INSTRUMENT',
+    'SERVICE_OFFERING',
+    'SAFETY_PLAN',
+    'CUSTOM'
+  ]);
+  const responsibleActorTypes = new Set([
+    'USER',
+    'PROFESSIONAL',
+    'CARE_TEAM_ROLE'
+  ]);
+
+  return raw.map((entry, index) => {
+    if (!entry || typeof entry !== 'object') {
+      throw new DomainInvariantError(`Intervention at index ${index} must be an object.`);
+    }
+    const intervention = entry as Record<string, unknown>;
+    if (!isEnumValue(CareInterventionType, intervention.intervention_type)) {
+      throw new DomainInvariantError(
+        `Intervention at index ${index} has invalid intervention_type.`
+      );
+    }
+
+    const referenceType = String(intervention.reference_type || '');
+    const responsibleActorType = String(intervention.responsible_actor_type || '');
+    if (!referenceTypes.has(referenceType)) {
+      throw new DomainInvariantError(
+        `Intervention at index ${index} has invalid reference_type.`
+      );
+    }
+    if (!responsibleActorTypes.has(responsibleActorType)) {
+      throw new DomainInvariantError(
+        `Intervention at index ${index} has invalid responsible_actor_type.`
+      );
+    }
+
+    const referenceId = String(intervention.reference_id || '').trim();
+    const title = String(intervention.title || '').trim();
+    const frequency = String(intervention.frequency || '').trim();
+    if (!referenceId || !title || !frequency) {
+      throw new DomainInvariantError(
+        `Intervention at index ${index} requires reference_id, title and frequency.`
+      );
+    }
+
+    return {
+      id: generateUUIDv7(),
+      care_plan_version_id: 'PENDING_VERSION_ASSIGNMENT',
+      intervention_type: intervention.intervention_type,
+      reference_type: referenceType as CareIntervention['reference_type'],
+      reference_id: referenceId,
+      title,
+      frequency,
+      duration:
+        typeof intervention.duration === 'string' ? intervention.duration : undefined,
+      responsible_actor_type:
+        responsibleActorType as CareIntervention['responsible_actor_type'],
+      // External clients cannot forge arbitrary actor IDs. Ownership is resolved
+      // from the relationship/care-team context by later governed workflows.
+      responsible_actor_id: undefined,
+      status,
+      clinical_artifact_reference:
+        typeof intervention.clinical_artifact_reference === 'string'
+          ? intervention.clinical_artifact_reference
+          : undefined,
+      created_at: new Date().toISOString()
+    };
+  });
+}
+
 
 type PlanActor = { id: string; type: 'USER' | 'PROFESSIONAL' };
 
@@ -53,7 +223,11 @@ async function authorizePlan(planId: string, a: PlanActor, action: ActionPermiss
 carePlanRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const a = actor(req);
-    const status = req.query.status as CarePlanState | undefined;
+    const rawStatus = req.query.status;
+    if (rawStatus !== undefined && !isEnumValue(CarePlanState, rawStatus)) {
+      return res.status(400).json({ error: 'Invalid Care Plan status filter.' });
+    }
+    const status = rawStatus as CarePlanState | undefined;
     const plans = a.type === 'USER'
       ? await CarePlanService.listPlansForUser(a.id, status)
       : await CarePlanService.listPlansForProfessional(a.id, status);
@@ -109,13 +283,22 @@ carePlanRouter.post('/', async (req: Request, res: Response, next: NextFunction)
       });
     }
 
+    if (!isEnumValue(CarePlanType, plan_type)) {
+      return res.status(400).json({ error: 'Invalid plan_type.' });
+    }
+    const normalizedGoals = normalizeProfessionalGoals(goals, a.id);
+    const normalizedInterventions = normalizeProfessionalInterventions(
+      interventions,
+      'PLANNED'
+    );
+
     const plan = await CarePlanService.createDraftPlan({
       relationshipId: relationship_id,
       authorProfessionalId: a.id,
-      planType: plan_type as CarePlanType,
+      planType: plan_type,
       summary,
-      goals,
-      interventions,
+      goals: normalizedGoals,
+      interventions: normalizedInterventions,
       reviewFrequencyDays: Number(review_frequency_days),
       requiresUserAcknowledgement: Boolean(requires_user_acknowledgement),
       actorId: a.id
@@ -167,12 +350,18 @@ carePlanRouter.post('/:id/versions', async (req: Request, res: Response, next: N
       return res.status(400).json({ error: 'summary, goals, interventions and change_rationale are required.' });
     }
 
+    const normalizedGoals = normalizeProfessionalGoals(goals, a.id);
+    const normalizedInterventions = normalizeProfessionalInterventions(
+      interventions,
+      'ACTIVE'
+    );
+
     const version = await CarePlanService.createNewVersion({
       planId: req.params.id,
       authorProfessionalId: a.id,
       summary,
-      goals,
-      interventions,
+      goals: normalizedGoals,
+      interventions: normalizedInterventions,
       changeRationale: change_rationale,
       reviewFrequencyDays: review_frequency_days ? Number(review_frequency_days) : undefined,
       actorId: a.id
@@ -194,9 +383,12 @@ carePlanRouter.post('/:id/reviews', async (req: Request, res: Response, next: Ne
     if (!review_type || !scheduled_for) {
       return res.status(400).json({ error: 'review_type and scheduled_for are required.' });
     }
+    if (!isEnumValue(CarePlanReviewType, review_type)) {
+      return res.status(400).json({ error: 'Invalid review_type.' });
+    }
     const review = await CarePlanReviewService.scheduleReview({
       planId: req.params.id,
-      reviewType: review_type as CarePlanReviewType,
+      reviewType: review_type,
       scheduledFor: scheduled_for,
       reviewerId: a.id
     });
@@ -214,10 +406,13 @@ carePlanRouter.post('/reviews/:reviewId/complete', async (req: Request, res: Res
     }
     const { outcome, goal_reviews, recommended_changes, new_version } = req.body || {};
     if (!outcome) return res.status(400).json({ error: 'outcome is required.' });
+    if (!isEnumValue(CarePlanReviewOutcome, outcome)) {
+      return res.status(400).json({ error: 'Invalid Care Plan review outcome.' });
+    }
 
     const review = await CarePlanReviewService.executeReview({
       reviewId: req.params.reviewId,
-      outcome: outcome as CarePlanReviewOutcome,
+      outcome,
       goalReviews: Array.isArray(goal_reviews) ? goal_reviews : [],
       recommendedChanges: Array.isArray(recommended_changes) ? recommended_changes : undefined,
       newVersionParams: new_version,
