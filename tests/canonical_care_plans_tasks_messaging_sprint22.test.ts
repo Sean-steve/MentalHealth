@@ -37,6 +37,8 @@ import {
   RepositoryProtectedMessageContentResolver,
   SafetyKernelMessagingAdapter,
   UnconfiguredMessagingSafetyAdapter,
+  ConfiguredMessagingAttachmentPolicy,
+  DenyByDefaultMessagingAttachmentPolicy,
   resetProfessionalMessagingForTesting
 } from '../mindos/professional_messaging/index.js';
 import {
@@ -585,6 +587,79 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
         err instanceof DomainInvariantError &&
         /attachment rejected by governed policy/i.test(err.message)
     );
+  });
+
+  it('accepts only governed private CLEAN attachments within explicit policy', async () => {
+    const thread = await ProfessionalMessagingService.openThread({
+      care_relationship_id: relationshipId,
+      thread_type: ProfessionalThreadType.CARE_COMMUNICATION,
+      purpose: 'CARE_COORDINATION',
+      created_by: userId,
+      creator_type: ThreadParticipantType.USER,
+      professional_id: professionalId
+    });
+    const message = await ProfessionalMessagingService.sendMessage({
+      thread_id: thread.id,
+      sender_type: ThreadParticipantType.USER,
+      sender_id: userId,
+      message_type: ProfessionalMessageType.TEXT,
+      content_reference: 'protected-message:attachment-governed',
+      idempotency_key: 's22-attachment-governed-message'
+    });
+
+    ProfessionalMessagingService.setAttachmentPolicyPort(
+      new ConfiguredMessagingAttachmentPolicy({
+        max_bytes: 4096,
+        allowed_mime_types: ['application/pdf'],
+        allowed_data_classifications: ['CLINICAL_RECORD']
+      })
+    );
+
+    try {
+      const attachment = await ProfessionalMessagingService.addAttachment({
+        thread_id: thread.id,
+        message_id: message.id,
+        actor_id: userId,
+        evidence_reference: 'evidence:protected-object-001',
+        mime_type: 'application/pdf',
+        size_bytes: 2048,
+        scan_status: 'CLEAN',
+        data_classification: 'CLINICAL_RECORD'
+      });
+      assert.equal(attachment.mime_type, 'application/pdf');
+
+      await assert.rejects(
+        () => ProfessionalMessagingService.addAttachment({
+          thread_id: thread.id,
+          message_id: message.id,
+          actor_id: userId,
+          evidence_reference: 'https://public.example/file.pdf',
+          mime_type: 'application/pdf',
+          size_bytes: 2048,
+          scan_status: 'CLEAN',
+          data_classification: 'CLINICAL_RECORD'
+        }),
+        /PUBLIC_OR_INVALID_ATTACHMENT_REFERENCE/
+      );
+
+      await assert.rejects(
+        () => ProfessionalMessagingService.addAttachment({
+          thread_id: thread.id,
+          message_id: message.id,
+          actor_id: userId,
+          evidence_reference: 'evidence:too-large',
+          mime_type: 'application/pdf',
+          size_bytes: 8192,
+          scan_status: 'CLEAN',
+          data_classification: 'CLINICAL_RECORD'
+        }),
+        /ATTACHMENT_TOO_LARGE/
+      );
+    } finally {
+      ProfessionalMessagingService.setAttachmentPolicyPort(
+        new DenyByDefaultMessagingAttachmentPolicy()
+      );
+    }
   });
 
   it('reconciles plan, unfinished tasks and messaging when a care relationship terminates', async () => {
