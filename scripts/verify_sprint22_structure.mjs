@@ -98,9 +98,12 @@ if(failures.length===0){
      !carePlanReview.includes('savePlanReviewTransactional')||
      !carePlanReview.includes('registerOutboxEvent')||
      !carePlanReview.includes('cannot be retried with a different outcome')||
-     !carePlanReview.includes('Persist the review intent before any plan mutation')) failures.push('Care Plan review retry-safe saga/outbox completion missing');
-  if(!carePlanRepositoryInterface.includes('savePlanReviewTransactional')||
-     !carePlanPgRepository.includes('public async savePlanReviewTransactional')) failures.push('transactional Care Plan review persistence contract incomplete');
+     !carePlanReview.includes('Atomically claim the review intent before any plan mutation')) failures.push('Care Plan review retry-safe saga/outbox completion missing');
+  if(!carePlanRepositoryInterface.includes('beginPlanReviewExecution')||
+     !carePlanRepositoryInterface.includes('savePlanReviewTransactional')||
+     !carePlanPgRepository.includes('public async beginPlanReviewExecution')||
+     !carePlanPgRepository.includes('started_at IS NULL AND completed_at IS NULL')||
+     !carePlanPgRepository.includes('public async savePlanReviewTransactional')) failures.push('Care Plan review claim/transactional persistence contract incomplete');
   if(!carePlanReview.includes('Care Plan review is stale because the current plan version has changed')||
      !carePlanReview.includes('Care Goal review does not belong to the Care Plan version under review')||
      !carePlanReview.includes('if(review.completed_at) return review;')) failures.push('Care Plan review version/goal integrity guards missing');
