@@ -37,7 +37,7 @@ async function startServer() {
     process.env.MINDOS_SPRINT22_STORAGE_MODE === 'postgres' ||
     process.env.NODE_ENV === 'production';
   const sprint22Runtime = configureSprint22Runtime({ usePostgres: sprint22UsePostgres });
-  logger.info('MindOS Sprint 22 runtime configured', sprint22Runtime);
+  logger.info('MindOS Sprint 22 runtime configured', { ...sprint22Runtime });
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const requestId =
