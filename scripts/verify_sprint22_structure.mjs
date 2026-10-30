@@ -98,12 +98,17 @@ if(failures.length===0){
      !carePlanReview.includes('savePlanReviewTransactional')||
      !carePlanReview.includes('registerOutboxEvent')||
      !carePlanReview.includes('cannot be retried with a different outcome')||
-     !carePlanReview.includes('Atomically claim the review intent before any plan mutation')) failures.push('Care Plan review retry-safe saga/outbox completion missing');
+     !carePlanReview.includes('Atomically claim the review intent before any plan mutation')||
+     !carePlanReview.includes('const finalized=await CarePlanReviewService.persistCompletedReview')||
+     !carePlanReview.includes('if(finalized){')) failures.push('Care Plan review retry-safe saga/outbox completion missing');
   if(!carePlanRepositoryInterface.includes('beginPlanReviewExecution')||
      !carePlanRepositoryInterface.includes('savePlanReviewTransactional')||
      !carePlanPgRepository.includes('public async beginPlanReviewExecution')||
      !carePlanPgRepository.includes('started_at IS NULL AND completed_at IS NULL')||
-     !carePlanPgRepository.includes('public async savePlanReviewTransactional')) failures.push('Care Plan review claim/transactional persistence contract incomplete');
+     !carePlanPgRepository.includes('public async savePlanReviewTransactional')||
+     !carePlanRepositoryInterface.includes('completePlanReviewTransactional')||
+     !carePlanPgRepository.includes('public async completePlanReviewTransactional')||
+     !carePlanPgRepository.includes('completed_at IS NULL RETURNING id')) failures.push('Care Plan review claim/transactional completion contract incomplete');
   if(!carePlanReview.includes('Care Plan review is stale because the current plan version has changed')||
      !carePlanReview.includes('Care Goal review does not belong to the Care Plan version under review')||
      !carePlanReview.includes('if(review.completed_at) return review;')) failures.push('Care Plan review version/goal integrity guards missing');
@@ -215,6 +220,7 @@ if(failures.length===0){
   if(!tests.includes('denies task action immediately after relationship termination')) failures.push('termination race regression missing');
   if(!tests.includes('rejects cross-user task assignment outside the care relationship subject')) failures.push('cross-user task assignment denial regression missing');
   if(!tests.includes('rejects a reply reference that points into another care thread')) failures.push('cross-thread reply regression missing');
+  if(!tests.includes('emits exactly one Care Plan review completion event under concurrent finalization')) failures.push('Care Plan review exactly-once completion-event regression missing');
   if(!tests.includes('resumes a MODIFY review after completion persistence fails without duplicating the plan version')) failures.push('Care Plan review failure-recovery regression missing');
   if(!tests.includes('does not allow an in-progress Care Plan review to change outcome on retry')) failures.push('Care Plan review outcome-lock regression missing');
   if(!tests.includes('makes completed Care Plan review retries idempotent')) failures.push('Care Plan review retry regression missing');
