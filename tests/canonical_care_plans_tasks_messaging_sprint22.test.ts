@@ -57,6 +57,7 @@ import { AuthorizationError, DomainInvariantError } from '../mindos/platform/err
 
 const userId = 'user-s22-0001';
 const professionalId = 'prof-s22-0001';
+const unrelatedProfessionalId = 'prof-s22-unrelated';
 let relationshipId = '';
 
 describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professional Messaging', () => {
@@ -74,6 +75,19 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
       professional_type: ProfessionalType.CLINICAL_PSYCHOLOGIST,
       display_name: 'Sprint 22 Test Clinician',
       legal_name_reference: 'Sprint 22 Test Clinician',
+      status: ProfessionalState.ACTIVE,
+      verification_status: ProfessionalVerificationState.VERIFIED,
+      jurisdictions: ['KE'], languages: ['en'], specialties: ['TEST'],
+      delivery_modes: [DeliveryMode.TELEHEALTH], organization_refs: [],
+      profile_visibility: ProfileVisibility.INTERNAL_ONLY,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+    });
+    await ProfessionalService.getRepository().saveProfile({
+      id: unrelatedProfessionalId,
+      user_id: 'user-prof-s22-unrelated',
+      professional_type: ProfessionalType.CLINICAL_PSYCHOLOGIST,
+      display_name: 'Unrelated Sprint 22 Clinician',
+      legal_name_reference: 'Unrelated Sprint 22 Clinician',
       status: ProfessionalState.ACTIVE,
       verification_status: ProfessionalVerificationState.VERIFIED,
       jurisdictions: ['KE'], languages: ['en'], specialties: ['TEST'],
@@ -124,7 +138,7 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
         priority: GoalPriority.NORMAL,
         targetType: GoalTargetType.USER_RATING,
         provenance: CareGoalProvenance.PROFESSIONAL_RECOMMENDED,
-        creatorId: 'unrelated-professional-s22',
+        creatorId: unrelatedProfessionalId,
         actorRole: 'PROFESSIONAL'
       }),
       AuthorizationError
@@ -139,7 +153,7 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
         title: 'Must not be created',
         frequency: 'governed-schedule:test',
         responsibleActorType: 'USER',
-        creatorId: 'unrelated-professional-s22'
+        creatorId: unrelatedProfessionalId
       }),
       AuthorizationError
     );
