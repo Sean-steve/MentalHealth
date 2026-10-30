@@ -1,5 +1,6 @@
-import { DatabaseManager, getPool } from '../../platform/database/index.js';
-import { ICarePlanRepository } from './interfaces.js';
+import { DatabaseClient, DatabaseManager, getPool } from '../../platform/database/index.js';
+import { ConcurrencyError } from '../../platform/database/errors.js';
+import { ICarePlanRepository, CarePlanVersionReplacement } from './interfaces.js';
 import {
   CarePlan,
   CarePlanVersion,
@@ -128,6 +129,187 @@ const toPlanReview = (r: PlanReviewRow): CarePlanReview => ({
 });
 
 export class PgCarePlanRepository implements ICarePlanRepository {
+  public requiresUnitOfWork(): boolean { return true; }
+
+  private requireTransactionClient(tx?: DatabaseClient): DatabaseClient {
+    if (!tx || !tx.isInTransaction()) {
+      throw new Error(
+        'PgCarePlanRepository aggregate mutation requires an application-owned UnitOfWork transaction.'
+      );
+    }
+    return tx;
+  }
+
+  public async createPlanAggregate(
+    plan: CarePlan,
+    version: CarePlanVersion,
+    goals: CareGoal[],
+    interventions: CareIntervention[],
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+
+    await client.query(
+      'INSERT INTO care_plans (id, subject_user_id, care_relationship_id, primary_professional_id, care_team_id, plan_type, status, current_version_id, started_at, target_end_at, completed_at, terminated_at, created_at, updated_at, version) VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,$8,$9,$10,$11,$12,$13,$14)',
+      [
+        plan.id, plan.subject_user_id, plan.care_relationship_id,
+        plan.primary_professional_id, plan.care_team_id || null, plan.plan_type,
+        plan.status, plan.started_at, plan.target_end_at || null,
+        plan.completed_at || null, plan.terminated_at || null,
+        plan.created_at, plan.updated_at, plan.version
+      ]
+    );
+
+    await client.query(
+      'INSERT INTO care_plan_versions (id, care_plan_id, version, status, summary, review_frequency_days, next_review_due, effective_from, effective_until, authored_by, approved_by, acknowledged_by_user, acknowledged_at, supersedes_id, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',
+      [
+        version.id, version.care_plan_id, version.version, version.status,
+        version.summary, version.review_schedule.frequency_days,
+        version.review_schedule.next_review_due, version.effective_from,
+        version.effective_until || null, version.authored_by,
+        version.approved_by || null, Boolean(version.acknowledged_by_user),
+        version.acknowledged_at || null, version.supersedes_id || null,
+        version.created_at
+      ]
+    );
+
+    for (const goal of goals) {
+      await client.query(
+        'INSERT INTO care_goals (id, care_plan_version_id, goal_code, goal_type, title, description_reference, priority, target_type, target_value, baseline_reference, current_value, status, provenance, started_at, target_date, completed_at, created_by, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)',
+        [
+          goal.id, goal.care_plan_version_id, goal.goal_code, goal.goal_type,
+          goal.title, goal.description_reference, goal.priority,
+          goal.target_type, jsonValue(goal.target_value),
+          jsonValue(goal.baseline_reference), jsonValue(goal.current_value),
+          goal.status, goal.provenance, goal.started_at,
+          goal.target_date || null, goal.completed_at || null,
+          goal.created_by, goal.created_at, goal.updated_at
+        ]
+      );
+    }
+
+    for (const intervention of interventions) {
+      await client.query(
+        'INSERT INTO care_interventions (id, care_plan_version_id, intervention_type, reference_type, reference_id, title, frequency, duration, schedule_reference, responsible_actor_type, responsible_actor_id, status, clinical_artifact_reference, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
+        [
+          intervention.id, intervention.care_plan_version_id,
+          intervention.intervention_type, intervention.reference_type,
+          intervention.reference_id, intervention.title,
+          intervention.frequency, intervention.duration || null,
+          intervention.schedule_reference || null,
+          intervention.responsible_actor_type,
+          intervention.responsible_actor_id || null,
+          intervention.status,
+          intervention.clinical_artifact_reference || null,
+          intervention.created_at
+        ]
+      );
+    }
+
+    const updated = await client.query<{ id: string }>(
+      'UPDATE care_plans SET current_version_id = $1 WHERE id = $2 AND version = $3 RETURNING id',
+      [version.id, plan.id, plan.version]
+    );
+    if (updated.length !== 1) {
+      throw new ConcurrencyError(
+        `Care Plan ${plan.id} changed during initial aggregate creation.`
+      );
+    }
+  }
+
+  public async replaceActiveVersionAggregate(
+    replacement: CarePlanVersionReplacement,
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+
+    await client.query(
+      'UPDATE care_plan_versions SET status = $1, effective_until = $2 WHERE id = $3 AND care_plan_id = $4',
+      [
+        replacement.current_version.status,
+        replacement.current_version.effective_until || null,
+        replacement.current_version.id,
+        replacement.plan.id
+      ]
+    );
+
+    await client.query(
+      'INSERT INTO care_plan_versions (id, care_plan_id, version, status, summary, review_frequency_days, next_review_due, effective_from, effective_until, authored_by, approved_by, acknowledged_by_user, acknowledged_at, supersedes_id, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',
+      [
+        replacement.next_version.id,
+        replacement.next_version.care_plan_id,
+        replacement.next_version.version,
+        replacement.next_version.status,
+        replacement.next_version.summary,
+        replacement.next_version.review_schedule.frequency_days,
+        replacement.next_version.review_schedule.next_review_due,
+        replacement.next_version.effective_from,
+        replacement.next_version.effective_until || null,
+        replacement.next_version.authored_by,
+        replacement.next_version.approved_by || null,
+        Boolean(replacement.next_version.acknowledged_by_user),
+        replacement.next_version.acknowledged_at || null,
+        replacement.next_version.supersedes_id || null,
+        replacement.next_version.created_at
+      ]
+    );
+
+    for (const goal of replacement.goals) {
+      await client.query(
+        'INSERT INTO care_goals (id, care_plan_version_id, goal_code, goal_type, title, description_reference, priority, target_type, target_value, baseline_reference, current_value, status, provenance, started_at, target_date, completed_at, created_by, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)',
+        [
+          goal.id, goal.care_plan_version_id, goal.goal_code, goal.goal_type,
+          goal.title, goal.description_reference, goal.priority,
+          goal.target_type, jsonValue(goal.target_value),
+          jsonValue(goal.baseline_reference), jsonValue(goal.current_value),
+          goal.status, goal.provenance, goal.started_at,
+          goal.target_date || null, goal.completed_at || null,
+          goal.created_by, goal.created_at, goal.updated_at
+        ]
+      );
+    }
+
+    for (const intervention of replacement.interventions) {
+      await client.query(
+        'INSERT INTO care_interventions (id, care_plan_version_id, intervention_type, reference_type, reference_id, title, frequency, duration, schedule_reference, responsible_actor_type, responsible_actor_id, status, clinical_artifact_reference, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
+        [
+          intervention.id, intervention.care_plan_version_id,
+          intervention.intervention_type, intervention.reference_type,
+          intervention.reference_id, intervention.title,
+          intervention.frequency, intervention.duration || null,
+          intervention.schedule_reference || null,
+          intervention.responsible_actor_type,
+          intervention.responsible_actor_id || null,
+          intervention.status,
+          intervention.clinical_artifact_reference || null,
+          intervention.created_at
+        ]
+      );
+    }
+
+    const updated = await client.query<{ id: string }>(
+      'UPDATE care_plans SET current_version_id = $1, status = $2, updated_at = $3, version = $4 WHERE id = $5 AND version = $6 AND current_version_id = $7 RETURNING id',
+      [
+        replacement.plan.current_version_id,
+        replacement.plan.status,
+        replacement.plan.updated_at,
+        replacement.plan.version,
+        replacement.plan.id,
+        replacement.expected_plan_version,
+        replacement.current_version.id
+      ]
+    );
+    if (updated.length !== 1) {
+      throw new ConcurrencyError(
+        `Care Plan ${replacement.plan.id} was concurrently modified while creating a new version.`,
+        {
+          planId: replacement.plan.id,
+          expectedVersion: replacement.expected_plan_version
+        }
+      );
+    }
+  }
+
   public async createPlanWithInitialVersion(plan: CarePlan, version: CarePlanVersion): Promise<void> {
     const client = DatabaseManager.getClient();
     await client.transaction(async tx => {
