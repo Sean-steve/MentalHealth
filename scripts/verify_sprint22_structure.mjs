@@ -65,6 +65,9 @@ if(failures.length===0){
   if(!plan.includes('createPlanWithInitialVersion')) failures.push('care plan creation is not atomic');
   if(/reviewFrequencyDays\s*\?\?\s*30|reviewFrequencyDays\s*\|\|\s*30/.test(plan)) failures.push('care plan invents a 30-day review cadence');
   if(!task.includes('trusted system actor')) failures.push('owner-domain completion is not restricted to trusted system actors');
+  if(!task.includes('User-assigned clinical task must target the subject of the care relationship')) failures.push('cross-user task creation is not denied');
+  if(!taskApi.includes('SYSTEM-owned clinical tasks cannot be created through the external HTTP API')) failures.push('external API can create SYSTEM-owned tasks');
+  if(taskApi.includes('completion_authority: completion_authority')||taskApi.includes('owner_domain,')) failures.push('external task creation API exposes authoritative completion fields');
   if(!task.includes('assertActorMatchesAssignment')||
      !task.includes('CareTeamService.getMembership')||
      !task.includes('CARE_RELATIONSHIP_ENDED')) failures.push('task action authorization does not revalidate assignment/relationship state');
@@ -112,6 +115,7 @@ if(failures.length===0){
   if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
   if(!tests.includes('reconciles plan, unfinished tasks and messaging')) failures.push('relationship-closure acceptance regression missing');
   if(!tests.includes('denies task action immediately after relationship termination')) failures.push('termination race regression missing');
+  if(!tests.includes('rejects cross-user task assignment outside the care relationship subject')) failures.push('cross-user task assignment denial regression missing');
   if(!tests.includes('generates only one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
   if(!tests.includes('deduplicates policy-driven task reminders')) failures.push('reminder deduplication regression missing');
   if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
