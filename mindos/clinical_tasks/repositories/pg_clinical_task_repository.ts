@@ -1,5 +1,6 @@
-import { getPool } from '../../platform/database/index.js';
-import { IClinicalTaskRepository } from './interfaces.js';
+import { DatabaseClient, getPool } from '../../platform/database/index.js';
+import { ConcurrencyError } from '../../platform/database/errors.js';
+import { IClinicalTaskRepository, ClinicalTaskCreateResult } from './interfaces.js';
 import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence, ClinicalTaskReminderReceipt } from '../domain/entities.js';
 import {
   ClinicalTaskState,
@@ -122,6 +123,100 @@ const toReminderReceipt = (row: ReminderReceiptRow): ClinicalTaskReminderReceipt
 });
 
 export class PgClinicalTaskRepository implements IClinicalTaskRepository {
+  requiresUnitOfWork(): boolean { return true; }
+
+  private requireTransactionClient(tx?: DatabaseClient): DatabaseClient {
+    if (!tx || !tx.isInTransaction()) {
+      throw new Error(
+        'PgClinicalTaskRepository aggregate mutation requires an application-owned UnitOfWork transaction.'
+      );
+    }
+    return tx;
+  }
+
+  async createTaskAggregate(
+    task: ClinicalTask,
+    dependencies: ClinicalTaskDependency[],
+    tx?: DatabaseClient
+  ): Promise<ClinicalTaskCreateResult> {
+    const client = this.requireTransactionClient(tx);
+    const rows = await client.query<{ id: string }>(
+      'INSERT INTO clinical_tasks (id, subject_user_id, care_relationship_id, care_plan_id, care_goal_id, task_type, assigned_to_type, assigned_to_id, status, priority, title, instruction_reference, due_at, started_at, completed_at, recurrence_rule, recurrence_parent_task_id, recurrence_sequence, created_by_professional_id, source_type, source_reference, completion_authority, owner_domain, policy_version, idempotency_key, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27) ON CONFLICT (idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING id',
+      [
+        task.id, task.subject_user_id, task.care_relationship_id,
+        task.care_plan_id || null, task.care_goal_id || null, task.task_type,
+        task.assigned_to_type, task.assigned_to_id, task.status, task.priority,
+        task.title, task.instruction_reference, task.due_at || null,
+        task.started_at || null, task.completed_at || null,
+        task.recurrence_rule || null, task.recurrence_parent_task_id || null,
+        task.recurrence_sequence || 0, task.created_by_professional_id,
+        task.source_type, task.source_reference, task.completion_authority,
+        task.owner_domain || null, task.policy_version,
+        task.idempotency_key || null, task.created_at, task.updated_at
+      ]
+    );
+
+    const taskId = rows[0]?.id;
+    if (!taskId) {
+      throw new Error('Clinical Task insert did not return an identifier.');
+    }
+    if (taskId !== task.id) {
+      return { created: false, task_id: taskId };
+    }
+
+    for (const dependency of dependencies) {
+      await client.query(
+        'INSERT INTO clinical_task_dependencies (id, task_id, depends_on_task_id, dependency_type, created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (task_id, depends_on_task_id) DO NOTHING',
+        [
+          dependency.id, dependency.task_id,
+          dependency.depends_on_task_id,
+          dependency.dependency_type,
+          dependency.created_at
+        ]
+      );
+    }
+
+    return { created: true, task_id: task.id };
+  }
+
+  async saveTaskWithExpectedState(
+    task: ClinicalTask,
+    expectedState: ClinicalTaskState,
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+    const updated = await client.query<{ id: string }>(
+      'UPDATE clinical_tasks SET status=$1, started_at=$2, completed_at=$3, updated_at=$4 WHERE id=$5 AND status=$6 RETURNING id',
+      [
+        task.status, task.started_at || null, task.completed_at || null,
+        task.updated_at, task.id, expectedState
+      ]
+    );
+    if (updated.length !== 1) {
+      throw new ConcurrencyError(
+        `Clinical Task ${task.id} was concurrently modified.`,
+        { taskId: task.id, expectedState }
+      );
+    }
+  }
+
+  async completeTaskAggregate(
+    task: ClinicalTask,
+    evidence: ClinicalTaskEvidence,
+    expectedState: ClinicalTaskState,
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+    await this.saveTaskWithExpectedState(task, expectedState, client);
+    await client.query(
+      'INSERT INTO clinical_task_evidence (id, task_id, evidence_type, evidence_reference, recorded_by, recorded_at) VALUES ($1,$2,$3,$4,$5,$6)',
+      [
+        evidence.id, evidence.task_id, evidence.evidence_type,
+        evidence.evidence_reference, evidence.recorded_by, evidence.recorded_at
+      ]
+    );
+  }
+
   public async saveTask(task: ClinicalTask): Promise<void> {
     const pool = getPool();
     await pool.query(
