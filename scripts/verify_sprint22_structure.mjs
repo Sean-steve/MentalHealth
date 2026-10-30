@@ -192,9 +192,18 @@ if(failures.length===0){
   if(!messagingSafety.includes('CrisisResponseSafetySignalForwarder')||
      !messagingSafety.includes('CrisisResponseOrchestrator')||
      !messagingSafety.includes('SignalSourceType.SYSTEM_OBSERVATION')) failures.push('canonical messaging Safety forwarder missing');
-  if(!runtime.includes('messagingSafetyScanner')||
-     !runtime.includes('UnconfiguredMessagingSafetyAdapter')) failures.push('messaging Safety runtime does not fail closed/reset when scanner is absent');
-  if(!attachmentPolicy.includes('DenyByDefaultMessagingAttachmentPolicy')||!messaging.includes('attachmentPolicyPort.validate')) failures.push('attachment policy is not deny-by-default');
+  if(!messagingSafety.includes('CanonicalAcuteDistressProtectedMessageScanner')||
+     !messagingSafety.includes('RepositoryProtectedMessageContentResolver')||
+     !messagingSafety.includes('SignalNormalizer')||
+     !messagingSafety.includes('ACUTE_DISTRESS_PATTERNS')) failures.push('governed protected-message Safety classification is incomplete');
+  if(!runtime.includes('CanonicalAcuteDistressProtectedMessageScanner')||
+     !runtime.includes('RepositoryProtectedMessageContentResolver')||
+     !runtime.includes("professional_messaging_safety: 'CONFIGURED'")) failures.push('messaging Safety runtime is not configured with the canonical protected-content scanner');
+  if(!attachmentPolicy.includes('DenyByDefaultMessagingAttachmentPolicy')||
+     !attachmentPolicy.includes('ConfiguredMessagingAttachmentPolicy')||
+     !attachmentPolicy.includes('PUBLIC_OR_INVALID_ATTACHMENT_REFERENCE')||
+     !messaging.includes('attachmentPolicyPort.validate')||
+     !runtime.includes('parseMessagingAttachmentPolicyConfig')) failures.push('governed attachment policy/configuration is incomplete');
   for (const [name, source] of [['migration', migration], ['messaging', messaging]]) {
     if (/;\\\\n|,\\\\n/.test(source)) failures.push(`${name} contains a literal \\n patch artifact`);
     if (/[,;]\+\s{2,}/.test(source)) failures.push(`${name} contains a stray + patch artifact`);
@@ -205,7 +214,7 @@ if(failures.length===0){
   if(!server.includes("app.use('/api/v1', sprint22Router)")) failures.push('Sprint 22 API router not wired into server');
   const depCreates=(migration.match(/CREATE TABLE IF NOT EXISTS clinical_task_dependencies/g)||[]).length;
   if(depCreates!==1) failures.push(`clinical_task_dependencies declaration count = ${depCreates}, expected 1`);
-  for(const table of ['care_plans','care_plan_versions','care_goals','care_interventions','clinical_tasks','professional_message_threads','professional_messages']){
+  for(const table of ['care_plans','care_plan_versions','care_goals','care_interventions','clinical_tasks','professional_message_threads','professional_message_contents','professional_messages']){
     if(!migration.includes(`CREATE TABLE IF NOT EXISTS ${table}`)) failures.push(`migration missing table: ${table}`);
   }
   if(carePlanSources.includes('DataClassification.RESTRICTED')) failures.push('care plan events use non-canonical RESTRICTED classification');
@@ -218,6 +227,8 @@ if(failures.length===0){
   if(!tests.includes('generates one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
   if(!tests.includes('deduplicates policy-driven task reminders')) failures.push('reminder deduplication regression missing');
   if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
+  if(!tests.includes('encrypts care-message content and forwards acute distress')) failures.push('protected-message Safety regression missing');
+  if(!tests.includes('accepts only governed private CLEAN attachments')) failures.push('governed attachment acceptance regression missing');
   if(!tests.includes('reconciles plan, unfinished tasks and messaging')) failures.push('relationship-closure acceptance regression missing');
   if(!tests.includes('denies task action immediately after relationship termination')) failures.push('termination race regression missing');
   if(!tests.includes('rejects cross-user task assignment outside the care relationship subject')) failures.push('cross-user task assignment denial regression missing');
