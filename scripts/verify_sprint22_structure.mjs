@@ -173,6 +173,8 @@ if(failures.length===0){
   }
   if(!progress.includes('ClinicalTaskService.listTasksForPlan')) failures.push('care plan progress is not linked to real clinical tasks');
   if(!messaging.includes('NOT_CONFIGURED')) failures.push('messaging safety-unconfigured state is not explicit');
+  if(!messaging.includes('New care-thread mutations require an active care relationship')||
+     !messaging.includes('assertThreadRelationshipActiveForMutation(thread)')) failures.push('messaging relationship-termination race guard missing');
   if(!messaging.includes('UnitOfWork.run')||
      !messaging.includes('createThreadAggregate')||
      !messaging.includes('createMessageIdempotent')||
