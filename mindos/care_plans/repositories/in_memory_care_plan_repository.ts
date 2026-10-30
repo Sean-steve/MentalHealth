@@ -126,6 +126,48 @@ export class InMemoryCarePlanRepository implements ICarePlanRepository {
     this.plans.set(plan.id, structuredClone(plan));
   }
 
+  public async reviewGoalAggregate(
+    goal: CareGoal,
+    review: CareGoalReview,
+    expectedStatus: CareGoalStatus
+  ): Promise<void> {
+    const current = this.goals.get(goal.id);
+    if (!current || current.status !== expectedStatus) {
+      throw new Error(
+        'CONCURRENCY_CONFLICT: Care Goal changed before review.'
+      );
+    }
+
+    const goalsSnapshot = new Map(this.goals);
+    const reviewsSnapshot = new Map(this.goalReviews);
+    try {
+      this.goals.set(goal.id, structuredClone(goal));
+      this.goalReviews.set(review.id, structuredClone(review));
+    } catch (error) {
+      this.goals = goalsSnapshot;
+      this.goalReviews = reviewsSnapshot;
+      throw error;
+    }
+  }
+
+  public async saveContentAssignmentTransactional(
+    assignment: ContentAssignment
+  ): Promise<void> {
+    this.contentAssignments.set(
+      assignment.id,
+      structuredClone(assignment)
+    );
+  }
+
+  public async saveAssessmentAssignmentTransactional(
+    assignment: AssessmentAssignment
+  ): Promise<void> {
+    this.assessmentAssignments.set(
+      assignment.id,
+      structuredClone(assignment)
+    );
+  }
+
   public async savePlan(plan: CarePlan): Promise<void> { this.plans.set(plan.id, { ...plan }); }
   public async findPlanById(id: string): Promise<CarePlan | null> { const p=this.plans.get(id); return p?{...p}:null; }
 
