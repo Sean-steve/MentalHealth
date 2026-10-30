@@ -77,7 +77,7 @@ export class SafetyKernelMessagingAdapter implements ProfessionalMessagingSafety
     const forwarded = await this.forwarder.forwardCandidate({
       subject_user_id: params.subject_user_id,
       source_domain: 'PROFESSIONAL_MESSAGING',
-      source_reference: `care-message:${params.message_id}`,
+      source_reference: params.content_reference,
       signal_code: classification.signal_code,
       severity: classification.severity,
       confidence: classification.confidence,
