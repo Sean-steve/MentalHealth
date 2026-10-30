@@ -12,6 +12,7 @@ import { CarePlan, CarePlanVersion, CareGoal, CareIntervention } from '../domain
 import { CarePlanType, CarePlanState, CarePlanVersionStatus } from '../domain/types.js';
 import { ICarePlanRepository } from '../repositories/interfaces.js';
 import { CarePlanEligibilityService } from '../application/eligibility_service.js';
+import { CarePlanInvariants } from '../domain/invariants.js';
 import {
   RelationshipAccessEvaluator,
   CareRelationshipService,
@@ -158,10 +159,18 @@ export class CarePlanService {
   public static async activatePlan(planId: string, actorId: string): Promise<CarePlan> {
     const plan = await CarePlanService.requirePlan(planId);
     await CarePlanService.assertProfessionalWrite(plan, actorId);
-    validateStateTransition('CarePlanState',plan.status,CarePlanState.ACTIVE,plan.id,actorId);
 
     const version = await CarePlanService.repository.findVersionById(plan.current_version_id);
     if (!version) throw new NotFoundError(`CarePlanVersion ${plan.current_version_id} not found.`);
+    if (
+      plan.status === CarePlanState.PENDING_USER_ACKNOWLEDGEMENT &&
+      !version.acknowledged_by_user
+    ) {
+      throw new DomainInvariantError(
+        'Care Plan requires subject-user acknowledgement before activation.'
+      );
+    }
+    validateStateTransition('CarePlanState',plan.status,CarePlanState.ACTIVE,plan.id,actorId);
     const now=new Date().toISOString();
     version.status=CarePlanVersionStatus.ACTIVE;
     version.approved_by=actorId;
@@ -186,8 +195,24 @@ export class CarePlanService {
     if(plan.subject_user_id!==userId){
       throw new AuthorizationError('Only the data subject user may acknowledge their care plan.',{errorCode:'AUTHZ_003'});
     }
+    if([
+      CarePlanState.COMPLETED,
+      CarePlanState.TERMINATED,
+      CarePlanState.SUPERSEDED,
+      CarePlanState.REVOKED
+    ].includes(plan.status)){
+      throw new DomainInvariantError(
+        `Care Plan ${plan.id} in ${plan.status} state cannot be newly acknowledged.`
+      );
+    }
+    const relationship=await CareRelationshipService.getRelationship(plan.care_relationship_id);
+    if(!relationship) throw new NotFoundError(`CareRelationship ${plan.care_relationship_id} not found.`);
+    CarePlanInvariants.assertRelationshipEligible(relationship);
+
     const version=await CarePlanService.repository.findVersionById(plan.current_version_id);
     if(!version) throw new NotFoundError(`CarePlanVersion ${plan.current_version_id} not found.`);
+    if(version.acknowledged_by_user) return plan;
+
     const now=new Date().toISOString();
     version.acknowledged_by_user=true; version.acknowledged_at=now;
 
@@ -212,19 +237,29 @@ export class CarePlanService {
     const plan=await CarePlanService.requirePlan(params.planId);
     await CarePlanService.assertProfessionalWrite(plan,params.authorProfessionalId);
 
+    if(![CarePlanState.ACTIVE,CarePlanState.UNDER_REVIEW].includes(plan.status)){
+      throw new DomainInvariantError(
+        `Care Plan ${plan.id} in ${plan.status} state cannot create a replacement active version.`
+      );
+    }
+
     const current=await CarePlanService.repository.findVersionById(plan.current_version_id);
+    if(!current) throw new NotFoundError(`CarePlanVersion ${plan.current_version_id} not found.`);
+    if(current.status!==CarePlanVersionStatus.ACTIVE){
+      throw new DomainInvariantError(
+        `Current Care Plan version ${current.id} is ${current.status}; ACTIVE version required for revision.`
+      );
+    }
     const reviewFrequencyDays=CarePlanService.requireReviewFrequency(
-      params.reviewFrequencyDays ?? current?.review_schedule.frequency_days
+      params.reviewFrequencyDays ?? current.review_schedule.frequency_days
     );
     const now=new Date().toISOString();
     const id=generateUUIDv7();
     const versionNumber=(current?.version||1)+1;
 
-    if(current?.status===CarePlanVersionStatus.ACTIVE){
-      current.status=CarePlanVersionStatus.SUPERSEDED;
-      current.effective_until=now;
-      await CarePlanService.repository.saveVersion(current);
-    }
+    current.status=CarePlanVersionStatus.SUPERSEDED;
+    current.effective_until=now;
+    await CarePlanService.repository.saveVersion(current);
 
     const next:CarePlanVersion={
       id,care_plan_id:plan.id,version:versionNumber,status:CarePlanVersionStatus.ACTIVE,
@@ -234,17 +269,22 @@ export class CarePlanService {
         next_review_due:new Date(Date.now()+reviewFrequencyDays*86400000).toISOString()
       },
       effective_from:now,authored_by:params.authorProfessionalId,approved_by:params.actorId,
-      supersedes_id:current?.id,created_at:now
+      supersedes_id:current.id,created_at:now
     };
     await CarePlanService.repository.saveVersion(next);
     for(const goal of params.goals){goal.care_plan_version_id=id;await CarePlanService.repository.saveGoal(goal);}
     for(const intervention of params.interventions){intervention.care_plan_version_id=id;await CarePlanService.repository.saveIntervention(intervention);}
 
-    plan.current_version_id=id; plan.status=CarePlanState.ACTIVE; plan.updated_at=now; plan.version+=1;
+    plan.current_version_id=id;
+    if(plan.status!==CarePlanState.ACTIVE){
+      validateStateTransition('CarePlanState',plan.status,CarePlanState.ACTIVE,plan.id,params.actorId);
+      plan.status=CarePlanState.ACTIVE;
+    }
+    plan.updated_at=now; plan.version+=1;
     await CarePlanService.repository.savePlan(plan);
 
     EventBus.enqueue('care.plan_updated','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{
-      plan_id:plan.id,new_version_id:id,new_version_number:versionNumber,superseded_version_id:current?.id
+      plan_id:plan.id,new_version_id:id,new_version_number:versionNumber,superseded_version_id:current.id
     });
     AuditService.record({
       actor_type:'STAFF',actor_id:params.actorId,action:'CARE_PLAN.NEW_VERSION_CREATED',
@@ -262,6 +302,12 @@ export class CarePlanService {
     plan.status=CarePlanState.PAUSED;plan.updated_at=new Date().toISOString();plan.version+=1;
     await CarePlanService.repository.savePlan(plan);
     EventBus.enqueue('care.plan_paused','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{plan_id:plan.id,reason});
+    AuditService.record({
+      actor_type:'STAFF',actor_id:actorId,action:'CARE_PLAN.PAUSED',
+      resource_type:'care_plan',resource_id:plan.id,purpose:'Care Plan Lifecycle',
+      authorization_basis:{relationshipId:plan.care_relationship_id},result:'ALLOWED',
+      metadata:{reason}
+    });
     return plan;
   }
 
@@ -273,6 +319,12 @@ export class CarePlanService {
     plan.status=CarePlanState.COMPLETED;plan.completed_at=now;plan.updated_at=now;plan.version+=1;
     await CarePlanService.repository.savePlan(plan);
     EventBus.enqueue('care.plan_completed','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{plan_id:plan.id,completed_at:now});
+    AuditService.record({
+      actor_type:'STAFF',actor_id:actorId,action:'CARE_PLAN.COMPLETED',
+      resource_type:'care_plan',resource_id:plan.id,purpose:'Care Plan Lifecycle',
+      authorization_basis:{relationshipId:plan.care_relationship_id},result:'ALLOWED',
+      metadata:{completedAt:now}
+    });
     return plan;
   }
 
@@ -284,6 +336,12 @@ export class CarePlanService {
     plan.status=CarePlanState.TERMINATED;plan.terminated_at=now;plan.updated_at=now;plan.version+=1;
     await CarePlanService.repository.savePlan(plan);
     EventBus.enqueue('care.plan_terminated','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{plan_id:plan.id,reason,terminated_at:now});
+    AuditService.record({
+      actor_type:'STAFF',actor_id:actorId,action:'CARE_PLAN.TERMINATED',
+      resource_type:'care_plan',resource_id:plan.id,purpose:'Care Plan Lifecycle',
+      authorization_basis:{relationshipId:plan.care_relationship_id},result:'ALLOWED',
+      metadata:{reason,terminatedAt:now}
+    });
     return plan;
   }
 
