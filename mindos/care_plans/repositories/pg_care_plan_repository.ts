@@ -1,4 +1,4 @@
-import { DatabaseClient, DatabaseManager, getPool } from '../../platform/database/index.js';
+import { DatabaseClient, getPool } from '../../platform/database/index.js';
 import { ConcurrencyError } from '../../platform/database/errors.js';
 import { ICarePlanRepository, CarePlanVersionReplacement } from './interfaces.js';
 import {
