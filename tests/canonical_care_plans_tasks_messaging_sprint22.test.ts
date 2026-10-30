@@ -35,7 +35,8 @@ import {
   ProfessionalThreadStatus,
   resetProfessionalMessagingForTesting
 } from '../mindos/professional_messaging/index.js';
-import { CarePlanService, CarePlanProgressService, resetCarePlansForTesting, CarePlanType } from '../mindos/care_plans/index.js';
+import { CarePlanService, CarePlanProgressService, resetCarePlansForTesting, CarePlanType, CarePlanState } from '../mindos/care_plans/index.js';
+import { reconcileSprint22RelationshipClosure } from '../mindos/sprint22/index.js';
 import { AuthorizationError, DomainInvariantError } from '../mindos/platform/errors/index.js';
 
 const userId = 'user-s22-0001';
@@ -201,4 +202,209 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
     });
     assert.equal(retry.id, message.id);
   });
+
+  it('generates one idempotent next occurrence from an explicit recurrence policy', async () => {
+    ClinicalTaskScheduler.setRecurrencePort(
+      new PolicyRegistryClinicalTaskRecurrenceAdapter([
+        {
+          rule_key: 'TEST_HOURLY',
+          interval_minutes: 60,
+          anchor: 'COMPLETED_AT',
+          max_occurrences: 3,
+          policy_version: 'test-v1'
+        }
+      ])
+    );
+
+    const task = await ClinicalTaskService.createTask({
+      care_relationship_id: relationshipId,
+      task_type: ClinicalTaskType.USER_ACTION,
+      assigned_to_type: ClinicalTaskAssigneeType.USER,
+      assigned_to_id: userId,
+      title: 'Recurring governed action',
+      instruction_reference: 'instruction:recurring',
+      recurrence_rule: 'TEST_HOURLY',
+      source_type: 'CARE_PLAN',
+      source_reference: 'plan:test',
+      policy_version: 'test-v1',
+      creator_professional_id: professionalId
+    });
+
+    await ClinicalTaskService.completeTask({
+      task_id: task.id,
+      actor_id: userId,
+      actor_type: ClinicalTaskAssigneeType.USER,
+      evidence_type: ClinicalTaskEvidenceType.USER_ATTESTATION,
+      evidence_reference: 'user-report:recurrence-root-done'
+    });
+
+    const first = await ClinicalTaskScheduler.spawnNextOccurrence(task.id);
+    const retry = await ClinicalTaskScheduler.spawnNextOccurrence(task.id);
+
+    assert.equal(first.status, 'CREATED');
+    assert.equal(retry.status, 'CREATED');
+    assert.equal(first.task_id, retry.task_id);
+
+    const next = await ClinicalTaskService.getTask(first.task_id!);
+    assert.equal(next.recurrence_parent_task_id, task.id);
+    assert.equal(next.recurrence_sequence, 1);
+    assert.equal(next.recurrence_rule, 'TEST_HOURLY');
+  });
+
+  it('deduplicates policy-driven task reminders with persistent receipts', async () => {
+    let notifications = 0;
+    ClinicalTaskScheduler.setReminderPort({
+      async notifyDue() {
+        notifications += 1;
+        return {
+          accepted: true,
+          notification_reference: `notification:${notifications}`
+        };
+      }
+    });
+
+    const now = new Date();
+    const task = await ClinicalTaskService.createTask({
+      care_relationship_id: relationshipId,
+      task_type: ClinicalTaskType.USER_ACTION,
+      assigned_to_type: ClinicalTaskAssigneeType.USER,
+      assigned_to_id: userId,
+      title: 'Reminder governed action',
+      instruction_reference: 'instruction:reminder',
+      due_at: new Date(now.getTime() + 5 * 60_000).toISOString(),
+      source_type: 'CARE_PLAN',
+      source_reference: 'plan:test',
+      policy_version: 'test-v1',
+      creator_professional_id: professionalId
+    });
+
+    const first = await ClinicalTaskScheduler.sendDueReminders({
+      now,
+      horizon_minutes: 10,
+      reminder_key: 'TEST_T_MINUS_10'
+    });
+    const retry = await ClinicalTaskScheduler.sendDueReminders({
+      now,
+      horizon_minutes: 10,
+      reminder_key: 'TEST_T_MINUS_10'
+    });
+
+    assert.ok(first.sent.includes(task.id));
+    assert.ok(retry.skipped.includes(task.id));
+    assert.equal(notifications, 1);
+  });
+
+  it('fails closed for care-message attachments until governed media policy is configured', async () => {
+    const thread = await ProfessionalMessagingService.openThread({
+      care_relationship_id: relationshipId,
+      thread_type: ProfessionalThreadType.CARE_COMMUNICATION,
+      purpose: 'CARE_COORDINATION',
+      created_by: userId,
+      creator_type: ThreadParticipantType.USER,
+      professional_id: professionalId
+    });
+    const message = await ProfessionalMessagingService.sendMessage({
+      thread_id: thread.id,
+      sender_type: ThreadParticipantType.USER,
+      sender_id: userId,
+      message_type: ProfessionalMessageType.TEXT,
+      content_reference: 'protected-message:attachment-test',
+      idempotency_key: 's22-attachment-message'
+    });
+
+    await assert.rejects(
+      () => ProfessionalMessagingService.addAttachment({
+        thread_id: thread.id,
+        message_id: message.id,
+        actor_id: userId,
+        evidence_reference: 'protected-file:001',
+        mime_type: 'application/pdf',
+        size_bytes: 1024,
+        scan_status: 'CLEAN',
+        data_classification: 'CLINICAL_RECORD'
+      }),
+      (err: Error) =>
+        err instanceof DomainInvariantError &&
+        /attachment rejected by governed policy/i.test(err.message)
+    );
+  });
+
+  it('reconciles plan, unfinished tasks and messaging when a care relationship terminates', async () => {
+    const closureUserId = 'user-s22-closure';
+    ConsentService.recordConsent({
+      userId: closureUserId,
+      consentType: 'CLINICAL_CONSULTATION',
+      status: 'GRANTED'
+    });
+
+    const relationship = await CareRelationshipService.createRelationship({
+      subjectUserId: closureUserId,
+      primaryProviderId: professionalId,
+      relationshipType: CareRelationshipType.PSYCHOLOGY,
+      originType: CareRelationshipOriginType.CARE_NAVIGATION,
+      originReference: 'sprint-22-closure',
+      jurisdiction: 'KE',
+      purpose: 'CARE_DELIVERY',
+      activateImmediately: true,
+      actorId: professionalId
+    });
+
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId: relationship.id,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'Closure reconciliation plan',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+    await CarePlanService.activatePlan(plan.id, professionalId);
+
+    const task = await ClinicalTaskService.createTask({
+      care_relationship_id: relationship.id,
+      care_plan_id: plan.id,
+      task_type: ClinicalTaskType.USER_ACTION,
+      assigned_to_type: ClinicalTaskAssigneeType.USER,
+      assigned_to_id: closureUserId,
+      title: 'Action cancelled on relationship close',
+      instruction_reference: 'instruction:closure',
+      source_type: 'CARE_PLAN',
+      source_reference: plan.id,
+      policy_version: 'test-v1',
+      creator_professional_id: professionalId
+    });
+
+    const thread = await ProfessionalMessagingService.openThread({
+      care_relationship_id: relationship.id,
+      thread_type: ProfessionalThreadType.CARE_COMMUNICATION,
+      purpose: 'CARE_COORDINATION',
+      created_by: closureUserId,
+      creator_type: ThreadParticipantType.USER,
+      professional_id: professionalId
+    });
+
+    await CareRelationshipService.terminateRelationship(
+      relationship.id,
+      'Test closure',
+      professionalId
+    );
+
+    const result = await reconcileSprint22RelationshipClosure(relationship.id);
+    assert.equal(result.care_plan.action, 'TERMINATED');
+    assert.ok(result.clinical_tasks.cancelled.includes(task.id));
+    assert.ok(result.professional_messaging.closed_threads.includes(thread.id));
+
+    const reconciledPlan = await CarePlanService.getPlan(plan.id);
+    const reconciledTask = await ClinicalTaskService.getTask(task.id);
+    const reconciledThread = await ProfessionalMessagingService.getThread(thread.id);
+
+    assert.equal(reconciledPlan?.status, CarePlanState.TERMINATED);
+    assert.equal(reconciledTask.status, ClinicalTaskState.CANCELLED);
+    assert.equal(reconciledThread.status, ProfessionalThreadStatus.CLOSED);
+
+    const retry = await reconcileSprint22RelationshipClosure(relationship.id);
+    assert.equal(retry.care_plan.action, 'NONE');
+    assert.equal(retry.clinical_tasks.cancelled.length, 0);
+    assert.equal(retry.professional_messaging.closed_threads.length, 0);
+  });
+
 });
