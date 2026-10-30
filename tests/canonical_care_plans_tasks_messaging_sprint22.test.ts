@@ -577,6 +577,60 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
   });
 
 
+  it('denies new care messages immediately after relationship termination before reconciliation', async () => {
+    const raceUserId = 'user-s22-message-race';
+    ConsentService.recordConsent({
+      userId: raceUserId,
+      consentType: 'CLINICAL_CONSULTATION',
+      status: 'GRANTED'
+    });
+
+    const relationship = await CareRelationshipService.createRelationship({
+      subjectUserId: raceUserId,
+      primaryProviderId: professionalId,
+      relationshipType: CareRelationshipType.PSYCHOLOGY,
+      originType: CareRelationshipOriginType.CARE_NAVIGATION,
+      originReference: 'sprint-22-message-race',
+      jurisdiction: 'KE',
+      purpose: 'CARE_DELIVERY',
+      activateImmediately: true,
+      actorId: professionalId
+    });
+
+    const thread = await ProfessionalMessagingService.openThread({
+      care_relationship_id: relationship.id,
+      thread_type: ProfessionalThreadType.CARE_COMMUNICATION,
+      purpose: 'CARE_COORDINATION',
+      created_by: raceUserId,
+      creator_type: ThreadParticipantType.USER,
+      professional_id: professionalId
+    });
+
+    await CareRelationshipService.terminateRelationship(
+      relationship.id,
+      'Test immediate messaging authorization cutoff',
+      professionalId
+    );
+
+    await assert.rejects(
+      () => ProfessionalMessagingService.sendMessage({
+        thread_id: thread.id,
+        sender_type: ThreadParticipantType.USER,
+        sender_id: raceUserId,
+        message_type: ProfessionalMessageType.TEXT,
+        content_reference: 'protected-message:must-not-send',
+        idempotency_key: 's22-message-race-denied'
+      }),
+      (err: Error) =>
+        err instanceof AuthorizationError &&
+        /active care relationship/i.test(err.message)
+    );
+
+    await reconcileSprint22RelationshipClosure(relationship.id);
+    const reconciled = await ProfessionalMessagingService.getThread(thread.id);
+    assert.equal(reconciled.status, ProfessionalThreadStatus.CLOSED);
+  });
+
   it('denies task action immediately after relationship termination before reconciliation', async () => {
     const raceUserId = 'user-s22-race';
     ConsentService.recordConsent({
