@@ -26,7 +26,9 @@
     "scan:secrets": "tsx scripts/scan_secrets.ts",
     "scan:dependencies": "tsx scripts/scan_dependencies.ts",
     "stop": "echo 'All services stopped'",
-    "clean": "rm -rf dist server.js"
+    "clean": "rm -rf dist server.js",
+    "sprint22:maintain": "tsx scripts/run_sprint22_maintenance.ts",
+    "test:sprint22": "tsx --test tests/canonical_care_plans_tasks_messaging_sprint22.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
