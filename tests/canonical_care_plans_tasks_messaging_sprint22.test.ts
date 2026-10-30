@@ -23,6 +23,8 @@ import {
   ClinicalTaskCompletionAuthority,
   ClinicalTaskEvidenceType,
   ClinicalTaskState,
+  ClinicalTaskScheduler,
+  PolicyRegistryClinicalTaskRecurrenceAdapter,
   resetClinicalTasksForTesting
 } from '../mindos/clinical_tasks/index.js';
 import {
