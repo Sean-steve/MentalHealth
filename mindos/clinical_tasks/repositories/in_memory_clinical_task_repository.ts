@@ -1,11 +1,76 @@
-import { IClinicalTaskRepository } from './interfaces.js';
+import { IClinicalTaskRepository, ClinicalTaskCreateResult } from './interfaces.js';
 import { ClinicalTask, ClinicalTaskDependency, ClinicalTaskEvidence, ClinicalTaskReminderReceipt } from '../domain/entities.js';
+import { ClinicalTaskState } from '../domain/types.js';
 
 export class InMemoryClinicalTaskRepository implements IClinicalTaskRepository {
   private tasks = new Map<string, ClinicalTask>();
   private dependencies = new Map<string, ClinicalTaskDependency>();
   private evidence = new Map<string, ClinicalTaskEvidence>();
   private reminders = new Map<string, ClinicalTaskReminderReceipt>();
+
+  requiresUnitOfWork(): boolean { return false; }
+
+  async createTaskAggregate(
+    task: ClinicalTask,
+    dependencies: ClinicalTaskDependency[]
+  ): Promise<ClinicalTaskCreateResult> {
+    if (task.idempotency_key) {
+      const existing = Array.from(this.tasks.values())
+        .find(item => item.idempotency_key === task.idempotency_key);
+      if (existing) return { created: false, task_id: existing.id };
+    }
+
+    const tasksSnapshot = new Map(this.tasks);
+    const dependenciesSnapshot = new Map(this.dependencies);
+    try {
+      this.tasks.set(task.id, structuredClone(task));
+      for (const dependency of dependencies) {
+        this.dependencies.set(dependency.id, structuredClone(dependency));
+      }
+      return { created: true, task_id: task.id };
+    } catch (error) {
+      this.tasks = tasksSnapshot;
+      this.dependencies = dependenciesSnapshot;
+      throw error;
+    }
+  }
+
+  async saveTaskWithExpectedState(
+    task: ClinicalTask,
+    expectedState: ClinicalTaskState
+  ): Promise<void> {
+    const current = this.tasks.get(task.id);
+    if (!current || current.status !== expectedState) {
+      throw new Error(
+        'CONCURRENCY_CONFLICT: Clinical Task state changed before update.'
+      );
+    }
+    this.tasks.set(task.id, structuredClone(task));
+  }
+
+  async completeTaskAggregate(
+    task: ClinicalTask,
+    evidence: ClinicalTaskEvidence,
+    expectedState: ClinicalTaskState
+  ): Promise<void> {
+    const current = this.tasks.get(task.id);
+    if (!current || current.status !== expectedState) {
+      throw new Error(
+        'CONCURRENCY_CONFLICT: Clinical Task state changed before completion.'
+      );
+    }
+
+    const tasksSnapshot = new Map(this.tasks);
+    const evidenceSnapshot = new Map(this.evidence);
+    try {
+      this.tasks.set(task.id, structuredClone(task));
+      this.evidence.set(evidence.id, structuredClone(evidence));
+    } catch (error) {
+      this.tasks = tasksSnapshot;
+      this.evidence = evidenceSnapshot;
+      throw error;
+    }
+  }
 
   async saveTask(task: ClinicalTask): Promise<void> { this.tasks.set(task.id, structuredClone(task)); }
   async findTaskById(id: string): Promise<ClinicalTask | null> {
