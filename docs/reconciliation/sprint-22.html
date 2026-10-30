@@ -18,7 +18,7 @@
 <li class="done">Content and Assessment assignments now persist atomically with <code>care.assignment_created</code>.</li>
 <li class="done">Clinical Task persistence has optimistic state checks, idempotency keys and authoritative completion evidence.</li>
 <li class="done">Professional Messaging has optimistic delivery/thread updates and idempotent message creation.</li>
-<li class="done">Care Plan review execution now persists an atomic reviewer/outcome intent before plan mutation, uses a preallocated version ID for MODIFY, resumes after partial failure without duplicating versions, blocks outcome switching, and persists <code>care.plan_review_completed</code> through the transactional outbox.</li>
+<li class="done">Care Plan review execution now persists an atomic reviewer/outcome intent before plan mutation, uses a preallocated version ID for MODIFY, resumes after partial failure without duplicating versions, blocks outcome switching, and compare-and-set finalization ensures only one logical <code>care.plan_review_completed</code> event is emitted under concurrent retries.</li>
 </ul>
 
 <h2>Authorization & clinical-integrity hardening</h2>
@@ -37,14 +37,14 @@
 <li class="done">The runtime reports messaging Safety as <code>EXPLICIT_SCANNER_REQUIRED</code> unless a governed protected-content classifier is provided.</li>
 <li class="done">MindOS does not reuse the AI Companion keyword pre-check as Professional Messaging clinical monitoring without governance approval.</li>
 <li class="done">Attachments fail closed until a governed file/media policy verifies malware scan, MIME/size and data-classification requirements.</li>
-<li class="done">Messaging never claims real-time clinician/emergency monitoring.</li>
+<li class="done">Messaging never claims real-time clinician/emergency monitoring.</li><li class="done">A terminated/revoked CareRelationship blocks new messages and new attachments immediately, even before the reconciliation worker closes the thread.</li>
 </ul>
 
 <h2>Validation now in GitHub</h2>
 <ul>
 <li class="done"><code>Verify Sprint 22 structure</code> — green on the hardened architecture, including outbox, authorization, recurrence, Safety and review-saga invariants.</li>
 <li class="done"><code>Verify Sprint 22 TypeScript syntax</code> — green on the cumulative Sprint-22 TypeScript changes through the latest product-code commit.</li>
-<li class="done">Acceptance suite includes recurrence/reminder idempotency, attachment fail-closed behavior, relationship closure, termination races, cross-user assignment denial, cross-thread reply denial, stale-review protection, user acknowledgement, terminal-plan immutability, service-level goal/intervention authorization and Care Plan review failure-recovery scenarios.</li>
+<li class="done">Acceptance suite includes recurrence/reminder idempotency, attachment fail-closed behavior, relationship closure, termination races, cross-user assignment denial, cross-thread reply denial, stale-review protection, user acknowledgement, terminal-plan immutability, service-level goal/intervention authorization and Care Plan review failure-recovery/exactly-once scenarios and immediate messaging termination-race denial.</li>
 </ul>
 
 <h2>Remaining before Sprint 22 can be certified COMPLETE</h2>
