@@ -35,6 +35,7 @@ jobs:
           set -euo pipefail
           rsync -a --ignore-existing \
             --exclude '.git/' \
+            --exclude '.github/' \
             --exclude 'node_modules/' \
             --exclude 'dist/' \
             --exclude 'coverage/' \
