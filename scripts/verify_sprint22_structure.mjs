@@ -27,6 +27,9 @@ const required=[
   'mindos/professional_messaging/adapters/attachment_policy.ts',
   'mindos/professional_messaging/api/routes.ts',
   'mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql',
+  'mindos/clinical_tasks/adapters/recurrence_policy_adapter.ts',
+  'mindos/sprint22/maintenance.ts',
+  'scripts/run_sprint22_maintenance.ts',
   'mindos/sprint22/runtime.ts',
   'mindos/sprint22/index.ts',
   'tests/canonical_care_plans_tasks_messaging_sprint22.test.ts',
@@ -41,6 +44,8 @@ if(failures.length===0){
   const task=read('mindos/clinical_tasks/application/clinical_task_service.ts');
   const scheduler=read('mindos/clinical_tasks/application/clinical_task_scheduler.ts');
   const taskPorts=read('mindos/clinical_tasks/application/ports.ts');
+  const recurrencePolicy=read('mindos/clinical_tasks/adapters/recurrence_policy_adapter.ts');
+  const maintenance=read('mindos/sprint22/maintenance.ts');
   const taskApi=read('mindos/clinical_tasks/api/routes.ts');
   const progress=read('mindos/care_plans/progress/care_plan_progress_service.ts');
   const messaging=read('mindos/professional_messaging/application/professional_messaging_service.ts');
@@ -62,7 +67,18 @@ if(failures.length===0){
   if(!task.includes('trusted system actor')) failures.push('owner-domain completion is not restricted to trusted system actors');
   if(!scheduler.includes('Creates at most one next occurrence')||!scheduler.includes('recurrence:')) failures.push('bounded recurrence scheduler missing');
   if(!scheduler.includes('findReminderReceipt')||!migration.includes('clinical_task_reminder_receipts')) failures.push('reminder idempotency persistence missing');
+  if(!migration.includes('recurrence_parent_task_id')||
+     !migration.includes('recurrence_sequence')||
+     !migration.includes('created_by_professional_id')) failures.push('recurrence lineage persistence missing');
   if(!taskPorts.includes('RECURRENCE_POLICY_NOT_CONFIGURED')) failures.push('recurrence does not fail explicitly when policy is absent');
+  if(!recurrencePolicy.includes('PolicyRegistryClinicalTaskRecurrenceAdapter')||
+     !recurrencePolicy.includes('PRIOR_DUE_AT')||
+     !recurrencePolicy.includes('COMPLETED_AT')) failures.push('governed recurrence policy registry incomplete');
+  if(!runtime.includes('MINDOS_TASK_RECURRENCE_POLICIES_JSON')||
+     !runtime.includes('PolicyRegistryClinicalTaskRecurrenceAdapter')) failures.push('recurrence policy registry is not runtime-configured');
+  if(!maintenance.includes('ClinicalTaskService.reconcile')||
+     !maintenance.includes('sendDueReminders')||
+     !maintenance.includes('spawnNextOccurrence')) failures.push('Sprint 22 maintenance runner does not orchestrate reconciliation, reminders and recurrence');
   if(taskApi.includes('complete-as-domain')) {
     const activeRoute=/\.post\([^\n]*complete-as-domain/.test(taskApi);
     if(activeRoute) failures.push('external owner-domain completion route exists');
@@ -88,6 +104,9 @@ if(failures.length===0){
   if(!carePlanSources.includes('DataClassification.CLINICAL_RECORD')) failures.push('care plan events are not classified as CLINICAL_RECORD');
   if(!tests.includes('spoofed-assessment-completion')) failures.push('anti-spoof owner-domain completion regression missing');
   if(!tests.includes('projects real clinical-task state')) failures.push('care-plan task projection regression missing');
+  if(!tests.includes('generates only one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
+  if(!tests.includes('deduplicates policy-driven task reminders')) failures.push('reminder deduplication regression missing');
+  if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
 }
 
 if(failures.length){
