@@ -1,0 +1,83 @@
+/**
+ * MindOS Care Relationships Domain Types & Taxonomies
+ * Authority: Master Architecture Index Section 7 & 14, Volumes I, III, XV & Appendices B / C / Q
+ * Sprint 21 Bounded Context
+ * 
+ * Invariants:
+ * - REFERRAL ACCEPTED or APPOINTMENT BOOKED != UNRESTRICTED PERMANENT ACCESS
+ * - Access is scoped, time-bound, purpose-limited, and governed by care team role
+ */
+
+import {
+  CareRelationshipState,
+  CareTeamMembershipState
+} from '../../platform/shared/state_machines.js';
+
+export {
+  CareRelationshipState,
+  CareTeamMembershipState
+};
+
+export enum CareRelationshipType {
+  PRIMARY_CARE = 'PRIMARY_CARE',
+  COUNSELLING = 'COUNSELLING',
+  PSYCHOLOGY = 'PSYCHOLOGY',
+  PSYCHIATRY = 'PSYCHIATRY',
+  SPECIALIST = 'SPECIALIST',
+  CARE_COORDINATION = 'CARE_COORDINATION',
+  SHORT_TERM_SUPPORT = 'SHORT_TERM_SUPPORT',
+  OTHER_APPROVED = 'OTHER_APPROVED'
+}
+
+export enum CareRelationshipOriginType {
+  REFERRAL = 'REFERRAL',
+  APPOINTMENT = 'APPOINTMENT',
+  PROFESSIONAL_INVITATION = 'PROFESSIONAL_INVITATION',
+  CARE_NAVIGATION = 'CARE_NAVIGATION',
+  ADMINISTRATIVE_TRANSFER = 'ADMINISTRATIVE_TRANSFER'
+}
+
+export enum CareRelationshipPurpose {
+  CARE_DELIVERY = 'CARE_DELIVERY',
+  CARE_COORDINATION = 'CARE_COORDINATION',
+  PROFESSIONAL_SUPPORT = 'PROFESSIONAL_SUPPORT',
+  PSYCHOTHERAPY = 'PSYCHOTHERAPY',
+  PSYCHIATRIC_EVALUATION = 'PSYCHIATRIC_EVALUATION',
+  CRISIS_FOLLOWUP = 'CRISIS_FOLLOWUP'
+}
+
+export enum CareTeamRole {
+  PRIMARY_PROVIDER = 'PRIMARY_PROVIDER',
+  SECONDARY_PROVIDER = 'SECONDARY_PROVIDER',
+  CARE_COORDINATOR = 'CARE_COORDINATOR',
+  CONSULTANT = 'CONSULTANT',
+  SUPERVISOR = 'SUPERVISOR'
+}
+
+export enum DataDomain {
+  CLINICAL_NOTES = 'CLINICAL_NOTES',
+  ASSESSMENTS = 'ASSESSMENTS',
+  SAFETY_ALERTS = 'SAFETY_ALERTS',
+  DEMOGRAPHICS = 'DEMOGRAPHICS',
+  APPOINTMENTS = 'APPOINTMENTS',
+  CARE_PLANS = 'CARE_PLANS',
+  AI_SUMMARY = 'AI_SUMMARY',
+  MESSAGING = 'MESSAGING'
+}
+
+export enum ActionPermission {
+  READ = 'READ',
+  WRITE = 'WRITE',
+  SIGN = 'SIGN',
+  AMEND = 'AMEND',
+  REFER = 'REFER',
+  DISCHARGE = 'DISCHARGE',
+  PRESCRIBE = 'PRESCRIBE',
+  MESSAGE = 'MESSAGE'
+}
+
+export enum CareRelationshipEligibilityStatus {
+  ELIGIBLE = 'ELIGIBLE',
+  NOT_ELIGIBLE = 'NOT_ELIGIBLE',
+  REQUIRES_REVIEW = 'REQUIRES_REVIEW'
+}

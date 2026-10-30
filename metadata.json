@@ -1,0 +1,6 @@
+{
+  "name": "MindOS",
+  "description": "MindOS safety-critical mental-health support, wellbeing, care-navigation, and digital-health platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

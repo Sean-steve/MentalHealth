@@ -1,0 +1,70 @@
+version: '3.8'
+
+# MindOS Local Containerized Services Stack
+# Authority: Master Architecture Index Section 7 & Sprint 2 Invariants (Section 8)
+
+services:
+  # Primary Relational Store (PostgreSQL 16)
+  postgres:
+    image: postgres:16-alpine
+    container_name: mindos_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mindos_user
+      POSTGRES_PASSWORD: mindos_pass
+      POSTGRES_DB: mindos_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mindos_user -d mindos_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Primary Cache & Task Queue (Redis 7)
+  redis:
+    image: redis:7-alpine
+    container_name: mindos_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MindOS Application Container (Optional local container testing)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mindos_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      MINDOS_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://mindos_user:mindos_pass@postgres:5432/mindos_db
+      REDIS_CACHE_URL: redis://redis:6379/0
+      REDIS_QUEUE_URL: redis://redis:6379/1
+      JWT_SECRET: dev-insecure-jwt-secret-min-32-chars-long-standard
+      SESSION_SECRET: dev-insecure-session-secret-min-32-chars-long-standard
+      ENCRYPTION_KMS_KEY_REF: kms://mindos-dev/local-key
+      AUDIT_INTEGRITY_SALT: dev-audit-salt-minimum-8-chars
+
+volumes:
+  postgres_data:
+    name: mindos_postgres_data
+  redis_data:
+    name: mindos_redis_data

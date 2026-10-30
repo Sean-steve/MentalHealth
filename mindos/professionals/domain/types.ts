@@ -1,0 +1,229 @@
+/**
+ * MindOS Professional Domain Types & Taxonomies
+ * Authority: Master Architecture Index Section 7 & 14, Volumes I, III, XV & Appendices B / C / Q
+ * ADR-026, ADR-027, ADR-028, ADR-029, ADR-030, ADR-031, ADR-032
+ */
+
+export enum ProfessionalType {
+  COUNSELLOR = 'COUNSELLOR',
+  PSYCHOLOGIST = 'PSYCHOLOGIST',
+  CLINICAL_PSYCHOLOGIST = 'CLINICAL_PSYCHOLOGIST',
+  PSYCHIATRIST = 'PSYCHIATRIST',
+  SOCIAL_WORKER = 'SOCIAL_WORKER',
+  MENTAL_HEALTH_NURSE = 'MENTAL_HEALTH_NURSE',
+  GENERAL_PRACTITIONER = 'GENERAL_PRACTITIONER',
+  PEER_SUPPORT_PROVIDER = 'PEER_SUPPORT_PROVIDER',
+  COACH = 'COACH',
+  OTHER_GOVERNED_ROLE = 'OTHER_GOVERNED_ROLE'
+}
+
+export const REGULATED_CLINICAL_TYPES = new Set<ProfessionalType>([
+  ProfessionalType.COUNSELLOR,
+  ProfessionalType.PSYCHOLOGIST,
+  ProfessionalType.CLINICAL_PSYCHOLOGIST,
+  ProfessionalType.PSYCHIATRIST,
+  ProfessionalType.MENTAL_HEALTH_NURSE,
+  ProfessionalType.GENERAL_PRACTITIONER
+]);
+
+export enum ProfessionalState {
+  DRAFT = 'DRAFT',
+  ONBOARDING = 'ONBOARDING',
+  VERIFICATION_REQUIRED = 'VERIFICATION_REQUIRED',
+  IN_VERIFICATION = 'IN_VERIFICATION',
+  ACTION_REQUIRED = 'ACTION_REQUIRED',
+  VERIFIED = 'VERIFIED',
+  ACTIVE = 'ACTIVE',
+  RESTRICTED = 'RESTRICTED',
+  SUSPENDED = 'SUSPENDED',
+  REVOKED = 'REVOKED',
+  EXPIRED = 'EXPIRED',
+  RETIRED = 'RETIRED'
+}
+
+export enum ProfessionalVerificationState {
+  DRAFT = 'DRAFT',
+  SUBMITTED = 'SUBMITTED',
+  IN_REVIEW = 'IN_REVIEW',
+  ACTION_REQUIRED = 'ACTION_REQUIRED',
+  VERIFIED = 'VERIFIED',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  EXPIRED = 'EXPIRED',
+  REVOKED = 'REVOKED',
+  SUSPENDED = 'SUSPENDED'
+}
+
+export enum CredentialType {
+  DEGREE = 'DEGREE',
+  DIPLOMA = 'DIPLOMA',
+  PROFESSIONAL_CERTIFICATE = 'PROFESSIONAL_CERTIFICATE',
+  LICENSE = 'LICENSE',
+  REGISTRATION = 'REGISTRATION',
+  SPECIALTY_CERTIFICATION = 'SPECIALTY_CERTIFICATION',
+  TRAINING_CERTIFICATE = 'TRAINING_CERTIFICATE',
+  INSURANCE = 'INSURANCE',
+  IDENTITY_EVIDENCE = 'IDENTITY_EVIDENCE'
+}
+
+export enum CredentialStatus {
+  PENDING = 'PENDING',
+  VERIFIED = 'VERIFIED',
+  REJECTED = 'REJECTED',
+  EXPIRED = 'EXPIRED',
+  REVOKED = 'REVOKED',
+  SUSPENDED = 'SUSPENDED'
+}
+
+export enum VerificationMethod {
+  MANUAL = 'MANUAL',
+  DOCUMENT = 'DOCUMENT',
+  OFFICIAL_REGISTRY = 'OFFICIAL_REGISTRY',
+  API = 'API',
+  REGULATORY_CONFIRMATION = 'REGULATORY_CONFIRMATION'
+}
+
+export enum VerificationType {
+  INITIAL_ONBOARDING = 'INITIAL_ONBOARDING',
+  CREDENTIAL_RENEWAL = 'CREDENTIAL_RENEWAL',
+  SCOPE_EXPANSION = 'SCOPE_EXPANSION',
+  PERIODIC_REVERIFICATION = 'PERIODIC_REVERIFICATION'
+}
+
+export enum VerificationCaseStatus {
+  DRAFT = 'DRAFT',
+  SUBMITTED = 'SUBMITTED',
+  IN_REVIEW = 'IN_REVIEW',
+  ACTION_REQUIRED = 'ACTION_REQUIRED',
+  VERIFIED = 'VERIFIED',
+  REJECTED = 'REJECTED',
+  EXPIRED = 'EXPIRED',
+  REVOKED = 'REVOKED'
+}
+
+export enum VerificationDecision {
+  VERIFY = 'VERIFY',
+  REJECT = 'REJECT',
+  MORE_INFORMATION_REQUIRED = 'MORE_INFORMATION_REQUIRED',
+  RESTRICT = 'RESTRICT'
+}
+
+export enum ScopeType {
+  GENERAL_COUNSELLING = 'GENERAL_COUNSELLING',
+  CLINICAL_PSYCHOLOGY = 'CLINICAL_PSYCHOLOGY',
+  PSYCHIATRY = 'PSYCHIATRY',
+  LOW_INTENSITY_COACHING = 'LOW_INTENSITY_COACHING',
+  PEER_SUPPORT = 'PEER_SUPPORT',
+  SPECIALIZED_THERAPY = 'SPECIALIZED_THERAPY'
+}
+
+export enum TargetPopulation {
+  ADULTS = 'ADULTS',
+  ADOLESCENTS = 'ADOLESCENTS',
+  CHILDREN = 'CHILDREN',
+  GERIATRIC = 'GERIATRIC',
+  COUPLES = 'COUPLES',
+  GROUPS = 'GROUPS'
+}
+
+export enum DeliveryMode {
+  IN_PERSON = 'IN_PERSON',
+  VIDEO = 'VIDEO',
+  AUDIO = 'AUDIO',
+  CHAT = 'CHAT',
+  HYBRID = 'HYBRID',
+  TELEHEALTH = 'TELEHEALTH'
+}
+
+export enum ProviderType {
+  INDIVIDUAL_PROFESSIONAL = 'INDIVIDUAL_PROFESSIONAL',
+  CLINIC = 'CLINIC',
+  ORGANIZATION = 'ORGANIZATION',
+  SERVICE = 'SERVICE'
+}
+
+export enum ProviderStatus {
+  DRAFT = 'DRAFT',
+  PENDING_VERIFICATION = 'PENDING_VERIFICATION',
+  ACTIVE = 'ACTIVE',
+  RESTRICTED = 'RESTRICTED',
+  SUSPENDED = 'SUSPENDED',
+  RETIRED = 'RETIRED'
+}
+
+export enum DiscoverabilityStatus {
+  DISCOVERABLE = 'DISCOVERABLE',
+  HIDDEN = 'HIDDEN',
+  RESTRICTED = 'RESTRICTED',
+  SUSPENDED = 'SUSPENDED'
+}
+
+export enum ServiceType {
+  INITIAL_CONSULTATION = 'INITIAL_CONSULTATION',
+  COUNSELLING_SESSION = 'COUNSELLING_SESSION',
+  PSYCHOLOGY_SESSION = 'PSYCHOLOGY_SESSION',
+  PSYCHIATRY_CONSULTATION = 'PSYCHIATRY_CONSULTATION',
+  FOLLOW_UP = 'FOLLOW_UP',
+  GROUP_SESSION = 'GROUP_SESSION',
+  CARE_NAVIGATION_SUPPORT = 'CARE_NAVIGATION_SUPPORT',
+  OTHER_APPROVED_SERVICE = 'OTHER_APPROVED_SERVICE'
+}
+
+export enum ServiceOfferingStatus {
+  DRAFT = 'DRAFT',
+  ACTIVE = 'ACTIVE',
+  PAUSED = 'PAUSED',
+  SUSPENDED = 'SUSPENDED',
+  RETIRED = 'RETIRED'
+}
+
+export enum ProfileVisibility {
+  PUBLIC_DIRECTORY = 'PUBLIC_DIRECTORY',
+  REGISTERED_USERS_ONLY = 'REGISTERED_USERS_ONLY',
+  INTERNAL_ONLY = 'INTERNAL_ONLY'
+}
+
+export enum SuspensionReasonCode {
+  CREDENTIAL_ISSUE = 'CREDENTIAL_ISSUE',
+  SAFETY_ISSUE = 'SAFETY_ISSUE',
+  REGULATORY_ISSUE = 'REGULATORY_ISSUE',
+  PRIVACY_SECURITY_ISSUE = 'PRIVACY_SECURITY_ISSUE',
+  PROFESSIONAL_CONDUCT_ISSUE = 'PROFESSIONAL_CONDUCT_ISSUE'
+}
+
+export interface VerificationCheck {
+  id: string;
+  check_type: 'IDENTITY' | 'CREDENTIAL_VALIDITY' | 'REGULATORY_COUNCIL' | 'EXPIRY' | 'SCOPE_ADEQUACY' | 'DISCIPLINARY';
+  status: 'PASSED' | 'FAILED' | 'PENDING' | 'INCONCLUSIVE';
+  notes?: string;
+  evidence_ref?: string;
+  checked_by?: string;
+  checked_at?: string;
+}
+
+export interface ScopeEvaluationResult {
+  allowed: boolean;
+  reason_codes: string[];
+  restrictions: string[];
+  effective_scope_id?: string;
+}
+
+export interface DestinationEligibilityResult {
+  eligible: boolean;
+  provider_id: string;
+  service_id?: string;
+  reasons: string[];
+  destination_snapshot?: {
+    provider_id: string;
+    professional_id: string;
+    display_name: string;
+    verification_state: ProfessionalVerificationState;
+    regulatory_body: string;
+    license_number: string;
+    license_expires_at: string;
+    scope_id: string;
+    service_id?: string;
+    jurisdiction: string;
+    snapshot_taken_at: string;
+  };
+}

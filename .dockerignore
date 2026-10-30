@@ -1,0 +1,32 @@
+# Git & IDE
+.git
+.gitignore
+.vscode
+.idea
+
+# Node & Package Managers
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build Outputs & Temporary Files
+dist
+coverage
+.tmp
+*.tsbuildinfo
+
+# Sensitive Environment Configurations
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+
+# Test Artifacts & Logs
+tests/
+__tests__/
+*.log
+.DS_Store
