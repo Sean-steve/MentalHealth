@@ -381,6 +381,87 @@ export class PgCarePlanRepository implements ICarePlanRepository {
     }
   }
 
+  public async reviewGoalAggregate(
+    goal: CareGoal,
+    review: CareGoalReview,
+    expectedStatus: CareGoalStatus,
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+
+    const updated = await client.query<{ id: string }>(
+      'UPDATE care_goals SET current_value=$1, status=$2, completed_at=$3, updated_at=$4 WHERE id=$5 AND status=$6 RETURNING id',
+      [
+        jsonValue(goal.current_value),
+        goal.status,
+        goal.completed_at || null,
+        goal.updated_at,
+        goal.id,
+        expectedStatus
+      ]
+    );
+    if (updated.length !== 1) {
+      throw new ConcurrencyError(
+        `Care Goal ${goal.id} was concurrently modified during review.`,
+        { goalId: goal.id, expectedStatus }
+      );
+    }
+
+    await client.query(
+      'INSERT INTO care_goal_reviews (id, goal_id, reviewed_by, reviewed_at, status_before, status_after, evidence_refs, reason_codes, notes_reference) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+      [
+        review.id, review.goal_id, review.reviewed_by, review.reviewed_at,
+        review.status_before, review.status_after,
+        JSON.stringify(review.evidence_refs),
+        JSON.stringify(review.reason_codes),
+        review.notes_reference || null
+      ]
+    );
+  }
+
+  public async saveContentAssignmentTransactional(
+    assignment: ContentAssignment,
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+    await client.query(
+      'INSERT INTO content_assignments (id, care_plan_id, care_plan_version_id, intervention_id, subject_user_id, assigned_by, content_id, content_version, status, due_date, completed_at, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',
+      [
+        assignment.id, assignment.care_plan_id,
+        assignment.care_plan_version_id,
+        assignment.intervention_id || null,
+        assignment.subject_user_id, assignment.assigned_by,
+        assignment.content_id, assignment.content_version,
+        assignment.status, assignment.due_date || null,
+        assignment.completed_at || null, assignment.created_at
+      ]
+    );
+  }
+
+  public async saveAssessmentAssignmentTransactional(
+    assignment: AssessmentAssignment,
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+    await client.query(
+      'INSERT INTO assessment_assignments (id, care_plan_id, care_plan_version_id, intervention_id, subject_user_id, assigned_by, instrument_type, instrument_version, assignment_purpose, due_window, status, completed_assessment_id, completed_at, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
+      [
+        assignment.id, assignment.care_plan_id,
+        assignment.care_plan_version_id,
+        assignment.intervention_id || null,
+        assignment.subject_user_id, assignment.assigned_by,
+        assignment.instrument_type,
+        assignment.instrument_version || null,
+        assignment.assignment_purpose,
+        JSON.stringify(assignment.due_window),
+        assignment.status,
+        assignment.completed_assessment_id || null,
+        assignment.completed_at || null,
+        assignment.created_at
+      ]
+    );
+  }
+
   public async savePlan(plan: CarePlan): Promise<void> {
     await getPool().query(
       'INSERT INTO care_plans (id, subject_user_id, care_relationship_id, primary_professional_id, care_team_id, plan_type, status, current_version_id, started_at, target_end_at, completed_at, terminated_at, created_at, updated_at, version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, current_version_id=EXCLUDED.current_version_id, target_end_at=EXCLUDED.target_end_at, completed_at=EXCLUDED.completed_at, terminated_at=EXCLUDED.terminated_at, updated_at=EXCLUDED.updated_at, version=EXCLUDED.version',
