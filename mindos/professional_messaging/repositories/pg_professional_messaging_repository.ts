@@ -1,5 +1,6 @@
-import { getPool } from '../../platform/database/index.js';
-import { IProfessionalMessagingRepository } from './interfaces.js';
+import { DatabaseClient, getPool } from '../../platform/database/index.js';
+import { ConcurrencyError } from '../../platform/database/errors.js';
+import { IProfessionalMessagingRepository, MessagingCreateResult } from './interfaces.js';
 import {
   ProfessionalMessageThread,
   ProfessionalThreadParticipant,
@@ -142,6 +143,127 @@ const toAttachment = (row: AttachmentRow): ProfessionalMessageAttachment => ({
 });
 
 export class PgProfessionalMessagingRepository implements IProfessionalMessagingRepository {
+  requiresUnitOfWork(): boolean { return true; }
+
+  private requireTransactionClient(tx?: DatabaseClient): DatabaseClient {
+    if (!tx || !tx.isInTransaction()) {
+      throw new Error(
+        'PgProfessionalMessagingRepository aggregate mutation requires an application-owned UnitOfWork transaction.'
+      );
+    }
+    return tx;
+  }
+
+  async createThreadAggregate(
+    thread: ProfessionalMessageThread,
+    participants: ProfessionalThreadParticipant[],
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+    await client.query(
+      'INSERT INTO professional_message_threads (id, subject_user_id, care_relationship_id, thread_type, purpose, status, created_by, created_at, closed_at, response_expectation_reference, version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
+      [
+        thread.id, thread.subject_user_id, thread.care_relationship_id,
+        thread.thread_type, thread.purpose, thread.status, thread.created_by,
+        thread.created_at, thread.closed_at || null,
+        thread.response_expectation_reference, thread.version
+      ]
+    );
+    for (const participant of participants) {
+      await client.query(
+        'INSERT INTO professional_thread_participants (id, thread_id, actor_type, actor_id, participant_role, status, joined_at, left_at, access_scope) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+        [
+          participant.id, participant.thread_id, participant.actor_type,
+          participant.actor_id, participant.participant_role,
+          participant.status, participant.joined_at,
+          participant.left_at || null,
+          JSON.stringify(participant.access_scope || [])
+        ]
+      );
+    }
+  }
+
+  async createMessageIdempotent(
+    message: ProfessionalMessage,
+    tx?: DatabaseClient
+  ): Promise<MessagingCreateResult> {
+    const client = this.requireTransactionClient(tx);
+    const rows = await client.query<{ id: string }>(
+      'INSERT INTO professional_messages (id, thread_id, sender_type, sender_id, message_type, content_reference, status, sent_at, delivered_at, read_at, reply_to_message_id, clinical_significance, safety_monitoring_status, safety_reference, idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT (thread_id, idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING id',
+      [
+        message.id, message.thread_id, message.sender_type,
+        message.sender_id, message.message_type, message.content_reference,
+        message.status, message.sent_at, message.delivered_at || null,
+        message.read_at || null, message.reply_to_message_id || null,
+        message.clinical_significance, message.safety_monitoring_status,
+        message.safety_reference || null, message.idempotency_key
+      ]
+    );
+    const id = rows[0]?.id;
+    if (!id) throw new Error('Professional Message insert did not return an identifier.');
+    return { created: id === message.id, id };
+  }
+
+  async saveMessageWithExpectedStatus(
+    message: ProfessionalMessage,
+    expectedStatus: MessageDeliveryStatus,
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+    const updated = await client.query<{ id: string }>(
+      'UPDATE professional_messages SET status=$1, delivered_at=$2, read_at=$3 WHERE id=$4 AND status=$5 RETURNING id',
+      [
+        message.status, message.delivered_at || null,
+        message.read_at || null, message.id, expectedStatus
+      ]
+    );
+    if (updated.length !== 1) {
+      throw new ConcurrencyError(
+        `Professional Message ${message.id} was concurrently modified.`,
+        { messageId: message.id, expectedStatus }
+      );
+    }
+  }
+
+  async saveThreadWithExpectedVersion(
+    thread: ProfessionalMessageThread,
+    expectedVersion: number,
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+    const updated = await client.query<{ id: string }>(
+      'UPDATE professional_message_threads SET status=$1, closed_at=$2, response_expectation_reference=$3, version=$4 WHERE id=$5 AND version=$6 RETURNING id',
+      [
+        thread.status, thread.closed_at || null,
+        thread.response_expectation_reference, thread.version,
+        thread.id, expectedVersion
+      ]
+    );
+    if (updated.length !== 1) {
+      throw new ConcurrencyError(
+        `Professional Message Thread ${thread.id} was concurrently modified.`,
+        { threadId: thread.id, expectedVersion }
+      );
+    }
+  }
+
+  async saveParticipantTransactional(
+    participant: ProfessionalThreadParticipant,
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+    await client.query(
+      'INSERT INTO professional_thread_participants (id, thread_id, actor_type, actor_id, participant_role, status, joined_at, left_at, access_scope) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (thread_id, actor_id) DO UPDATE SET actor_type=EXCLUDED.actor_type, participant_role=EXCLUDED.participant_role, status=EXCLUDED.status, joined_at=EXCLUDED.joined_at, left_at=EXCLUDED.left_at, access_scope=EXCLUDED.access_scope',
+      [
+        participant.id, participant.thread_id, participant.actor_type,
+        participant.actor_id, participant.participant_role,
+        participant.status, participant.joined_at,
+        participant.left_at || null,
+        JSON.stringify(participant.access_scope || [])
+      ]
+    );
+  }
+
   public async saveThread(thread: ProfessionalMessageThread): Promise<void> {
     await getPool().query(
       'INSERT INTO professional_message_threads (id, subject_user_id, care_relationship_id, thread_type, purpose, status, created_by, created_at, closed_at, response_expectation_reference, version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, closed_at=EXCLUDED.closed_at, response_expectation_reference=EXCLUDED.response_expectation_reference, version=EXCLUDED.version',
