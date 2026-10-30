@@ -310,21 +310,6 @@ export class PgCarePlanRepository implements ICarePlanRepository {
     }
   }
 
-  public async createPlanWithInitialVersion(plan: CarePlan, version: CarePlanVersion): Promise<void> {
-    const client = DatabaseManager.getClient();
-    await client.transaction(async tx => {
-      await tx.query(
-        'INSERT INTO care_plans (id, subject_user_id, care_relationship_id, primary_professional_id, care_team_id, plan_type, status, current_version_id, started_at, target_end_at, completed_at, terminated_at, created_at, updated_at, version) VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,$8,$9,$10,$11,$12,$13,$14)',
-        [plan.id, plan.subject_user_id, plan.care_relationship_id, plan.primary_professional_id, plan.care_team_id || null, plan.plan_type, plan.status, plan.started_at, plan.target_end_at || null, plan.completed_at || null, plan.terminated_at || null, plan.created_at, plan.updated_at, plan.version]
-      );
-      await tx.query(
-        'INSERT INTO care_plan_versions (id, care_plan_id, version, status, summary, review_frequency_days, next_review_due, effective_from, effective_until, authored_by, approved_by, acknowledged_by_user, acknowledged_at, supersedes_id, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',
-        [version.id, version.care_plan_id, version.version, version.status, version.summary, version.review_schedule.frequency_days, version.review_schedule.next_review_due, version.effective_from, version.effective_until || null, version.authored_by, version.approved_by || null, Boolean(version.acknowledged_by_user), version.acknowledged_at || null, version.supersedes_id || null, version.created_at]
-      );
-      await tx.query('UPDATE care_plans SET current_version_id = $1 WHERE id = $2', [version.id, plan.id]);
-    });
-  }
-
   public async savePlan(plan: CarePlan): Promise<void> {
     await getPool().query(
       'INSERT INTO care_plans (id, subject_user_id, care_relationship_id, primary_professional_id, care_team_id, plan_type, status, current_version_id, started_at, target_end_at, completed_at, terminated_at, created_at, updated_at, version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, current_version_id=EXCLUDED.current_version_id, target_end_at=EXCLUDED.target_end_at, completed_at=EXCLUDED.completed_at, terminated_at=EXCLUDED.terminated_at, updated_at=EXCLUDED.updated_at, version=EXCLUDED.version',
