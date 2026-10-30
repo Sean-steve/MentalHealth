@@ -45,6 +45,8 @@ if(failures.length===0){
   const carePlanReview=read('mindos/care_plans/reviews/care_plan_review_service.ts');
   const assignmentService=read('mindos/care_plans/assignments/assignment_service.ts');
   const task=read('mindos/clinical_tasks/application/clinical_task_service.ts');
+  const taskRepositoryInterface=read('mindos/clinical_tasks/repositories/interfaces.ts');
+  const taskPgRepository=read('mindos/clinical_tasks/repositories/pg_clinical_task_repository.ts');
   const scheduler=read('mindos/clinical_tasks/application/clinical_task_scheduler.ts');
   const taskPorts=read('mindos/clinical_tasks/application/ports.ts');
   const recurrencePolicy=read('mindos/clinical_tasks/adapters/recurrence_policy_adapter.ts');
@@ -52,6 +54,8 @@ if(failures.length===0){
   const taskApi=read('mindos/clinical_tasks/api/routes.ts');
   const progress=read('mindos/care_plans/progress/care_plan_progress_service.ts');
   const messaging=read('mindos/professional_messaging/application/professional_messaging_service.ts');
+  const messagingRepositoryInterface=read('mindos/professional_messaging/repositories/interfaces.ts');
+  const messagingPgRepository=read('mindos/professional_messaging/repositories/pg_professional_messaging_repository.ts');
   const messagingApi=read('mindos/professional_messaging/api/routes.ts');
   const messagingSafety=read('mindos/professional_messaging/adapters/safety_adapter.ts');
   const attachmentPolicy=read('mindos/professional_messaging/adapters/attachment_policy.ts');
@@ -90,6 +94,13 @@ if(failures.length===0){
   if(!assignmentService.includes('RelationshipAccessEvaluator.assertAccess')||
      !assignmentService.includes('does not belong to the current Care Plan version')) failures.push('assignment service authorization/version binding missing');
   if(!task.includes('trusted system actor')) failures.push('owner-domain completion is not restricted to trusted system actors');
+  if(!task.includes('UnitOfWork.run')||
+     !task.includes('createTaskAggregate')||
+     !task.includes('completeTaskAggregate')||
+     !task.includes('registerOutboxEvent')) failures.push('Clinical Task mutations/outbox are not Unit-of-Work atomic');
+  if(!taskRepositoryInterface.includes('saveTaskWithExpectedState')||
+     !taskPgRepository.includes('ConcurrencyError')||
+     !taskPgRepository.includes('ON CONFLICT (idempotency_key)')) failures.push('Clinical Task optimistic/idempotent persistence contract incomplete');
   if(!task.includes('User-assigned clinical task must target the subject of the care relationship')) failures.push('cross-user task creation is not denied');
   if(!taskApi.includes('SYSTEM-owned clinical tasks cannot be created through the external HTTP API')) failures.push('external API can create SYSTEM-owned tasks');
   if(!taskApi.includes('Invalid task_type')||
@@ -119,11 +130,20 @@ if(failures.length===0){
   }
   if(!progress.includes('ClinicalTaskService.listTasksForPlan')) failures.push('care plan progress is not linked to real clinical tasks');
   if(!messaging.includes('NOT_CONFIGURED')) failures.push('messaging safety-unconfigured state is not explicit');
+  if(!messaging.includes('UnitOfWork.run')||
+     !messaging.includes('createThreadAggregate')||
+     !messaging.includes('createMessageIdempotent')||
+     !messaging.includes('registerOutboxEvent')) failures.push('Professional Messaging mutations/outbox are not Unit-of-Work atomic');
+  if(!messagingRepositoryInterface.includes('saveMessageWithExpectedStatus')||
+     !messagingRepositoryInterface.includes('saveThreadWithExpectedVersion')||
+     !messagingPgRepository.includes('ConcurrencyError')||
+     !messagingPgRepository.includes('ON CONFLICT (thread_id, idempotency_key)')) failures.push('Professional Messaging optimistic/idempotent persistence contract incomplete');
   if(messagingApi.includes('response_expectation_reference')) failures.push('messaging API still accepts client-defined response expectations');
   if(!messagingApi.includes('Invalid thread_type')||
      !messagingApi.includes('Invalid message_type')) failures.push('messaging runtime enum validation incomplete');
   if(!messaging.includes('Reply target must belong to the same care thread')) failures.push('cross-thread reply integrity guard missing');
   if(!messagingSafety.includes('ProtectedMessageSafetyScannerPort')||!messagingSafety.includes('SafetySignalForwarderPort')) failures.push('privacy-preserving messaging Safety bridge incomplete');
+  if(!messagingSafety.includes('source_reference: params.content_reference')) failures.push('Safety bridge does not reference protected content evidence');
   if(!messagingSafety.includes('CrisisResponseSafetySignalForwarder')||
      !messagingSafety.includes('CrisisResponseOrchestrator')||
      !messagingSafety.includes('SignalSourceType.SYSTEM_OBSERVATION')) failures.push('canonical messaging Safety forwarder missing');
