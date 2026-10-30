@@ -28,7 +28,7 @@
       "number": "22",
       "title": "Care Plans, Clinical Tasks & Professional Messaging",
       "status": "PARTIAL",
-      "note": "Care Plans, Clinical Tasks and Professional Messaging are runtime-wired with PostgreSQL repositories and migration 020. Core mutations use UnitOfWork + transactional outbox; goal reviews and assignments now follow the same durability rule. Care Goal/Intervention creation is relationship-scoped at the service boundary. Care Plan review execution now uses an atomic intent claim plus a retry-safe saga with preallocated version IDs and transactional completion events. Recurrence, reminder dedupe, relationship-closure reconciliation, notifications, protected-content Safety forwarding and deny-by-default attachments are implemented. Remaining certification blockers: no approved Professional Messaging protected-content classifier is configured, and the GitHub repo still lacks the full Sprint 1–21 foundation needed for dependency-backed Sprint 1–22 regression, PostgreSQL migration/E2E/security/privacy/build certification."
+      "note": "Care Plans, Clinical Tasks and Professional Messaging are runtime-wired with PostgreSQL repositories and migration 020. Core mutations use UnitOfWork + transactional outbox; goal reviews and assignments now follow the same durability rule. Care Goal/Intervention creation is relationship-scoped at the service boundary. Care Plan review execution now uses an atomic intent claim plus a retry-safe saga with preallocated version IDs, compare-and-set finalization and exactly-one logical completion event. Recurrence, reminder dedupe, relationship-closure reconciliation, immediate post-termination messaging cutoff, notifications, protected-content Safety forwarding and deny-by-default attachments are implemented. Remaining certification blockers: no approved Professional Messaging protected-content classifier is configured, and the GitHub repo still lacks the full Sprint 1–21 foundation needed for dependency-backed Sprint 1–22 regression, PostgreSQL migration/E2E/security/privacy/build certification."
     },
     {
       "number": "23",
@@ -44,6 +44,16 @@
     }
   ],
   "timeline": [
+    {
+      "date": "30 Oct 2026",
+      "title": "Messaging termination race closed",
+      "detail": "New messages and attachments now revalidate the CareRelationship immediately, so termination/revocation blocks new care-thread mutations before reconciliation closes the thread."
+    },
+    {
+      "date": "30 Oct 2026",
+      "title": "Care Plan review exactly-once completion",
+      "detail": "Review completion now uses compare-and-set persistence; concurrent retries converge on one completed record and only the winning finalizer emits care.plan_review_completed."
+    },
     {
       "date": "30 Oct 2026",
       "title": "Care Plan review durability hardened",
