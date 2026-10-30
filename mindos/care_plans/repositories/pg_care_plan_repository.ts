@@ -589,6 +589,22 @@ export class PgCarePlanRepository implements ICarePlanRepository {
     return r.rows.map(toIntervention);
   }
 
+  public async beginPlanReviewExecution(review: CarePlanReview): Promise<boolean> {
+    const updated = await getPool().query<{ id: string }>(
+      'UPDATE care_plan_reviews SET started_at=$1, reviewer_id=$2, outcome=$3, goal_reviews=$4, recommended_changes=$5, new_version_id=$6 WHERE id=$7 AND started_at IS NULL AND completed_at IS NULL RETURNING id',
+      [
+        review.started_at || null,
+        review.reviewer_id,
+        review.outcome,
+        JSON.stringify(review.goal_reviews || []),
+        JSON.stringify(review.recommended_changes || []),
+        review.new_version_id || null,
+        review.id
+      ]
+    );
+    return updated.length === 1;
+  }
+
   public async savePlanReviewTransactional(
     review: CarePlanReview,
     tx?: DatabaseClient
