@@ -72,8 +72,6 @@ clinicalTaskRouter.post('/', async (req: Request, res: Response, next: NextFunct
       recurrence_rule,
       source_type,
       source_reference,
-      completion_authority,
-      owner_domain,
       dependency_task_ids,
       policy_version,
       idempotency_key
@@ -83,6 +81,25 @@ clinicalTaskRouter.post('/', async (req: Request, res: Response, next: NextFunct
         !title || !instruction_reference || !source_type || !source_reference || !policy_version) {
       return res.status(400).json({
         error: 'care_relationship_id, task_type, assigned_to_type, assigned_to_id, title, instruction_reference, source_type, source_reference and policy_version are required.'
+      });
+    }
+
+    if (assigned_to_type === ClinicalTaskAssigneeType.SYSTEM) {
+      throw new AuthorizationError(
+        'SYSTEM-owned clinical tasks cannot be created through the external HTTP API.',
+        { errorCode: 'AUTHZ_004' }
+      );
+    }
+
+    const configuredPolicyVersion = String(process.env.MINDOS_CLINICAL_TASK_POLICY_VERSION || '');
+    if (process.env.NODE_ENV === 'production' && !configuredPolicyVersion) {
+      return res.status(503).json({
+        error: 'Clinical task policy is not configured for this environment.'
+      });
+    }
+    if (configuredPolicyVersion && policy_version !== configuredPolicyVersion) {
+      return res.status(409).json({
+        error: 'Requested clinical task policy version is not active.'
       });
     }
 
@@ -100,10 +117,8 @@ clinicalTaskRouter.post('/', async (req: Request, res: Response, next: NextFunct
       recurrence_rule,
       source_type,
       source_reference,
-      completion_authority: completion_authority as ClinicalTaskCompletionAuthority | undefined,
-      owner_domain,
       dependency_task_ids,
-      policy_version,
+      policy_version: configuredPolicyVersion || policy_version,
       idempotency_key,
       creator_professional_id: a.id
     });
