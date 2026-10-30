@@ -20,13 +20,16 @@ import {
 import {
   ProfessionalMessagingService,
   PgProfessionalMessagingRepository,
-  NotificationServiceMessagingAdapter
+  NotificationServiceMessagingAdapter,
+  ProtectedMessageSafetyScannerPort,
+  SafetyKernelMessagingAdapter,
+  CrisisResponseSafetySignalForwarder
 } from '../professional_messaging/index.js';
 
 export interface Sprint22RuntimeStatus {
   persistence: 'POSTGRES' | 'IN_MEMORY_DEFAULT';
   professional_messaging_notifications: 'CONFIGURED';
-  professional_messaging_safety: 'EXPLICIT_SCANNER_AND_FORWARDER_REQUIRED';
+  professional_messaging_safety: 'CONFIGURED' | 'EXPLICIT_SCANNER_REQUIRED';
   professional_messaging_attachments: 'DENY_BY_DEFAULT';
   clinical_task_reminders: 'CONFIGURED';
   clinical_task_recurrence: 'CONFIGURED' | 'EXPLICIT_POLICY_REQUIRED';
@@ -36,7 +39,7 @@ let configured = false;
 let status: Sprint22RuntimeStatus = {
   persistence: 'IN_MEMORY_DEFAULT',
   professional_messaging_notifications: 'CONFIGURED',
-  professional_messaging_safety: 'EXPLICIT_SCANNER_AND_FORWARDER_REQUIRED',
+  professional_messaging_safety: 'EXPLICIT_SCANNER_REQUIRED',
   professional_messaging_attachments: 'DENY_BY_DEFAULT',
   clinical_task_reminders: 'CONFIGURED',
   clinical_task_recurrence: 'EXPLICIT_POLICY_REQUIRED'
@@ -45,6 +48,7 @@ let status: Sprint22RuntimeStatus = {
 export function configureSprint22Runtime(options: {
   usePostgres?: boolean;
   recurrencePolicies?: ClinicalTaskRecurrencePolicy[];
+  messagingSafetyScanner?: ProtectedMessageSafetyScannerPort;
 } = {}): Sprint22RuntimeStatus {
   const usePostgres = options.usePostgres ?? process.env.NODE_ENV === 'production';
 
@@ -64,6 +68,15 @@ export function configureSprint22Runtime(options: {
   ProfessionalMessagingService.setNotificationPort(new NotificationServiceMessagingAdapter());
   ClinicalTaskScheduler.setReminderPort(new NotificationServiceClinicalTaskReminderAdapter());
 
+  if (options.messagingSafetyScanner) {
+    ProfessionalMessagingService.setSafetyPort(
+      new SafetyKernelMessagingAdapter(
+        options.messagingSafetyScanner,
+        new CrisisResponseSafetySignalForwarder()
+      )
+    );
+  }
+
   const recurrencePolicies =
     options.recurrencePolicies ??
     parseClinicalTaskRecurrencePolicies(process.env.MINDOS_TASK_RECURRENCE_POLICIES_JSON);
@@ -81,7 +94,7 @@ export function configureSprint22Runtime(options: {
   status = {
     persistence: usePostgres ? 'POSTGRES' : 'IN_MEMORY_DEFAULT',
     professional_messaging_notifications: 'CONFIGURED',
-    professional_messaging_safety: 'EXPLICIT_SCANNER_AND_FORWARDER_REQUIRED',
+    professional_messaging_safety: options.messagingSafetyScanner ? 'CONFIGURED' : 'EXPLICIT_SCANNER_REQUIRED',
     professional_messaging_attachments: 'DENY_BY_DEFAULT',
     clinical_task_reminders: 'CONFIGURED',
     clinical_task_recurrence: recurrencePolicies.length > 0 ? 'CONFIGURED' : 'EXPLICIT_POLICY_REQUIRED'
