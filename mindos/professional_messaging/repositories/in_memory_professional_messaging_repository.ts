@@ -3,7 +3,8 @@ import {
   ProfessionalMessageThread,
   ProfessionalThreadParticipant,
   ProfessionalMessage,
-  ProfessionalMessageAttachment
+  ProfessionalMessageAttachment,
+  ProfessionalMessageContent
 } from '../domain/entities.js';
 import { MessageDeliveryStatus } from '../domain/types.js';
 
@@ -12,6 +13,7 @@ export class InMemoryProfessionalMessagingRepository implements IProfessionalMes
   private participants = new Map<string, ProfessionalThreadParticipant>();
   private messages = new Map<string, ProfessionalMessage>();
   private attachments = new Map<string, ProfessionalMessageAttachment>();
+  private protectedContent = new Map<string, ProfessionalMessageContent>();
 
   requiresUnitOfWork(): boolean { return false; }
 
@@ -96,7 +98,9 @@ export class InMemoryProfessionalMessagingRepository implements IProfessionalMes
   async findMessageById(id: string): Promise<ProfessionalMessage | null> { const x=this.messages.get(id); return x?structuredClone(x):null; }
   async findMessageByIdempotencyKey(threadId: string, key: string): Promise<ProfessionalMessage | null> { const x=Array.from(this.messages.values()).find(m=>m.thread_id===threadId&&m.idempotency_key===key); return x?structuredClone(x):null; }
   async findMessages(threadId: string): Promise<ProfessionalMessage[]> { return Array.from(this.messages.values()).filter(m=>m.thread_id===threadId).sort((a,b)=>a.sent_at.localeCompare(b.sent_at)||a.id.localeCompare(b.id)).map(x => structuredClone(x)); }
+  async saveProtectedContent(content: ProfessionalMessageContent): Promise<void> { this.protectedContent.set(content.content_reference, structuredClone(content)); }
+  async findProtectedContentByReference(contentReference: string): Promise<ProfessionalMessageContent | null> { const x=this.protectedContent.get(contentReference); return x?structuredClone(x):null; }
   async saveAttachment(a: ProfessionalMessageAttachment): Promise<void> { this.attachments.set(a.id, structuredClone(a)); }
   async findAttachments(messageId: string): Promise<ProfessionalMessageAttachment[]> { return Array.from(this.attachments.values()).filter(a=>a.message_id===messageId).map(x => structuredClone(x)); }
-  clear(): void { this.threads.clear(); this.participants.clear(); this.messages.clear(); this.attachments.clear(); }
+  clear(): void { this.threads.clear(); this.participants.clear(); this.messages.clear(); this.attachments.clear(); this.protectedContent.clear(); }
 }
