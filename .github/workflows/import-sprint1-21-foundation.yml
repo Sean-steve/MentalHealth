@@ -1,0 +1,55 @@
+name: Import recovered MindOS Sprint 1-21 foundation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.mindos-import/MindOS_Sprint1_21_Foundation_CI.tar.xz'
+      - '.github/workflows/import-sprint1-21-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mindos-foundation-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Extract recovered foundation
+        run: |
+          set -euo pipefail
+          test -f .mindos-import/MindOS_Sprint1_21_Foundation_CI.tar.xz
+          mkdir -p /tmp/mindos-foundation
+          xz -dc .mindos-import/MindOS_Sprint1_21_Foundation_CI.tar.xz | tar -xf - -C /tmp/mindos-foundation
+
+      - name: Import only missing files
+        run: |
+          set -euo pipefail
+          rsync -a --ignore-existing \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            --exclude 'dist/' \
+            --exclude 'coverage/' \
+            /tmp/mindos-foundation/ ./
+          rm -rf .mindos-import
+
+      - name: Commit recovered foundation
+        run: |
+          set -euo pipefail
+          git config user.name "MindOS Foundation Import"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No missing foundation files to import."
+            exit 0
+          fi
+          git commit -m "chore: import recovered Sprint 1-21 MindOS foundation"
+          git push origin HEAD:main
