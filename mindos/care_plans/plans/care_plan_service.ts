@@ -37,6 +37,7 @@ export interface CreateDraftPlanParams {
 
 export interface CreateNewVersionParams {
   planId: string;
+  versionId?: string;
   authorProfessionalId: string;
   summary: string;
   goals: CareGoal[];
@@ -382,6 +383,26 @@ export class CarePlanService {
     const plan=await CarePlanService.requirePlan(params.planId);
     await CarePlanService.assertProfessionalWrite(plan,params.authorProfessionalId);
 
+    if(params.versionId){
+      const existing=await CarePlanService.repository.findVersionById(params.versionId);
+      if(existing){
+        if(existing.care_plan_id!==plan.id||
+           existing.authored_by!==params.authorProfessionalId||
+           existing.supersedes_id===undefined){
+          throw new DomainInvariantError(
+            'Preallocated Care Plan version ID already belongs to a different revision context.'
+          );
+        }
+        if(plan.current_version_id===existing.id&&
+           existing.status===CarePlanVersionStatus.ACTIVE){
+          return existing;
+        }
+        throw new DomainInvariantError(
+          'Preallocated Care Plan version exists but is not the current active revision.'
+        );
+      }
+    }
+
     if(![CarePlanState.ACTIVE,CarePlanState.UNDER_REVIEW].includes(plan.status)){
       throw new DomainInvariantError(
         `Care Plan ${plan.id} in ${plan.status} state cannot create a replacement active version.`
@@ -399,7 +420,7 @@ export class CarePlanService {
       params.reviewFrequencyDays ?? current.review_schedule.frequency_days
     );
     const now=new Date().toISOString();
-    const id=generateUUIDv7();
+    const id=params.versionId||generateUUIDv7();
     const versionNumber=(current?.version||1)+1;
 
     const expectedPlanVersion = plan.version;
