@@ -72,6 +72,97 @@ export class CarePlanService {
     return days;
   }
 
+  private static async persistPlanAndVersionMutation(
+    plan: CarePlan,
+    version: CarePlanVersion,
+    expectedPlanVersion: number,
+    event?: { type: string; payload: Record<string, unknown> }
+  ): Promise<void> {
+    if (CarePlanService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await CarePlanService.repository.savePlanAndVersionAggregate(
+          plan,
+          version,
+          expectedPlanVersion,
+          uow.getClient()
+        );
+        if (event) {
+          uow.registerOutboxEvent(
+            event.type,
+            'care_plans',
+            plan.id,
+            event.payload,
+            {
+              correlation_id: CorrelationManager.getCorrelationId(),
+              data_classification: DataClassification.CLINICAL_RECORD,
+              producer_domain: 'care_plans'
+            }
+          );
+        }
+      }, 'SERIALIZABLE');
+      return;
+    }
+
+    await CarePlanService.repository.savePlanAndVersionAggregate(
+      plan,
+      version,
+      expectedPlanVersion
+    );
+    if (event) {
+      EventBus.enqueue(
+        event.type,
+        'care_plans',
+        plan.id,
+        DataClassification.CLINICAL_RECORD,
+        event.payload
+      );
+    }
+  }
+
+  private static async persistPlanMutation(
+    plan: CarePlan,
+    expectedPlanVersion: number,
+    event?: { type: string; payload: Record<string, unknown> }
+  ): Promise<void> {
+    if (CarePlanService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await CarePlanService.repository.savePlanWithExpectedVersion(
+          plan,
+          expectedPlanVersion,
+          uow.getClient()
+        );
+        if (event) {
+          uow.registerOutboxEvent(
+            event.type,
+            'care_plans',
+            plan.id,
+            event.payload,
+            {
+              correlation_id: CorrelationManager.getCorrelationId(),
+              data_classification: DataClassification.CLINICAL_RECORD,
+              producer_domain: 'care_plans'
+            }
+          );
+        }
+      }, 'SERIALIZABLE');
+      return;
+    }
+
+    await CarePlanService.repository.savePlanWithExpectedVersion(
+      plan,
+      expectedPlanVersion
+    );
+    if (event) {
+      EventBus.enqueue(
+        event.type,
+        'care_plans',
+        plan.id,
+        DataClassification.CLINICAL_RECORD,
+        event.payload
+      );
+    }
+  }
+
   public static async createDraftPlan(params: CreateDraftPlanParams): Promise<CarePlan> {
     const eligibility = await CarePlanEligibilityService.evaluate({
       relationshipId: params.relationshipId,
@@ -205,15 +296,22 @@ export class CarePlanService {
     }
     validateStateTransition('CarePlanState',plan.status,CarePlanState.ACTIVE,plan.id,actorId);
     const now=new Date().toISOString();
+    const expectedPlanVersion=plan.version;
     version.status=CarePlanVersionStatus.ACTIVE;
     version.approved_by=actorId;
-    await CarePlanService.repository.saveVersion(version);
-    plan.status=CarePlanState.ACTIVE; plan.updated_at=now; plan.version+=1;
-    await CarePlanService.repository.savePlan(plan);
+    plan.status=CarePlanState.ACTIVE;
+    plan.updated_at=now;
+    plan.version=expectedPlanVersion+1;
 
-    EventBus.enqueue('care.plan_activated','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{
-      plan_id:plan.id,version_id:version.id,activated_at:now
-    });
+    await CarePlanService.persistPlanAndVersionMutation(
+      plan,
+      version,
+      expectedPlanVersion,
+      {
+        type:'care.plan_activated',
+        payload:{plan_id:plan.id,version_id:version.id,activated_at:now}
+      }
+    );
     AuditService.record({
       actor_type:'STAFF',actor_id:actorId,action:'CARE_PLAN.ACTIVATED',
       resource_type:'care_plan',resource_id:plan.id,purpose:'Care Strategy Activation',
@@ -247,16 +345,30 @@ export class CarePlanService {
     if(version.acknowledged_by_user) return plan;
 
     const now=new Date().toISOString();
-    version.acknowledged_by_user=true; version.acknowledged_at=now;
+    const expectedPlanVersion=plan.version;
+    version.acknowledged_by_user=true;
+    version.acknowledged_at=now;
+    let activationEvent:
+      | {type:string;payload:Record<string,unknown>}
+      | undefined;
 
     if(plan.status===CarePlanState.PENDING_USER_ACKNOWLEDGEMENT){
       validateStateTransition('CarePlanState',plan.status,CarePlanState.ACTIVE,plan.id,userId);
       plan.status=CarePlanState.ACTIVE;
       version.status=CarePlanVersionStatus.ACTIVE;
+      activationEvent={
+        type:'care.plan_activated',
+        payload:{plan_id:plan.id,version_id:version.id,activated_at:now}
+      };
     }
-    await CarePlanService.repository.saveVersion(version);
-    plan.updated_at=now; plan.version+=1;
-    await CarePlanService.repository.savePlan(plan);
+    plan.updated_at=now;
+    plan.version=expectedPlanVersion+1;
+    await CarePlanService.persistPlanAndVersionMutation(
+      plan,
+      version,
+      expectedPlanVersion,
+      activationEvent
+    );
 
     AuditService.record({
       actor_type:'USER',actor_id:userId,action:'CARE_PLAN.USER_ACKNOWLEDGED',
@@ -380,9 +492,15 @@ export class CarePlanService {
     const plan=await CarePlanService.requirePlan(planId);
     await CarePlanService.assertProfessionalWrite(plan,actorId);
     validateStateTransition('CarePlanState',plan.status,CarePlanState.PAUSED,plan.id,actorId);
-    plan.status=CarePlanState.PAUSED;plan.updated_at=new Date().toISOString();plan.version+=1;
-    await CarePlanService.repository.savePlan(plan);
-    EventBus.enqueue('care.plan_paused','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{plan_id:plan.id,reason});
+    const expectedPlanVersion=plan.version;
+    plan.status=CarePlanState.PAUSED;
+    plan.updated_at=new Date().toISOString();
+    plan.version=expectedPlanVersion+1;
+    await CarePlanService.persistPlanMutation(
+      plan,
+      expectedPlanVersion,
+      {type:'care.plan_paused',payload:{plan_id:plan.id,reason}}
+    );
     AuditService.record({
       actor_type:'STAFF',actor_id:actorId,action:'CARE_PLAN.PAUSED',
       resource_type:'care_plan',resource_id:plan.id,purpose:'Care Plan Lifecycle',
@@ -397,9 +515,16 @@ export class CarePlanService {
     await CarePlanService.assertProfessionalWrite(plan,actorId);
     validateStateTransition('CarePlanState',plan.status,CarePlanState.COMPLETED,plan.id,actorId);
     const now=new Date().toISOString();
-    plan.status=CarePlanState.COMPLETED;plan.completed_at=now;plan.updated_at=now;plan.version+=1;
-    await CarePlanService.repository.savePlan(plan);
-    EventBus.enqueue('care.plan_completed','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{plan_id:plan.id,completed_at:now});
+    const expectedPlanVersion=plan.version;
+    plan.status=CarePlanState.COMPLETED;
+    plan.completed_at=now;
+    plan.updated_at=now;
+    plan.version=expectedPlanVersion+1;
+    await CarePlanService.persistPlanMutation(
+      plan,
+      expectedPlanVersion,
+      {type:'care.plan_completed',payload:{plan_id:plan.id,completed_at:now}}
+    );
     AuditService.record({
       actor_type:'STAFF',actor_id:actorId,action:'CARE_PLAN.COMPLETED',
       resource_type:'care_plan',resource_id:plan.id,purpose:'Care Plan Lifecycle',
@@ -414,9 +539,16 @@ export class CarePlanService {
     await CarePlanService.assertProfessionalWrite(plan,actorId);
     validateStateTransition('CarePlanState',plan.status,CarePlanState.TERMINATED,plan.id,actorId);
     const now=new Date().toISOString();
-    plan.status=CarePlanState.TERMINATED;plan.terminated_at=now;plan.updated_at=now;plan.version+=1;
-    await CarePlanService.repository.savePlan(plan);
-    EventBus.enqueue('care.plan_terminated','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{plan_id:plan.id,reason,terminated_at:now});
+    const expectedPlanVersion=plan.version;
+    plan.status=CarePlanState.TERMINATED;
+    plan.terminated_at=now;
+    plan.updated_at=now;
+    plan.version=expectedPlanVersion+1;
+    await CarePlanService.persistPlanMutation(
+      plan,
+      expectedPlanVersion,
+      {type:'care.plan_terminated',payload:{plan_id:plan.id,reason,terminated_at:now}}
+    );
     AuditService.record({
       actor_type:'STAFF',actor_id:actorId,action:'CARE_PLAN.TERMINATED',
       resource_type:'care_plan',resource_id:plan.id,purpose:'Care Plan Lifecycle',
@@ -448,22 +580,25 @@ export class CarePlanService {
 
     validateStateTransition('CarePlanState', plan.status, target, plan.id, 'system');
     const now = new Date().toISOString();
+    const expectedPlanVersion = plan.version;
     plan.status = target;
     plan.updated_at = now;
-    plan.version += 1;
+    plan.version = expectedPlanVersion + 1;
     if (target === CarePlanState.TERMINATED) plan.terminated_at = now;
-    await CarePlanService.repository.savePlan(plan);
 
-    EventBus.enqueue(
-      target === CarePlanState.TERMINATED ? 'care.plan_terminated' : 'care.plan_updated',
-      'care_plans',
-      plan.id,
-      DataClassification.CLINICAL_RECORD,
+    await CarePlanService.persistPlanMutation(
+      plan,
+      expectedPlanVersion,
       {
-        plan_id: plan.id,
-        relationship_id: relationshipId,
-        status: target,
-        reason: 'CARE_RELATIONSHIP_ENDED'
+        type: target === CarePlanState.TERMINATED
+          ? 'care.plan_terminated'
+          : 'care.plan_updated',
+        payload: {
+          plan_id: plan.id,
+          relationship_id: relationshipId,
+          status: target,
+          reason: 'CARE_RELATIONSHIP_ENDED'
+        }
       }
     );
     AuditService.record({
