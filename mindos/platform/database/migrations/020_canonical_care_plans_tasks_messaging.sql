@@ -242,6 +242,17 @@ CREATE TABLE IF NOT EXISTS professional_thread_participants (
   UNIQUE(thread_id, actor_id)
 );
 
+CREATE TABLE IF NOT EXISTS professional_message_contents (
+  id UUID PRIMARY KEY,
+  content_reference VARCHAR(240) NOT NULL UNIQUE,
+  thread_id UUID NOT NULL REFERENCES professional_message_threads(id) ON DELETE CASCADE,
+  created_by VARCHAR(160) NOT NULL,
+  encrypted_content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_prof_message_contents_thread
+  ON professional_message_contents(thread_id, created_at, id);
+
 CREATE TABLE IF NOT EXISTS professional_messages (
   id UUID PRIMARY KEY,
   thread_id UUID NOT NULL REFERENCES professional_message_threads(id) ON DELETE CASCADE,
@@ -277,6 +288,7 @@ CREATE TABLE IF NOT EXISTS professional_message_attachments (
 -- DOWN --
 DROP TABLE IF EXISTS professional_message_attachments CASCADE;
 DROP TABLE IF EXISTS professional_messages CASCADE;
+DROP TABLE IF EXISTS professional_message_contents CASCADE;
 DROP TABLE IF EXISTS professional_thread_participants CASCADE;
 DROP TABLE IF EXISTS professional_message_threads CASCADE;
 DROP TABLE IF EXISTS clinical_task_reminder_receipts CASCADE;
