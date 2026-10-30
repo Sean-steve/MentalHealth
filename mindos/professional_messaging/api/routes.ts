@@ -9,6 +9,14 @@ import { AuthorizationError } from '../../platform/errors/index.js';
 
 export const professionalMessagingRouter = Router();
 
+function isEnumValue<T extends Record<string, string>>(
+  enumeration: T,
+  value: unknown
+): value is T[keyof T] {
+  return typeof value === 'string' &&
+    Object.values(enumeration).includes(value as T[keyof T]);
+}
+
 function actor(req: Request): {
   id: string;
   type: ThreadParticipantType.USER | ThreadParticipantType.PROFESSIONAL;
@@ -37,19 +45,21 @@ professionalMessagingRouter.get('/threads', async (req: Request, res: Response, 
 professionalMessagingRouter.post('/threads', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const a = actor(req);
-    const { care_relationship_id, thread_type, purpose, professional_id, response_expectation_reference } = req.body || {};
-    if (!care_relationship_id || !thread_type || !purpose) {
-      return res.status(400).json({ error: 'care_relationship_id, thread_type and purpose are required.' });
+    const { care_relationship_id, thread_type, professional_id } = req.body || {};
+    if (!care_relationship_id || !thread_type) {
+      return res.status(400).json({ error: 'care_relationship_id and thread_type are required.' });
+    }
+    if (!isEnumValue(ProfessionalThreadType, thread_type)) {
+      return res.status(400).json({ error: 'Invalid thread_type.' });
     }
 
     const thread = await ProfessionalMessagingService.openThread({
       care_relationship_id,
-      thread_type: thread_type as ProfessionalThreadType,
-      purpose,
+      thread_type,
+      purpose: 'CARE_COORDINATION',
       created_by: a.id,
       creator_type: a.type,
-      professional_id: a.type === ThreadParticipantType.PROFESSIONAL ? a.id : professional_id,
-      response_expectation_reference
+      professional_id: a.type === ThreadParticipantType.PROFESSIONAL ? a.id : professional_id
     });
     res.status(201).json({ thread });
   } catch (err) {
@@ -87,11 +97,15 @@ professionalMessagingRouter.post('/threads/:threadId/messages', async (req: Requ
       });
     }
 
+    if (!isEnumValue(ProfessionalMessageType, message_type)) {
+      return res.status(400).json({ error: 'Invalid message_type.' });
+    }
+
     const message = await ProfessionalMessagingService.sendMessage({
       thread_id: req.params.threadId,
       sender_type: a.type,
       sender_id: a.id,
-      message_type: message_type as ProfessionalMessageType,
+      message_type,
       content_reference,
       idempotency_key,
       reply_to_message_id
@@ -123,13 +137,13 @@ professionalMessagingRouter.post('/threads/:threadId/participants', async (req: 
     if (a.type !== ThreadParticipantType.PROFESSIONAL) {
       throw new AuthorizationError('Only an authorized professional may add care-team participants.', { errorCode: 'AUTHZ_002' });
     }
-    const { professional_id, participant_role } = req.body || {};
+    const { professional_id } = req.body || {};
     if (!professional_id) return res.status(400).json({ error: 'professional_id is required.' });
     const participant = await ProfessionalMessagingService.addProfessionalParticipant(
       req.params.threadId,
       professional_id,
       a.id,
-      participant_role || 'CARE_TEAM'
+      'CARE_TEAM'
     );
     res.status(201).json({ participant });
   } catch (err) {
