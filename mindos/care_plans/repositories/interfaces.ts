@@ -93,6 +93,7 @@ export interface ICarePlanRepository {
 
   beginPlanReviewExecution(review: CarePlanReview): Promise<boolean>;
   savePlanReviewTransactional(review: CarePlanReview, tx?: DatabaseClient): Promise<void>;
+  completePlanReviewTransactional(review: CarePlanReview, tx?: DatabaseClient): Promise<boolean>;
   savePlanReview(review: CarePlanReview): Promise<void>;
   findPlanReviewById(id: string): Promise<CarePlanReview | null>;
   findPlanReviewsByPlanId(planId: string): Promise<CarePlanReview[]>;
