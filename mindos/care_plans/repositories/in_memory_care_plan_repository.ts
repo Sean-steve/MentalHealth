@@ -89,14 +89,6 @@ export class InMemoryCarePlanRepository implements ICarePlanRepository {
     }
   }
 
-  public async createPlanWithInitialVersion(plan: CarePlan, version: CarePlanVersion): Promise<void> {
-    if (version.care_plan_id !== plan.id || plan.current_version_id !== version.id) {
-      throw new Error('Initial CarePlan and CarePlanVersion references are inconsistent.');
-    }
-    this.plans.set(plan.id, { ...plan });
-    this.versions.set(version.id, { ...version });
-  }
-
   public async savePlan(plan: CarePlan): Promise<void> { this.plans.set(plan.id, { ...plan }); }
   public async findPlanById(id: string): Promise<CarePlan | null> { const p=this.plans.get(id); return p?{...p}:null; }
 
