@@ -105,10 +105,11 @@ export class PgClinicalRecordRepository implements IClinicalRecordRepository {
   async invalidateTimelineEntry(sourceDomain:string,sourceType:string,sourceId:string,reason:string):Promise<boolean>{
     const r=await getPool().query(
       `UPDATE clinical_timeline_entries SET is_invalidated=TRUE,invalidation_reason=$4,invalidated_at=NOW()
-       WHERE source_domain=$1 AND source_type=$2 AND source_id=$3 AND is_invalidated=FALSE`,
+       WHERE source_domain=$1 AND source_type=$2 AND source_id=$3 AND is_invalidated=FALSE
+       RETURNING id`,
       [sourceDomain,sourceType,sourceId,reason]
     );
-    return (r.rowCount||0)>0;
+    return r.rows.length>0;
   }
   async saveObservation(observation:ClinicalObservation):Promise<void>{
     await getPool().query(

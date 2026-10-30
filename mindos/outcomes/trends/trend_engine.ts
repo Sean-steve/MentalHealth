@@ -178,7 +178,7 @@ export class OutcomeTrendEngine {
       baseline_value: baselineVal,
       latest_value: latestVal,
       measurement_count: measurements.length,
-      requires_review: trendState === OutcomeTrendState.WORSENING || trendState === OutcomeTrendState.UNKNOWN,
+      requires_review: trendState === OutcomeTrendState.WORSENING,
       deterioration_severity: deteriorationSeverity,
       evaluated_at: new Date().toISOString()
     };

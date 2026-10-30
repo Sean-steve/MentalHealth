@@ -12,6 +12,8 @@ import { OutcomeReviewService } from './reviews/outcome_review_service.js';
 import { OutcomeAlertService } from './alerts/outcome_alert_service.js';
 import { OutcomeService } from './application/outcome_service.js';
 import { ProgressViewService } from './application/progress_view_service.js';
+import { ClinicalChangeRuleRegistry } from './trends/clinical_change_rules.js';
+import { OutcomeAlertPolicyRegistry } from './alerts/outcome_alert_policy.js';
 
 // Default repository instance
 const defaultRepository = new InMemoryOutcomeRepository();

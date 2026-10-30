@@ -97,17 +97,17 @@ export class PgOutcomeRepository implements IOutcomeRepository {
   }
   async invalidateMeasurement(id:string,reason:string):Promise<boolean>{
     const r=await getPool().query(
-      'UPDATE outcome_measurements SET validity_status=$2,invalidation_reason=$3,invalidated_at=NOW() WHERE id=$1 AND validity_status<>$2',
+      'UPDATE outcome_measurements SET validity_status=$2,invalidation_reason=$3,invalidated_at=NOW() WHERE id=$1 AND validity_status<>$2 RETURNING id',
       [id,OutcomeMeasurementValidity.INVALIDATED,reason]
     );
-    return (r.rowCount||0)>0;
+    return r.rows.length>0;
   }
   async invalidateMeasurementBySource(sourceType:string,sourceReference:string,reason:string):Promise<boolean>{
     const r=await getPool().query(
-      'UPDATE outcome_measurements SET validity_status=$3,invalidation_reason=$4,invalidated_at=NOW() WHERE source_type=$1 AND source_reference=$2 AND validity_status<>$3',
+      'UPDATE outcome_measurements SET validity_status=$3,invalidation_reason=$4,invalidated_at=NOW() WHERE source_type=$1 AND source_reference=$2 AND validity_status<>$3 RETURNING id',
       [sourceType,sourceReference,OutcomeMeasurementValidity.INVALIDATED,reason]
     );
-    return (r.rowCount||0)>0;
+    return r.rows.length>0;
   }
   async saveBaseline(b:OutcomeBaseline):Promise<void>{
     await getPool().query(
