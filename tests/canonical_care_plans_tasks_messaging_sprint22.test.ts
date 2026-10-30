@@ -603,4 +603,61 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
     );
   });
 
+
+  it('does not let a professional bypass required user acknowledgement', async () => {
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'Acknowledgement-gated plan',
+      reviewFrequencyDays: 14,
+      requiresUserAcknowledgement: true,
+      actorId: professionalId
+    });
+
+    await assert.rejects(
+      () => CarePlanService.activatePlan(plan.id, professionalId),
+      (err: Error) =>
+        err instanceof DomainInvariantError &&
+        /acknowledgement/i.test(err.message)
+    );
+
+    const acknowledged = await CarePlanService.userAcknowledgePlan(plan.id, userId);
+    assert.equal(acknowledged.status, CarePlanState.ACTIVE);
+    const versionAfterFirstAck = acknowledged.version;
+
+    const retry = await CarePlanService.userAcknowledgePlan(plan.id, userId);
+    assert.equal(retry.status, CarePlanState.ACTIVE);
+    assert.equal(retry.version, versionAfterFirstAck);
+  });
+
+  it('does not allow a terminal Care Plan to be resurrected through a new version', async () => {
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'Terminal plan',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+    await CarePlanService.activatePlan(plan.id, professionalId);
+    await CarePlanService.completePlan(plan.id, professionalId);
+
+    await assert.rejects(
+      () => CarePlanService.createNewVersion({
+        planId: plan.id,
+        authorProfessionalId: professionalId,
+        summary: 'Attempted resurrection',
+        goals: [],
+        interventions: [],
+        changeRationale: 'Must fail',
+        reviewFrequencyDays: 14,
+        actorId: professionalId
+      }),
+      (err: Error) =>
+        err instanceof DomainInvariantError &&
+        /cannot create a replacement active version/i.test(err.message)
+    );
+  });
+
 });
