@@ -23,3 +23,5 @@ sprint22Router.get('/sprint-22/status', (_req: Request, res: Response) => {
 });
 
 export * from './runtime.js';
+
+export * from './maintenance.js';
