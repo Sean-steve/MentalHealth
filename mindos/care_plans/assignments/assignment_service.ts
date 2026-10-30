@@ -2,9 +2,11 @@
  * MindOS Content & Assessment Assignment Service
  */
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
+import { UnitOfWork } from '../../platform/database/index.js';
 import { EventBus } from '../../platform/events/index.js';
 import { AuditService } from '../../platform/audit/index.js';
 import { DataClassification } from '../../platform/shared/data_classification.js';
+import { CorrelationManager } from '../../platform/shared/correlation.js';
 import { AuthorizationError, NotFoundError, DomainInvariantError } from '../../platform/errors/index.js';
 import { RelationshipAccessEvaluator, DataDomain, ActionPermission } from '../../care_relationships/index.js';
 import { ContentAssignment, AssessmentAssignment } from '../domain/entities.js';
@@ -25,6 +27,53 @@ export interface AssignAssessmentParams {
 export class AssignmentService {
   private static repository:ICarePlanRepository;
   public static setRepository(repo:ICarePlanRepository):void{AssignmentService.repository=repo;}
+
+  private static async persistAssignmentWithEvent(params:{
+    assignment:ContentAssignment|AssessmentAssignment;
+    assignmentType:'CONTENT'|'ASSESSMENT';
+    eventPayload:Record<string,unknown>;
+  }):Promise<void>{
+    const persist=async(tx?:import('../../platform/database/index.js').DatabaseClient)=>{
+      if(params.assignmentType==='CONTENT'){
+        await AssignmentService.repository.saveContentAssignmentTransactional(
+          params.assignment as ContentAssignment,
+          tx
+        );
+      }else{
+        await AssignmentService.repository.saveAssessmentAssignmentTransactional(
+          params.assignment as AssessmentAssignment,
+          tx
+        );
+      }
+    };
+
+    if(AssignmentService.repository.requiresUnitOfWork()){
+      await UnitOfWork.run(async uow=>{
+        await persist(uow.getClient());
+        uow.registerOutboxEvent(
+          'care.assignment_created',
+          'care_plans',
+          params.assignment.id,
+          params.eventPayload,
+          {
+            correlation_id:CorrelationManager.getCorrelationId(),
+            data_classification:DataClassification.CLINICAL_RECORD,
+            producer_domain:'care_plans'
+          }
+        );
+      },'SERIALIZABLE');
+      return;
+    }
+
+    await persist();
+    EventBus.enqueue(
+      'care.assignment_created',
+      'care_plans',
+      params.assignment.id,
+      DataClassification.CLINICAL_RECORD,
+      params.eventPayload
+    );
+  }
 
   private static async assertAssignmentContext(params:{
     planId:string;
@@ -84,9 +133,15 @@ export class AssignmentService {
       content_id:params.contentId,content_version:params.contentVersion,status:'ASSIGNED',
       due_date:params.dueDate,created_at:new Date().toISOString()
     };
-    await AssignmentService.repository.saveContentAssignment(assignment);
-    EventBus.enqueue('care.assignment_created','care_plans',assignment.id,DataClassification.CLINICAL_RECORD,{
-      assignment_id:assignment.id,plan_id:plan.id,assignment_type:'CONTENT',resource_id:params.contentId
+    await AssignmentService.persistAssignmentWithEvent({
+      assignment,
+      assignmentType:'CONTENT',
+      eventPayload:{
+        assignment_id:assignment.id,
+        plan_id:plan.id,
+        assignment_type:'CONTENT',
+        resource_id:params.contentId
+      }
     });
     AuditService.record({
       actor_type:'STAFF',actor_id:params.assignedBy,action:'CARE_ASSIGNMENT.CONTENT_ASSIGNED',
@@ -131,9 +186,15 @@ export class AssignmentService {
       due_window:{start_date:params.dueWindow.startDate,end_date:params.dueWindow.endDate},
       status:'PENDING',created_at:new Date().toISOString()
     };
-    await AssignmentService.repository.saveAssessmentAssignment(assignment);
-    EventBus.enqueue('care.assignment_created','care_plans',assignment.id,DataClassification.CLINICAL_RECORD,{
-      assignment_id:assignment.id,plan_id:plan.id,assignment_type:'ASSESSMENT',instrument_type:params.instrumentType
+    await AssignmentService.persistAssignmentWithEvent({
+      assignment,
+      assignmentType:'ASSESSMENT',
+      eventPayload:{
+        assignment_id:assignment.id,
+        plan_id:plan.id,
+        assignment_type:'ASSESSMENT',
+        instrument_type:params.instrumentType
+      }
     });
     AuditService.record({
       actor_type:'STAFF',actor_id:params.assignedBy,action:'CARE_ASSIGNMENT.ASSESSMENT_ASSIGNED',
