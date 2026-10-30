@@ -77,6 +77,25 @@ professionalMessagingRouter.get('/threads/:threadId', async (req: Request, res: 
   }
 });
 
+professionalMessagingRouter.post('/threads/:threadId/content', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const a = actor(req);
+    const content = typeof req.body?.content === 'string' ? req.body.content : '';
+    if (!content.trim()) {
+      return res.status(400).json({ error: 'content is required.' });
+    }
+    const stored = await ProfessionalMessagingService.storeProtectedContent({
+      thread_id: req.params.threadId,
+      actor_id: a.id,
+      actor_type: a.type,
+      content
+    });
+    res.status(201).json(stored);
+  } catch (err) {
+    next(err);
+  }
+});
+
 professionalMessagingRouter.get('/threads/:threadId/messages', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const a = actor(req);
