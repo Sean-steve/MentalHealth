@@ -2,15 +2,19 @@
  * MindOS Care Goal Management Service
  */
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
+import { UnitOfWork } from '../../platform/database/index.js';
 import { EventBus } from '../../platform/events/index.js';
 import { AuditService } from '../../platform/audit/index.js';
 import { DataClassification } from '../../platform/shared/data_classification.js';
-import { NotFoundError } from '../../platform/errors/index.js';
+import { CorrelationManager } from '../../platform/shared/correlation.js';
+import { AuthorizationError, NotFoundError } from '../../platform/errors/index.js';
 import { validateStateTransition } from '../../platform/shared/state_machines.js';
 import { CareGoal, CareGoalReview } from '../domain/entities.js';
 import { CareGoalType, CareGoalStatus, CareGoalProvenance, GoalPriority, GoalTargetType } from '../domain/types.js';
 import { CarePlanInvariants } from '../domain/invariants.js';
 import { ICarePlanRepository } from '../repositories/interfaces.js';
+import { CarePlanService } from '../plans/care_plan_service.js';
+import { RelationshipAccessEvaluator, DataDomain, ActionPermission } from '../../care_relationships/index.js';
 
 export interface CreateGoalParams {
   carePlanVersionId:string; goalCode:string; goalType:CareGoalType; title:string;
@@ -53,6 +57,27 @@ export class CareGoalService {
   public static async reviewGoal(params:ReviewGoalParams):Promise<{goal:CareGoal;review:CareGoalReview}>{
     const goal=await CareGoalService.repository.findGoalById(params.goalId);
     if(!goal) throw new NotFoundError(`CareGoal ${params.goalId} not found.`);
+
+    const version=await CareGoalService.repository.findVersionById(goal.care_plan_version_id);
+    if(!version) throw new NotFoundError(`CarePlanVersion ${goal.care_plan_version_id} not found.`);
+    const plan=await CarePlanService.getPlan(version.care_plan_id);
+    if(!plan) throw new NotFoundError(`CarePlan ${version.care_plan_id} not found.`);
+
+    await RelationshipAccessEvaluator.assertAccess({
+      relationshipId:plan.care_relationship_id,
+      professionalId:params.reviewedBy,
+      dataDomain:DataDomain.CARE_PLANS,
+      action:ActionPermission.WRITE,
+      purpose:'CARE_DELIVERY'
+    });
+
+    if(plan.current_version_id!==version.id){
+      throw new AuthorizationError(
+        'Care Goal review must target the current Care Plan version.',
+        {errorCode:'AUTHZ_003'}
+      );
+    }
+
     const previous=goal.status;
     validateStateTransition('CareGoalStatus',previous,params.newStatus,goal.id,params.reviewedBy);
     const now=new Date().toISOString();
@@ -60,15 +85,64 @@ export class CareGoalService {
     if(params.currentValue!==undefined) goal.current_value=params.currentValue;
     if(params.newStatus===CareGoalStatus.ACHIEVED) goal.completed_at=now;
     goal.updated_at=now;
-    await CareGoalService.repository.saveGoal(goal);
+
     const review:CareGoalReview={
       id:generateUUIDv7(),goal_id:goal.id,reviewed_by:params.reviewedBy,reviewed_at:now,
       status_before:previous,status_after:params.newStatus,evidence_refs:params.evidenceRefs,
       reason_codes:params.reasonCodes,notes_reference:params.notesReference
     };
-    await CareGoalService.repository.saveGoalReview(review);
-    EventBus.enqueue('care.goal_updated','care_plans',goal.id,DataClassification.CLINICAL_RECORD,{
-      goal_id:goal.id,previous_status:previous,new_status:params.newStatus
+
+    const eventPayload={
+      goal_id:goal.id,
+      previous_status:previous,
+      new_status:params.newStatus
+    };
+
+    if(CareGoalService.repository.requiresUnitOfWork()){
+      await UnitOfWork.run(async uow=>{
+        await CareGoalService.repository.reviewGoalAggregate(
+          goal,
+          review,
+          previous,
+          uow.getClient()
+        );
+        uow.registerOutboxEvent(
+          'care.goal_updated',
+          'care_plans',
+          goal.id,
+          eventPayload,
+          {
+            correlation_id:CorrelationManager.getCorrelationId(),
+            data_classification:DataClassification.CLINICAL_RECORD,
+            producer_domain:'care_plans'
+          }
+        );
+      },'SERIALIZABLE');
+    }else{
+      await CareGoalService.repository.reviewGoalAggregate(
+        goal,
+        review,
+        previous
+      );
+      EventBus.enqueue(
+        'care.goal_updated',
+        'care_plans',
+        goal.id,
+        DataClassification.CLINICAL_RECORD,
+        eventPayload
+      );
+    }
+
+    AuditService.record({
+      actor_type:'STAFF',
+      actor_id:params.reviewedBy,
+      action:'CARE_GOAL.REVIEWED',
+      resource_type:'care_goal',
+      resource_id:goal.id,
+      purpose:'Care Plan Goal Review',
+      authorization_basis:{relationshipId:plan.care_relationship_id,planId:plan.id},
+      result:'ALLOWED',
+      metadata:{previousStatus:previous,newStatus:params.newStatus,evidenceCount:params.evidenceRefs.length}
     });
     return {goal,review};
   }
