@@ -40,6 +40,19 @@ export interface ICarePlanRepository {
     replacement: CarePlanVersionReplacement,
     tx?: DatabaseClient
   ): Promise<void>;
+
+  savePlanAndVersionAggregate(
+    plan: CarePlan,
+    version: CarePlanVersion,
+    expectedPlanVersion: number,
+    tx?: DatabaseClient
+  ): Promise<void>;
+
+  savePlanWithExpectedVersion(
+    plan: CarePlan,
+    expectedPlanVersion: number,
+    tx?: DatabaseClient
+  ): Promise<void>;
   savePlan(plan: CarePlan): Promise<void>;
   findPlanById(id: string): Promise<CarePlan | null>;
   findPlanByRelationshipId(relationshipId: string): Promise<CarePlan | null>;
