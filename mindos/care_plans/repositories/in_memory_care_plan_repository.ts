@@ -1,7 +1,7 @@
 /**
  * MindOS In-Memory Care Plan Repository
  */
-import { ICarePlanRepository } from './interfaces.js';
+import { ICarePlanRepository, CarePlanVersionReplacement } from './interfaces.js';
 import {
   CarePlan, CarePlanVersion, CareGoal, CareGoalReview, CareIntervention,
   CarePlanReview, ContentAssignment, AssessmentAssignment
@@ -17,6 +17,77 @@ export class InMemoryCarePlanRepository implements ICarePlanRepository {
   private planReviews = new Map<string, CarePlanReview>();
   private contentAssignments = new Map<string, ContentAssignment>();
   private assessmentAssignments = new Map<string, AssessmentAssignment>();
+
+  public requiresUnitOfWork(): boolean { return false; }
+
+  public async createPlanAggregate(
+    plan: CarePlan,
+    version: CarePlanVersion,
+    goals: CareGoal[],
+    interventions: CareIntervention[]
+  ): Promise<void> {
+    if (version.care_plan_id !== plan.id || plan.current_version_id !== version.id) {
+      throw new Error('Initial CarePlan and CarePlanVersion references are inconsistent.');
+    }
+
+    const plansSnapshot = new Map(this.plans);
+    const versionsSnapshot = new Map(this.versions);
+    const goalsSnapshot = new Map(this.goals);
+    const interventionsSnapshot = new Map(this.interventions);
+
+    try {
+      this.plans.set(plan.id, structuredClone(plan));
+      this.versions.set(version.id, structuredClone(version));
+      for (const goal of goals) this.goals.set(goal.id, structuredClone(goal));
+      for (const intervention of interventions) {
+        this.interventions.set(intervention.id, structuredClone(intervention));
+      }
+    } catch (error) {
+      this.plans = plansSnapshot;
+      this.versions = versionsSnapshot;
+      this.goals = goalsSnapshot;
+      this.interventions = interventionsSnapshot;
+      throw error;
+    }
+  }
+
+  public async replaceActiveVersionAggregate(
+    replacement: CarePlanVersionReplacement
+  ): Promise<void> {
+    const storedPlan = this.plans.get(replacement.plan.id);
+    if (!storedPlan || storedPlan.version !== replacement.expected_plan_version) {
+      throw new Error('CONCURRENCY_CONFLICT: Care Plan version changed before replacement.');
+    }
+
+    const plansSnapshot = new Map(this.plans);
+    const versionsSnapshot = new Map(this.versions);
+    const goalsSnapshot = new Map(this.goals);
+    const interventionsSnapshot = new Map(this.interventions);
+
+    try {
+      this.versions.set(
+        replacement.current_version.id,
+        structuredClone(replacement.current_version)
+      );
+      this.versions.set(
+        replacement.next_version.id,
+        structuredClone(replacement.next_version)
+      );
+      for (const goal of replacement.goals) {
+        this.goals.set(goal.id, structuredClone(goal));
+      }
+      for (const intervention of replacement.interventions) {
+        this.interventions.set(intervention.id, structuredClone(intervention));
+      }
+      this.plans.set(replacement.plan.id, structuredClone(replacement.plan));
+    } catch (error) {
+      this.plans = plansSnapshot;
+      this.versions = versionsSnapshot;
+      this.goals = goalsSnapshot;
+      this.interventions = interventionsSnapshot;
+      throw error;
+    }
+  }
 
   public async createPlanWithInitialVersion(plan: CarePlan, version: CarePlanVersion): Promise<void> {
     if (version.care_plan_id !== plan.id || plan.current_version_id !== version.id) {
