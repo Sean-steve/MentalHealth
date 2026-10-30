@@ -602,7 +602,7 @@ export class PgCarePlanRepository implements ICarePlanRepository {
         review.id
       ]
     );
-    return updated.length === 1;
+    return updated.rows.length === 1;
   }
 
   public async savePlanReviewTransactional(
