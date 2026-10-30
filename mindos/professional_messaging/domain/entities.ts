@@ -63,3 +63,12 @@ export interface ProfessionalMessageAttachment {
   data_classification: string;
   created_at: string;
 }
+
+export interface ProfessionalMessageContent {
+  id: string;
+  content_reference: string;
+  thread_id: string;
+  created_by: string;
+  encrypted_content: string;
+  created_at: string;
+}
