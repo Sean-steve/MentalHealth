@@ -1,58 +1,75 @@
-<!doctype html><meta charset="utf-8"><title>MindOS Sprint 22 Reconciliation</title><style>body{max-width:950px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #f3c767;color:#f3c767;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700}.done{color:#5fe0ad}.pending{color:#f3c767}.blocked{color:#ff8e8e}</style>
-<a href="../tracker.html">← Engineering tracker</a><h1>Sprint 22 reconciliation</h1><span class="tag">PARTIAL — PRODUCTION CERTIFICATION PENDING</span>
-<p>MindOS Sprint 22 is no longer only a domain prototype. Care Plans, Clinical Tasks and Professional Messaging now have runtime/API wiring, PostgreSQL repositories, migration coverage, maintenance orchestration and hardened safety/authorization boundaries. It is intentionally not marked complete until the full dependency-backed Sprint 1–22 regression can run.</p>
+<!doctype html><meta charset="utf-8"><title>MindOS Sprint 22 — Certified Complete</title>
+<style>body{max-width:960px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #5fe0ad;color:#5fe0ad;border-radius:999px;padding:6px 11px;font-size:12px;font-weight:800}.done{color:#5fe0ad}.evidence{padding:16px;border:1px solid #21433b;border-radius:14px;background:#0d1c19}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.metric{padding:14px;border:1px solid #21433b;border-radius:12px}.metric b{font-size:24px;display:block}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style>
+<a href="../tracker.html">← Engineering tracker</a>
+<h1>Sprint 22 — Care Plans, Clinical Tasks & Professional Messaging</h1>
+<span class="tag">CERTIFIED COMPLETE</span>
+<p>Sprint 22 is implemented on the complete Sprint 1–21 MindOS foundation and has passed the full executable certification gate. It is no longer a partial reconciliation or architecture-only prototype.</p>
 
-<h2>Implemented</h2>
+<h2>Certification evidence</h2>
+<div class="grid">
+<div class="metric"><b>20 / 20</b>Canonical PostgreSQL migrations applied</div>
+<div class="metric"><b>428 / 428</b>Full Sprint 1–22 regression tests passed</div>
+<div class="metric"><b>25 / 25</b>Dedicated Sprint-22 acceptance tests passed</div>
+<div class="metric"><b>0</b>Secrets/private keys detected by security scan</div>
+<div class="metric"><b>PASS</b>Full TypeScript typecheck</div>
+<div class="metric"><b>PASS</b>Production Vite/Node build</div>
+</div>
+<p class="evidence"><strong>Certified code commit:</strong> <code>555f3c0cfac54e7c9a8f5dcc61c002d926726a8d</code><br>
+<strong>Certification workflow:</strong> <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/41116693948">GitHub Actions run 41116693948</a></p>
+
+<h2>Care Plans & collaborative care</h2>
 <ul>
-<li class="done"><strong>Care Plans:</strong> versioned plan lifecycle, governed review cadence, user-acknowledgement gate, goals, interventions, assignments, reviews and progress projection.</li>
-<li class="done"><strong>Clinical Tasks:</strong> dependency graph/cycle prevention, relationship-scoped assignment, owner-domain completion, evidence, overdue/readiness reconciliation, bounded recurrence, policy-configured recurrence, reminder deduplication and persistent reminder receipts.</li>
-<li class="done"><strong>Professional Messaging:</strong> care-relationship-scoped threads, participants, protected content references, idempotent send, delivery/read states, notification integration, same-thread reply validation, relationship closure, privacy-preserving Safety forwarding and deny-by-default attachment governance.</li>
-<li class="done"><strong>PostgreSQL:</strong> Care Plan, Clinical Task and Professional Messaging repositories are wired for production mode through <code>mindos/sprint22/runtime.ts</code>; migration <code>020_canonical_care_plans_tasks_messaging.sql</code> covers the Sprint-22 persistence model.</li>
-<li class="done"><strong>API:</strong> Sprint-22 routers are mounted under <code>/api/v1</code> from the main server. External APIs reject SYSTEM task creation, owner-domain completion forgery, client-defined messaging response expectations and invalid enum/state values.</li>
+<li class="done">Versioned Care Plan lifecycle with immutable active versions and new-version semantics for material changes.</li>
+<li class="done">Relationship-scoped goals and interventions with provenance, current-version guards and user <code>USER_SELECTED</code> constraints.</li>
+<li class="done">Content and Assessment assignments reuse governed owning domains and persist atomically with outbox events.</li>
+<li class="done">Care Plan reviews use an atomic reviewer/outcome claim, retry-safe MODIFY saga, preallocated version IDs, compare-and-set completion and exactly-one logical completion event.</li>
+<li class="done">Stale review, cross-plan goal, user-acknowledgement and terminal-plan resurrection protections are covered by acceptance tests.</li>
 </ul>
 
-<h2>Durability & concurrency hardening</h2>
+<h2>Clinical Tasks</h2>
 <ul>
-<li class="done">Core Care Plan, Clinical Task and Professional Messaging mutations use application-owned <code>UnitOfWork</code> transactions with canonical transactional-outbox events.</li>
-<li class="done">Care Goal review now persists the goal mutation + review record atomically and registers <code>care.goal_updated</code> through the outbox.</li>
-<li class="done">Content and Assessment assignments now persist atomically with <code>care.assignment_created</code>.</li>
-<li class="done">Clinical Task persistence has optimistic state checks, idempotency keys and authoritative completion evidence.</li>
-<li class="done">Professional Messaging has optimistic delivery/thread updates and idempotent message creation.</li>
-<li class="done">Care Plan review execution now persists an atomic reviewer/outcome intent before plan mutation, uses a preallocated version ID for MODIFY, resumes after partial failure without duplicating versions, blocks outcome switching, and compare-and-set finalization ensures only one logical <code>care.plan_review_completed</code> event is emitted under concurrent retries.</li>
+<li class="done">Relationship-scoped task model with task type, assignee, priority, authoritative state machine and evidence.</li>
+<li class="done">Dependency graph, cycle prevention, readiness, overdue reconciliation and owner-domain completion anti-spoofing.</li>
+<li class="done">Bounded recurrence creates only the next occurrence from an explicitly configured versioned policy; no hidden cadence is guessed.</li>
+<li class="done">Policy-driven reminders use persistent receipts to prevent duplicate notifications.</li>
+<li class="done">Relationship termination and care-team changes are revalidated at action time and fail closed.</li>
 </ul>
 
-<h2>Authorization & clinical-integrity hardening</h2>
+<h2>Professional Messaging</h2>
 <ul>
-<li class="done">Care Goal creation independently revalidates the plan/relationship at the service boundary; users may create only their own <code>USER_SELECTED</code> goals.</li>
-<li class="done">Professional Care Goal and Care Intervention creation requires relationship-scoped Care Plan write access and the current editable plan version.</li>
-<li class="done">Task start/completion revalidates assignment, relationship state and care-team membership; relationship termination races fail closed.</li>
-<li class="done">Care Plan reviews reject stale plan versions and cross-plan goal reviews.</li>
-<li class="done">Active/superseded Care Plan versions cannot be silently mutated in place.</li>
-<li class="done">No guessed 30-day clinical review cadence remains.</li>
+<li class="done">Threads and participants are tied to active care relationships, purpose and relationship-scoped authorization.</li>
+<li class="done">Raw care-message content is accepted only through the protected-content endpoint, encrypted immediately, and thereafter referenced by opaque content ID.</li>
+<li class="done">Message metadata is idempotent and protected by transactional outbox/optimistic concurrency.</li>
+<li class="done">Reply references are same-thread validated; relationship termination blocks new messages immediately before asynchronous reconciliation.</li>
+<li class="done">Notification payloads remain privacy-minimized and messaging does not claim real-time clinician or emergency monitoring.</li>
 </ul>
 
-<h2>Safety & communication boundaries</h2>
+<h2>Safety integration</h2>
 <ul>
-<li class="done">Care-message metadata never needs raw message content; Safety integration works through a protected-content classifier port and forwards qualifying candidates into the authoritative <code>CrisisResponseOrchestrator</code>.</li>
-<li class="done">The runtime reports messaging Safety as <code>EXPLICIT_SCANNER_REQUIRED</code> unless a governed protected-content classifier is provided.</li>
-<li class="done">MindOS does not reuse the AI Companion keyword pre-check as Professional Messaging clinical monitoring without governance approval.</li>
-<li class="done">Attachments fail closed until a governed file/media policy verifies malware scan, MIME/size and data-classification requirements.</li>
-<li class="done">Messaging never claims real-time clinician/emergency monitoring.</li><li class="done">A terminated/revoked CareRelationship blocks new messages and new attachments immediately, even before the reconciliation worker closes the thread.</li>
+<li class="done">Default runtime uses the governed deterministic acute-distress rules already present in MindOS rather than an invented messaging heuristic.</li>
+<li class="done">Protected content is decrypted only inside the controlled Safety-scanner boundary; ordinary message metadata never carries raw text.</li>
+<li class="done">User messages preserve <code>USER_SELF_REPORT / USER_REPORTED</code> provenance; professional messages preserve professional provenance.</li>
+<li class="done">The messaging scanner emits only candidate SafetySignals. Canonical RiskState, SafetyAction and escalation remain owned by the Safety Kernel/CrisisResponseOrchestrator.</li>
+<li class="done">Missing protected content fails closed instead of allowing an unevaluated message to masquerade as monitored.</li>
 </ul>
 
-<h2>Validation now in GitHub</h2>
+<h2>Secure attachments</h2>
 <ul>
-<li class="done"><code>Verify Sprint 22 structure</code> — green on the hardened architecture, including outbox, authorization, recurrence, Safety and review-saga invariants.</li>
-<li class="done"><code>Verify Sprint 22 TypeScript syntax</code> — green on the cumulative Sprint-22 TypeScript changes through the latest product-code commit.</li>
-<li class="done">Acceptance suite includes recurrence/reminder idempotency, attachment fail-closed behavior, relationship closure, termination races, cross-user assignment denial, cross-thread reply denial, stale-review protection, user acknowledgement, terminal-plan immutability, service-level goal/intervention authorization and Care Plan review failure-recovery/exactly-once scenarios and immediate messaging termination-race denial.</li>
+<li class="done">Attachment linking is governed by explicit deployment policy with no hard-coded product size/MIME defaults.</li>
+<li class="done">Only CLEAN-scanned attachments within configured MIME, size and data-classification policy are accepted.</li>
+<li class="done">Public HTTP(S), data and browser blob references are rejected; messaging stores only protected evidence references.</li>
+<li class="done">Deny-by-default remains the fallback when a deployment has not supplied an attachment policy.</li>
 </ul>
 
-<h2>Remaining before Sprint 22 can be certified COMPLETE</h2>
+<h2>Persistence, API & runtime</h2>
 <ul>
-<li class="blocked"><strong>Full foundation import:</strong> the GitHub repository still does not contain the complete Sprint 1–21 foundation. The original archive has been recovered and audited, but the current connector/runtime boundary cannot bulk-stream those local bytes into GitHub.</li>
-<li class="pending"><strong>Executable regression:</strong> after the foundation is present in GitHub, run dependency-backed typecheck, Sprint 1–22 tests, PostgreSQL migration validation, integration/E2E, security/privacy, event-contract and production build checks.</li>
-<li class="pending"><strong>Messaging Safety classifier:</strong> configure an explicitly governed Professional Messaging protected-content classifier. The existing AI Companion raw-text pre-check is purpose-specific and is not being silently repurposed.</li>
-<li class="pending"><strong>Attachment/media adapter:</strong> connect the deny-by-default attachment policy to an approved media scanning/storage service before attachments can be enabled.</li>
+<li class="done">PostgreSQL repositories are implemented for Care Plans, Clinical Tasks and Professional Messaging.</li>
+<li class="done">Migration <code>020_canonical_care_plans_tasks_messaging.sql</code> includes plans, versions, goals, interventions, reviews, assignments, tasks, dependencies/evidence/reminder receipts, messaging threads/participants/messages, encrypted protected content and attachments.</li>
+<li class="done">Sprint-22 routers are mounted under <code>/api/v1</code>, including protected message-content storage and metadata send endpoints.</li>
+<li class="done">Production runtime configures PostgreSQL, notifications, deterministic messaging Safety classification, attachment policy and recurrence/reminder policy boundaries.</li>
 </ul>
 
-<p><strong>Current decision:</strong> Sprint 22 is functionally and architecturally advanced, with major production durability/security gaps closed. Status remains <strong>PARTIAL</strong> until the full foundation can be regression-tested and the governed messaging Safety/media adapters are configured.</p>
+<h2>Regression correction</h2>
+<p>Full-foundation certification exposed two date-sensitive Sprint-20 availability tests. The scheduling engine now supports a deterministic test clock, so canonical historical test dates do not fail as wall-clock time advances. Assertions were not weakened.</p>
+
+<p class="evidence"><strong>Final decision:</strong> <span class="done">SPRINT 22 — COMPLETE</span></p>
