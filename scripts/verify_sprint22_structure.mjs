@@ -95,7 +95,7 @@ if(failures.length===0){
      !plan.includes('Preallocated Care Plan version ID already belongs to a different revision context')||
      !plan.includes('return existing;')) failures.push('Care Plan version replacement is not retry-idempotent');
   if(!carePlanReview.includes('persistCompletedReview')||
-     !carePlanReview.includes('savePlanReviewTransactional')||
+     !carePlanReview.includes('completePlanReviewTransactional')||
      !carePlanReview.includes('registerOutboxEvent')||
      !carePlanReview.includes('cannot be retried with a different outcome')||
      !carePlanReview.includes('Atomically claim the review intent before any plan mutation')||
