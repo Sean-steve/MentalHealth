@@ -1,9 +1,9 @@
 {
-  "updated": "2026-10-02",
+  "updated": "2026-10-30",
   "pages": {
-    "deployment": "READY",
-    "activation": "REQUIRES_REPOSITORY_SETTINGS",
-    "note": "Static tracker and GitHub Actions workflow are committed. The connected GitHub integration cannot enable Pages because repository administration permission is not available."
+    "deployment": "LIVE",
+    "activation": "ENABLED",
+    "note": "MindOS product experience and engineering tracker deploy automatically from main through GitHub Actions."
   },
   "sprints": [
     {
@@ -28,7 +28,7 @@
       "number": "22",
       "title": "Care Plans, Clinical Tasks & Professional Messaging",
       "status": "PARTIAL",
-      "note": "Product experience + actual Clinical Tasks + Professional Messaging source, migration 020 and Sprint-22 tests are now committed to GitHub. Care Plan reconciliation is published in the patch. Full baseline import, PostgreSQL adapters, API/runtime wiring and executable regression remain pending."
+      "note": "Care Plans, PostgreSQL repositories and API/runtime wiring are present. Clinical Tasks now include dependency safety, authoritative completion, governed recurrence, reminder deduplication, overdue reconciliation, relationship-closure cancellation and assignment revalidation. Professional Messaging includes relationship-scoped access, idempotent delivery, notification integration, privacy-preserving Safety bridge, deny-by-default attachments and closure reconciliation. Structural CI is enforced; full Sprint 1–22 executable regression remains blocked by the incomplete foundation import in GitHub."
     },
     {
       "number": "23",
@@ -44,6 +44,21 @@
     }
   ],
   "timeline": [
+    {
+      "date": "30 Oct 2026",
+      "title": "Sprint 22 operational maintenance",
+      "detail": "Added governed task recurrence, persistent reminder receipts, overdue/readiness maintenance runner and explicit runtime configuration with no guessed cadence."
+    },
+    {
+      "date": "30 Oct 2026",
+      "title": "Relationship closure reconciliation",
+      "detail": "Terminated/revoked care relationships now reconcile Care Plans, unfinished Clinical Tasks and open Professional Messaging threads while preserving completed history."
+    },
+    {
+      "date": "30 Oct 2026",
+      "title": "Task authorization hardened",
+      "detail": "Task start/completion now revalidate assignment, relationship state, professional access and care-team role membership; termination races fail closed."
+    },
     {
       "date": "02 Oct 2026",
       "title": "Sprint 22 source committed",
@@ -86,14 +101,15 @@
     }
   ],
   "experience": {
-    "status": "IMPLEMENTED_IN_GITHUB",
+    "status": "LIVE_ON_GITHUB_PAGES",
     "root": "docs/index.html",
+    "live_url": "https://sean-steve.github.io/MentalHealth/",
     "workspaces": [
       "User",
       "Professional",
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Static interactive prototype is committed. Pages deployment remains blocked until repository Pages is enabled with GitHub Actions."
+    "note": "The Pages prototype is live and tracks Sprint 22 implementation changes."
   }
 }
