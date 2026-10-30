@@ -65,6 +65,9 @@ if(failures.length===0){
   if(!plan.includes('createPlanWithInitialVersion')) failures.push('care plan creation is not atomic');
   if(/reviewFrequencyDays\s*\?\?\s*30|reviewFrequencyDays\s*\|\|\s*30/.test(plan)) failures.push('care plan invents a 30-day review cadence');
   if(!task.includes('trusted system actor')) failures.push('owner-domain completion is not restricted to trusted system actors');
+  if(!task.includes('assertActorMatchesAssignment')||
+     !task.includes('CareTeamService.getMembership')||
+     !task.includes('CARE_RELATIONSHIP_ENDED')) failures.push('task action authorization does not revalidate assignment/relationship state');
   if(!scheduler.includes('Creates at most one next occurrence')||!scheduler.includes('recurrence:')) failures.push('bounded recurrence scheduler missing');
   if(!scheduler.includes('findReminderReceipt')||!migration.includes('clinical_task_reminder_receipts')) failures.push('reminder idempotency persistence missing');
   if(!migration.includes('recurrence_parent_task_id')||
@@ -108,6 +111,7 @@ if(failures.length===0){
   if(!tests.includes('deduplicates policy-driven task reminders')) failures.push('reminder deduplication regression missing');
   if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
   if(!tests.includes('reconciles plan, unfinished tasks and messaging')) failures.push('relationship-closure acceptance regression missing');
+  if(!tests.includes('denies task action immediately after relationship termination')) failures.push('termination race regression missing');
   if(!tests.includes('generates only one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
   if(!tests.includes('deduplicates policy-driven task reminders')) failures.push('reminder deduplication regression missing');
   if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
