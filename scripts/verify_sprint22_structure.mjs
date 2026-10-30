@@ -46,6 +46,8 @@ if(failures.length===0){
   const carePlanInMemoryRepository=read('mindos/care_plans/repositories/in_memory_care_plan_repository.ts');
   const carePlanApi=read('mindos/care_plans/api/routes.ts');
   const carePlanReview=read('mindos/care_plans/reviews/care_plan_review_service.ts');
+  const careGoalService=read('mindos/care_plans/goals/care_goal_service.ts');
+  const careInterventionService=read('mindos/care_plans/interventions/care_intervention_service.ts');
   const assignmentService=read('mindos/care_plans/assignments/assignment_service.ts');
   const task=read('mindos/clinical_tasks/application/clinical_task_service.ts');
   const taskRepositoryInterface=read('mindos/clinical_tasks/repositories/interfaces.ts');
@@ -83,6 +85,12 @@ if(failures.length===0){
   if(!carePlanApi.includes('normalizeProfessionalGoals')||
      !carePlanApi.includes('normalizeProfessionalInterventions')||
      !carePlanApi.includes('generateUUIDv7')) failures.push('Care Plan API does not normalize client domain records');
+  if(!careGoalService.includes('User may only create a goal for their own Care Plan')||
+     !careGoalService.includes('A user-created Care Goal must retain USER_SELECTED provenance')||
+     !careGoalService.includes('RelationshipAccessEvaluator.assertAccess')||
+     !careGoalService.includes('Care Goal creation must target the current Care Plan version')) failures.push('goal creation service relationship authorization/version binding missing');
+  if(!careInterventionService.includes('RelationshipAccessEvaluator.assertAccess')||
+     !careInterventionService.includes('Care Intervention creation must target the current Care Plan version')) failures.push('intervention creation service relationship authorization/version binding missing');
   if(!carePlanReview.includes('Care Plan review is stale because the current plan version has changed')||
      !carePlanReview.includes('Care Goal review does not belong to the Care Plan version under review')||
      !carePlanReview.includes('if(review.completed_at) return review;')) failures.push('Care Plan review version/goal integrity guards missing');
@@ -182,6 +190,9 @@ if(failures.length===0){
   }
   if(carePlanSources.includes('DataClassification.RESTRICTED')) failures.push('care plan events use non-canonical RESTRICTED classification');
   if(!carePlanSources.includes('DataClassification.CLINICAL_RECORD')) failures.push('care plan events are not classified as CLINICAL_RECORD');
+  if(!tests.includes('enforces service-level relationship authorization for goals and interventions')) failures.push('goal/intervention relationship authorization regression missing');
+  if(!tests.includes('limits user-created goals to the subject and USER_SELECTED provenance')) failures.push('user goal provenance regression missing');
+  if(!tests.includes('rejects goal and intervention mutation against a superseded plan version')) failures.push('stale goal/intervention version regression missing');
   if(!tests.includes('spoofed-assessment-completion')) failures.push('anti-spoof owner-domain completion regression missing');
   if(!tests.includes('projects real clinical-task state')) failures.push('care-plan task projection regression missing');
   if(!tests.includes('generates one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
