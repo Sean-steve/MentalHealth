@@ -73,6 +73,9 @@ export class CareGoalService {
     return {goal,review};
   }
 
+  public static async getGoal(goalId:string):Promise<CareGoal|null>{
+    return CareGoalService.repository.findGoalById(goalId);
+  }
   public static async getGoalsForVersion(versionId:string,status?:CareGoalStatus):Promise<CareGoal[]>{
     return CareGoalService.repository.findGoalsByVersionId(versionId,status);
   }
