@@ -99,6 +99,21 @@ CREATE TABLE IF NOT EXISTS outcome_comparability_policies (
   status VARCHAR(40) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS outcome_alert_policies (
+  id VARCHAR(180) NOT NULL,
+  version INTEGER NOT NULL CHECK(version > 0),
+  review_due_minutes JSONB NOT NULL,
+  clinical_artifact_id VARCHAR(180) NOT NULL,
+  clinical_artifact_version VARCHAR(80) NOT NULL,
+  approval_state VARCHAR(40) NOT NULL,
+  approved_by VARCHAR(160) NOT NULL,
+  approved_at TIMESTAMPTZ NOT NULL,
+  effective_from TIMESTAMPTZ NOT NULL,
+  effective_until TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(id,version)
+);
+
 CREATE TABLE IF NOT EXISTS outcome_clinical_change_rules (
   id VARCHAR(180) PRIMARY KEY,
   measure_code VARCHAR(160) NOT NULL,
@@ -162,9 +177,9 @@ CREATE TABLE IF NOT EXISTS outcome_baselines (
   established_at TIMESTAMPTZ NOT NULL,
   established_by VARCHAR(160) NOT NULL,
   override_reason TEXT,
-  created_at TIMESTAMPTZ NOT NULL,
-  UNIQUE(subject_user_id, measure_code)
+  created_at TIMESTAMPTZ NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_outcome_baselines_subject_measure_time ON outcome_baselines(subject_user_id, measure_code, established_at DESC);
 
 CREATE TABLE IF NOT EXISTS outcome_reviews (
   id UUID PRIMARY KEY,
@@ -236,6 +251,7 @@ DROP TABLE IF EXISTS outcome_reviews CASCADE;
 DROP TABLE IF EXISTS outcome_baselines CASCADE;
 DROP TABLE IF EXISTS outcome_measurements CASCADE;
 DROP TABLE IF EXISTS outcome_clinical_change_rules CASCADE;
+DROP TABLE IF EXISTS outcome_alert_policies CASCADE;
 DROP TABLE IF EXISTS outcome_comparability_policies CASCADE;
 DROP TABLE IF EXISTS outcome_measure_definitions CASCADE;
 DROP TABLE IF EXISTS clinical_observations CASCADE;

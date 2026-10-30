@@ -38,6 +38,9 @@ export class OutcomeSeriesService {
     const compCheck = ComparabilityService.checkSeries(measurements);
 
     let baseline = await OutcomeSeriesService.repository.findBaseline(userId, measureCode);
+    if (baseline && !measurements.some(m=>m.id===baseline!.baseline_measurement_id)) {
+      baseline = null;
+    }
     if (!baseline && measurements.length > 0) {
       // Deterministic baseline selection: FIRST_VALID measurement (Sections 33, 34, 35)
       const firstValid = measurements[0];

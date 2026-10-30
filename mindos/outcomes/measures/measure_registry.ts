@@ -64,7 +64,12 @@ export class MeasureRegistry {
 
   public static listActiveMeasures(): OutcomeMeasureDefinition[] {
     this.initialize();
-    return Array.from(this.definitions.values()).filter((d) => d.status === 'ACTIVE');
+    return Array.from(this.definitions.values()).filter((d) => d.status === 'ACTIVE').map(d=>({...d}));
+  }
+
+  public static listComparabilityPolicies(): MeasureComparabilityPolicy[] {
+    this.initialize();
+    return Array.from(this.policies.values()).map(p=>({...p,allowed_version_pairs:p.allowed_version_pairs.map(pair=>[...pair] as [string|number,string|number]),unit_requirements:[...p.unit_requirements],population_constraints:p.population_constraints?[...p.population_constraints]:undefined}));
   }
 
   public static resetForTesting(): void {

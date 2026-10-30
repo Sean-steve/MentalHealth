@@ -1,6 +1,7 @@
 import { getPool } from '../../platform/database/index.js';
 import { ClinicalChangeRule } from '../domain/types.js';
 import { OutcomeMeasureDefinition, MeasureComparabilityPolicy } from '../domain/entities.js';
+import { OutcomeAlertPolicy } from '../alerts/outcome_alert_policy.js';
 
 const parseJson=<T>(v:unknown,fallback:T):T=>{
   if(v===null||v===undefined)return fallback;
@@ -40,6 +41,32 @@ export class PgOutcomeGovernanceRepository {
        p.transformation_policy||null,p.status]
     );
   }
+  async saveAlertPolicy(policy:OutcomeAlertPolicy):Promise<void>{
+    await getPool().query(
+      `INSERT INTO outcome_alert_policies
+       (id,version,review_due_minutes,clinical_artifact_id,clinical_artifact_version,approval_state,approved_by,approved_at,effective_from,effective_until)
+       VALUES($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT(id,version) DO UPDATE SET approval_state=EXCLUDED.approval_state,approved_by=EXCLUDED.approved_by,
+       approved_at=EXCLUDED.approved_at,effective_from=EXCLUDED.effective_from,effective_until=EXCLUDED.effective_until,
+       review_due_minutes=EXCLUDED.review_due_minutes`,
+      [policy.id,policy.version,JSON.stringify(policy.review_due_minutes),policy.clinical_artifact_id,
+       policy.clinical_artifact_version,policy.approval_state,policy.approved_by,policy.approved_at,
+       policy.effective_from,policy.effective_until||null]
+    );
+  }
+  async listApprovedAlertPolicies(at=new Date()):Promise<OutcomeAlertPolicy[]>{
+    const r=await getPool().query(
+      `SELECT * FROM outcome_alert_policies WHERE approval_state='APPROVED' AND effective_from <= $1
+       AND (effective_until IS NULL OR effective_until > $1) ORDER BY version DESC`,[at.toISOString()]
+    );
+    return r.rows.map((x:any)=>({
+      id:x.id,version:Number(x.version),review_due_minutes:parseJson(x.review_due_minutes,{LOW:0,MEDIUM:0,HIGH:0,CRITICAL:0}),
+      clinical_artifact_id:x.clinical_artifact_id,clinical_artifact_version:x.clinical_artifact_version,
+      approval_state:x.approval_state,approved_by:x.approved_by,approved_at:x.approved_at,
+      effective_from:x.effective_from,effective_until:x.effective_until||undefined
+    }));
+  }
+
   async listApprovedClinicalChangeRules(at=new Date()):Promise<ClinicalChangeRule[]>{
     const r=await getPool().query(
       `SELECT * FROM outcome_clinical_change_rules

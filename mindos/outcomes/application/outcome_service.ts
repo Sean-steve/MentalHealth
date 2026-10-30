@@ -13,7 +13,8 @@ import { ProgressViewService } from './progress_view_service.js';
 import { OutcomeBaseline, OutcomeTrend } from '../domain/entities.js';
 import { OutcomeBaselineType, OutcomeTrendState } from '../domain/types.js';
 import { AuditService } from '../../platform/audit/index.js';
-import { DomainInvariantError, NotFoundError } from '../../platform/errors/index.js';
+import { DomainInvariantError, NotFoundError, AuthorizationError } from '../../platform/errors/index.js';
+import { RelationshipAccessEvaluator } from '../../care_relationships/access/relationship_access_evaluator.js';
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
 
 export class OutcomeService {
@@ -35,6 +36,7 @@ export class OutcomeService {
     subject_user_id: string;
     measure_code: string;
     baseline_measurement_id: string;
+    care_relationship_id: string;
     established_by: string;
     override_reason: string;
   }): Promise<OutcomeBaseline> {
@@ -42,8 +44,22 @@ export class OutcomeService {
       throw new DomainInvariantError('OutcomeRepository not initialized.');
     }
 
+    const authDecision = await RelationshipAccessEvaluator.evaluateProfessionalAccess({
+      subjectUserId: params.subject_user_id,
+      professionalId: params.established_by,
+      purpose: 'MEASUREMENT_BASED_CARE_BASELINE',
+      action: 'WRITE',
+      dataDomain: 'CLINICAL_RECORDS'
+    });
+    if (!authDecision.allowed) {
+      throw new AuthorizationError(
+        `Professional ${params.established_by} cannot override outcome baseline for ${params.subject_user_id}: ${authDecision.reason}`,
+        { errorCode: authDecision.reasonCode || 'AUTHZ_003' }
+      );
+    }
+
     const measurement = await OutcomeService.repository.findMeasurementById(params.baseline_measurement_id);
-    if (!measurement || measurement.subject_user_id !== params.subject_user_id || measurement.measure_code !== params.measure_code) {
+    if (!measurement || measurement.subject_user_id !== params.subject_user_id || measurement.measure_code !== params.measure_code || measurement.validity_status === 'INVALIDATED') {
       throw new DomainInvariantError(
         `Measurement ${params.baseline_measurement_id} does not match subject and measure.`
       );

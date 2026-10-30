@@ -17,6 +17,7 @@ import { IOutcomeRepository } from '../repositories/interfaces.js';
 import { OutcomeAlert } from '../domain/entities.js';
 import { OutcomeAlertType, OutcomeAlertState } from '../domain/types.js';
 import { DomainInvariantError, NotFoundError } from '../../platform/errors/index.js';
+import { OutcomeAlertPolicyRegistry } from './outcome_alert_policy.js';
 
 export interface RaiseAlertParams {
   subject_user_id: string;
@@ -42,10 +43,13 @@ export class OutcomeAlertService {
     }
 
     const alertId = generateUUIDv7();
-    const now = new Date().toISOString();
-    // Default review due in 48 hours for medium, 24 hours for high/critical
-    const hoursDue = params.severity === 'CRITICAL' || params.severity === 'HIGH' ? 24 : 48;
-    const reviewDueAt = new Date(Date.now() + hoursDue * 60 * 60 * 1000).toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+    const policy = OutcomeAlertPolicyRegistry.getApprovedPolicy(nowDate);
+    if (!policy) {
+      throw new DomainInvariantError('Outcome alert cannot be raised without an approved alert-response policy.');
+    }
+    const reviewDueAt = new Date(nowDate.getTime() + policy.review_due_minutes[params.severity] * 60_000).toISOString();
 
     const alert: OutcomeAlert = {
       id: alertId,
@@ -60,7 +64,7 @@ export class OutcomeAlertService {
       generated_at: now,
       review_due_at: reviewDueAt,
       assigned_to: params.assigned_to,
-      policy_version: '1.0.0'
+      policy_version: `${policy.id}:v${policy.version}`
     };
 
     await OutcomeAlertService.repository.saveAlert(alert);

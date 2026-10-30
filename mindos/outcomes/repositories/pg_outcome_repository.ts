@@ -109,16 +109,13 @@ export class PgOutcomeRepository implements IOutcomeRepository {
       `INSERT INTO outcome_baselines
        (id,subject_user_id,measure_code,baseline_measurement_id,baseline_value_json,baseline_type,established_at,established_by,override_reason,created_at)
        VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10)
-       ON CONFLICT(subject_user_id,measure_code) DO UPDATE SET
-       baseline_measurement_id=EXCLUDED.baseline_measurement_id,baseline_value_json=EXCLUDED.baseline_value_json,
-       baseline_type=EXCLUDED.baseline_type,established_at=EXCLUDED.established_at,
-       established_by=EXCLUDED.established_by,override_reason=EXCLUDED.override_reason`,
+       ON CONFLICT(id) DO NOTHING`,
       [b.id,b.subject_user_id,b.measure_code,b.baseline_measurement_id,JSON.stringify(b.baseline_value),
        b.baseline_type,b.established_at,b.established_by,b.override_reason||null,b.created_at]
     );
   }
   async findBaseline(userId:string,measureCode:string):Promise<OutcomeBaseline|null>{
-    const r=await getPool().query('SELECT * FROM outcome_baselines WHERE subject_user_id=$1 AND measure_code=$2',[userId,measureCode]);
+    const r=await getPool().query('SELECT * FROM outcome_baselines WHERE subject_user_id=$1 AND measure_code=$2 ORDER BY established_at DESC,id DESC LIMIT 1',[userId,measureCode]);
     return r.rows[0]?toBaseline(r.rows[0]):null;
   }
   async saveReview(v:OutcomeReview):Promise<void>{

@@ -16,7 +16,7 @@ import { OutcomeMeasurementValidity } from '../domain/types.js';
 
 export class InMemoryOutcomeRepository implements IOutcomeRepository {
   private measurements: Map<string, OutcomeMeasurement> = new Map();
-  private baselines: Map<string, OutcomeBaseline> = new Map(); // `${userId}:${measureCode}` -> baseline
+  private baselines: Map<string, OutcomeBaseline[]> = new Map(); // append-only history by `${userId}:${measureCode}`
   private reviews: Map<string, OutcomeReview> = new Map();
   private alerts: Map<string, OutcomeAlert> = new Map();
   private snapshots: Map<string, OutcomeSnapshot> = new Map();
@@ -102,13 +102,17 @@ export class InMemoryOutcomeRepository implements IOutcomeRepository {
 
   public async saveBaseline(baseline: OutcomeBaseline): Promise<void> {
     const key = `${baseline.subject_user_id}:${baseline.measure_code}`;
-    this.baselines.set(key, { ...baseline });
+    const history=this.baselines.get(key)||[];
+    if(!history.some(b=>b.id===baseline.id)) history.push(structuredClone(baseline));
+    history.sort((a,b)=>a.established_at.localeCompare(b.established_at)||a.id.localeCompare(b.id));
+    this.baselines.set(key,history);
   }
 
   public async findBaseline(userId: string, measureCode: string): Promise<OutcomeBaseline | null> {
     const key = `${userId}:${measureCode}`;
-    const b = this.baselines.get(key);
-    return b ? { ...b } : null;
+    const history=this.baselines.get(key)||[];
+    const b=history[history.length-1];
+    return b ? structuredClone(b) : null;
   }
 
   public async saveReview(review: OutcomeReview): Promise<void> {
@@ -154,12 +158,12 @@ export class InMemoryOutcomeRepository implements IOutcomeRepository {
   }
 
   public async saveSnapshot(snapshot: OutcomeSnapshot): Promise<void> {
-    this.snapshots.set(snapshot.id, { ...snapshot });
+    this.snapshots.set(snapshot.id, structuredClone(snapshot));
   }
 
   public async findSnapshotById(id: string): Promise<OutcomeSnapshot | null> {
     const s = this.snapshots.get(id);
-    return s ? { ...s } : null;
+    return s ? structuredClone(s) : null;
   }
 
   public clear(): void {
