@@ -34,6 +34,43 @@ export class CareGoalService {
   public static async createGoal(params:CreateGoalParams):Promise<CareGoal>{
     const version=await CareGoalService.repository.findVersionById(params.carePlanVersionId);
     if(!version) throw new NotFoundError(`CarePlanVersion ${params.carePlanVersionId} not found.`);
+    const plan=await CarePlanService.getPlan(version.care_plan_id);
+    if(!plan) throw new NotFoundError(`CarePlan ${version.care_plan_id} not found.`);
+    if(plan.current_version_id!==version.id){
+      throw new AuthorizationError(
+        'Care Goal creation must target the current Care Plan version.',
+        {errorCode:'AUTHZ_003'}
+      );
+    }
+
+    if(params.actorRole==='USER'){
+      if(params.creatorId!==plan.subject_user_id){
+        throw new AuthorizationError(
+          'User may only create a goal for their own Care Plan.',
+          {errorCode:'AUTHZ_003'}
+        );
+      }
+      if(params.provenance!==CareGoalProvenance.USER_SELECTED){
+        throw new AuthorizationError(
+          'A user-created Care Goal must retain USER_SELECTED provenance.',
+          {errorCode:'AUTHZ_003'}
+        );
+      }
+    }else if(params.actorRole==='PROFESSIONAL'||params.actorRole==='CLINICAL_REVIEWER'){
+      await RelationshipAccessEvaluator.assertAccess({
+        relationshipId:plan.care_relationship_id,
+        professionalId:params.creatorId,
+        dataDomain:DataDomain.CARE_PLANS,
+        action:ActionPermission.WRITE,
+        purpose:'CARE_DELIVERY'
+      });
+    }else{
+      throw new AuthorizationError(
+        'Actor role is not authorized to create Care Goals.',
+        {errorCode:'AUTHZ_002'}
+      );
+    }
+
     CarePlanInvariants.assertVersionEditable(version);
     const now=new Date().toISOString();
     const goal:CareGoal={
@@ -48,7 +85,7 @@ export class CareGoalService {
     AuditService.record({
       actor_type:params.actorRole==='USER'?'USER':'STAFF',actor_id:params.creatorId,action:'CARE_GOAL.CREATED',
       resource_type:'care_goal',resource_id:goal.id,purpose:'Goal Setting',
-      authorization_basis:{versionId:params.carePlanVersionId},result:'ALLOWED',
+      authorization_basis:{versionId:params.carePlanVersionId,relationshipId:plan.care_relationship_id},result:'ALLOWED',
       metadata:{goalType:params.goalType,priority:params.priority,provenance:params.provenance}
     });
     return goal;
