@@ -3,6 +3,7 @@ import {
   CarePlanService,
   CarePlanProgressService,
   CarePlanReviewService,
+  CareGoalService,
   AssignmentService,
   CarePlanType,
   CarePlanState,
@@ -410,12 +411,121 @@ carePlanRouter.post('/reviews/:reviewId/complete', async (req: Request, res: Res
       return res.status(400).json({ error: 'Invalid Care Plan review outcome.' });
     }
 
+    const existingReview = await CarePlanReviewService.getReview(req.params.reviewId);
+    if (!existingReview) {
+      throw new NotFoundError(`CarePlanReview ${req.params.reviewId} not found.`);
+    }
+    await authorizePlan(existingReview.care_plan_id, a, ActionPermission.WRITE);
+
+    // Completed reviews are immutable and retry-safe. Do not re-apply goal
+    // transitions or create another Care Plan version on a duplicate request.
+    if (existingReview.completed_at) {
+      return res.json({ review: existingReview });
+    }
+
+    let normalizedNewVersion:
+      | {
+          summary: string;
+          goals: CareGoal[];
+          interventions: CareIntervention[];
+          changeRationale: string;
+          reviewFrequencyDays?: number;
+        }
+      | undefined;
+
+    if (outcome === CarePlanReviewOutcome.MODIFY) {
+      if (!new_version || typeof new_version !== 'object') {
+        return res.status(400).json({
+          error: 'MODIFY outcome requires new_version.'
+        });
+      }
+      const candidate = new_version as Record<string, unknown>;
+      const summary = String(candidate.summary || '').trim();
+      const changeRationale = String(candidate.change_rationale || '').trim();
+      if (!summary || !changeRationale) {
+        return res.status(400).json({
+          error: 'new_version.summary and new_version.change_rationale are required.'
+        });
+      }
+
+      normalizedNewVersion = {
+        summary,
+        goals: normalizeProfessionalGoals(candidate.goals, a.id),
+        interventions: normalizeProfessionalInterventions(
+          candidate.interventions,
+          'ACTIVE'
+        ),
+        changeRationale,
+        reviewFrequencyDays:
+          candidate.review_frequency_days === undefined
+            ? undefined
+            : Number(candidate.review_frequency_days)
+      };
+    }
+
+    const normalizedGoalReviews = [];
+    if (goal_reviews !== undefined && !Array.isArray(goal_reviews)) {
+      return res.status(400).json({ error: 'goal_reviews must be an array.' });
+    }
+
+    for (const [index, rawGoalReview] of (goal_reviews || []).entries()) {
+      if (!rawGoalReview || typeof rawGoalReview !== 'object') {
+        throw new DomainInvariantError(
+          `goal_reviews[${index}] must be an object.`
+        );
+      }
+      const candidate = rawGoalReview as Record<string, unknown>;
+      const goalId = String(candidate.goal_id || '');
+      if (!goalId || !isEnumValue(CareGoalStatus, candidate.new_status)) {
+        throw new DomainInvariantError(
+          `goal_reviews[${index}] requires goal_id and a valid new_status.`
+        );
+      }
+
+      const goal = await CareGoalService.getGoal(goalId);
+      if (!goal) throw new NotFoundError(`CareGoal ${goalId} not found.`);
+      if (goal.care_plan_version_id !== existingReview.care_plan_version_id) {
+        throw new AuthorizationError(
+          'Goal review does not belong to the Care Plan version under review.',
+          { errorCode: 'AUTHZ_003' }
+        );
+      }
+
+      const result = await CareGoalService.reviewGoal({
+        goalId,
+        newStatus: candidate.new_status,
+        currentValue:
+          typeof candidate.current_value === 'string' ||
+          typeof candidate.current_value === 'number'
+            ? candidate.current_value
+            : undefined,
+        reviewedBy: a.id,
+        evidenceRefs: Array.isArray(candidate.evidence_refs)
+          ? candidate.evidence_refs
+              .filter((value): value is string => typeof value === 'string')
+          : [],
+        reasonCodes: Array.isArray(candidate.reason_codes)
+          ? candidate.reason_codes
+              .filter((value): value is string => typeof value === 'string')
+          : [],
+        notesReference:
+          typeof candidate.notes_reference === 'string'
+            ? candidate.notes_reference
+            : undefined
+      });
+      normalizedGoalReviews.push(result.review);
+    }
+
     const review = await CarePlanReviewService.executeReview({
       reviewId: req.params.reviewId,
       outcome,
-      goalReviews: Array.isArray(goal_reviews) ? goal_reviews : [],
-      recommendedChanges: Array.isArray(recommended_changes) ? recommended_changes : undefined,
-      newVersionParams: new_version,
+      goalReviews: normalizedGoalReviews,
+      recommendedChanges: Array.isArray(recommended_changes)
+        ? recommended_changes.filter(
+            (value): value is string => typeof value === 'string'
+          )
+        : undefined,
+      newVersionParams: normalizedNewVersion,
       reviewerId: a.id
     });
     res.json({ review });
