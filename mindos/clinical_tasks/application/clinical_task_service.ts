@@ -8,6 +8,8 @@ import {
   RelationshipAccessEvaluator,
   CareRelationshipService,
   CareRelationshipState,
+  CareTeamService,
+  CareTeamMembershipState,
   DataDomain,
   ActionPermission
 } from '../../care_relationships/index.js';
@@ -274,11 +276,86 @@ export class ClinicalTaskService {
     return task;
   }
 
-  public static async startTask(taskId: string, actorId: string): Promise<ClinicalTask> {
-    const task = await ClinicalTaskService.getTask(taskId);
-    if (task.assigned_to_id !== actorId && task.assigned_to_type !== ClinicalTaskAssigneeType.SYSTEM) {
-      throw new AuthorizationError('Only the assigned actor may start this clinical task.', { errorCode: 'AUTHZ_003' });
+  private static async assertActorMatchesAssignment(
+    task: ClinicalTask,
+    actorId: string,
+    actorType: ClinicalTaskAssigneeType
+  ): Promise<void> {
+    const relationship = await CareRelationshipService.getRelationship(task.care_relationship_id);
+    if (!relationship ||
+        [CareRelationshipState.TERMINATED, CareRelationshipState.REVOKED].includes(relationship.status)) {
+      throw new AuthorizationError(
+        'Clinical task is not actionable because the care relationship is no longer active for care delivery.',
+        { errorCode: 'AUTHZ_003' }
+      );
     }
+
+    if (task.assigned_to_type === ClinicalTaskAssigneeType.USER) {
+      if (actorType !== ClinicalTaskAssigneeType.USER || actorId !== task.assigned_to_id) {
+        throw new AuthorizationError('Only the assigned user may act on this clinical task.', { errorCode: 'AUTHZ_003' });
+      }
+      return;
+    }
+
+    if (task.assigned_to_type === ClinicalTaskAssigneeType.PROFESSIONAL) {
+      if (actorType !== ClinicalTaskAssigneeType.PROFESSIONAL || actorId !== task.assigned_to_id) {
+        throw new AuthorizationError('Only the assigned professional may act on this clinical task.', { errorCode: 'AUTHZ_003' });
+      }
+      await RelationshipAccessEvaluator.assertAccess({
+        relationshipId: task.care_relationship_id,
+        professionalId: actorId,
+        dataDomain: DataDomain.CARE_PLANS,
+        action: ActionPermission.WRITE,
+        purpose: 'CARE_DELIVERY'
+      });
+      return;
+    }
+
+    if (task.assigned_to_type === ClinicalTaskAssigneeType.CARE_TEAM_ROLE) {
+      if (actorType !== ClinicalTaskAssigneeType.PROFESSIONAL) {
+        throw new AuthorizationError('Care-team-role task requires an eligible professional.', { errorCode: 'AUTHZ_003' });
+      }
+      const membership = await CareTeamService.getMembership(task.care_relationship_id, actorId);
+      if (!membership ||
+          membership.status !== CareTeamMembershipState.ACTIVE ||
+          membership.team_role !== task.assigned_to_id) {
+        throw new AuthorizationError(
+          'Professional is not an active member of the care-team role assigned to this task.',
+          { errorCode: 'AUTHZ_003' }
+        );
+      }
+      await RelationshipAccessEvaluator.assertAccess({
+        relationshipId: task.care_relationship_id,
+        professionalId: actorId,
+        dataDomain: DataDomain.CARE_PLANS,
+        action: ActionPermission.WRITE,
+        purpose: 'CARE_DELIVERY'
+      });
+      return;
+    }
+
+    if (task.assigned_to_type === ClinicalTaskAssigneeType.SYSTEM) {
+      if (actorType !== ClinicalTaskAssigneeType.SYSTEM || actorId !== task.assigned_to_id) {
+        throw new AuthorizationError('Only the assigned trusted system actor may act on this clinical task.', { errorCode: 'AUTHZ_004' });
+      }
+      return;
+    }
+
+    throw new AuthorizationError('Unsupported clinical-task assignee type.', { errorCode: 'AUTHZ_004' });
+  }
+
+  public static async startTask(
+    taskId: string,
+    actorId: string,
+    actorType?: ClinicalTaskAssigneeType
+  ): Promise<ClinicalTask> {
+    const task = await ClinicalTaskService.getTask(taskId);
+    const effectiveActorType =
+      actorType ||
+      (task.assigned_to_type === ClinicalTaskAssigneeType.CARE_TEAM_ROLE
+        ? ClinicalTaskAssigneeType.PROFESSIONAL
+        : task.assigned_to_type);
+    await ClinicalTaskService.assertActorMatchesAssignment(task, actorId, effectiveActorType);
     validateStateTransition('ClinicalTaskState', task.status, ClinicalTaskState.IN_PROGRESS, task.id, actorId);
     task.status = ClinicalTaskState.IN_PROGRESS; task.started_at = new Date().toISOString(); task.updated_at = task.started_at;
     await ClinicalTaskService.repository.saveTask(task); return task;
@@ -296,14 +373,23 @@ export class ClinicalTaskService {
         );
       }
     } else if (task.completion_authority === ClinicalTaskCompletionAuthority.USER_SELF_REPORT) {
-      if (params.actor_type !== ClinicalTaskAssigneeType.USER || params.actor_id !== task.assigned_to_id) {
-        throw new AuthorizationError('Only the assigned user may self-report completion.', { errorCode: 'AUTHZ_003' });
-      }
+      await ClinicalTaskService.assertActorMatchesAssignment(
+        task,
+        params.actor_id,
+        params.actor_type
+      );
     } else if (task.completion_authority === ClinicalTaskCompletionAuthority.PROFESSIONAL) {
-      await RelationshipAccessEvaluator.assertAccess({
-        relationshipId: task.care_relationship_id, professionalId: params.actor_id,
-        dataDomain: DataDomain.CARE_PLANS, action: ActionPermission.WRITE, purpose: 'CARE_DELIVERY'
-      });
+      await ClinicalTaskService.assertActorMatchesAssignment(
+        task,
+        params.actor_id,
+        params.actor_type
+      );
+    } else if (task.completion_authority === ClinicalTaskCompletionAuthority.SYSTEM) {
+      await ClinicalTaskService.assertActorMatchesAssignment(
+        task,
+        params.actor_id,
+        params.actor_type
+      );
     }
 
     if (![ClinicalTaskState.READY, ClinicalTaskState.IN_PROGRESS, ClinicalTaskState.OVERDUE].includes(task.status)) {
