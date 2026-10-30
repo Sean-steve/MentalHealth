@@ -1,4 +1,5 @@
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
+import { FieldEncryptor } from '../../platform/database/encryption/field_encryptor.js';
 import { UnitOfWork } from '../../platform/database/index.js';
 import { EventBus } from '../../platform/events/index.js';
 import { AuditService } from '../../platform/audit/index.js';
@@ -17,7 +18,8 @@ import {
   ProfessionalMessageThread,
   ProfessionalThreadParticipant,
   ProfessionalMessage,
-  ProfessionalMessageAttachment
+  ProfessionalMessageAttachment,
+  ProfessionalMessageContent
 } from '../domain/entities.js';
 import {
   ProfessionalThreadStatus,
@@ -69,6 +71,7 @@ export class ProfessionalMessagingService {
   private static attachmentPolicyPort: ProfessionalMessagingAttachmentPolicyPort = new DenyByDefaultMessagingAttachmentPolicy();
 
   public static setRepository(repo: IProfessionalMessagingRepository): void { ProfessionalMessagingService.repository = repo; }
+  public static getRepository(): IProfessionalMessagingRepository { ProfessionalMessagingService.assertRepository(); return ProfessionalMessagingService.repository; }
   public static setSafetyPort(port: ProfessionalMessagingSafetyPort): void { ProfessionalMessagingService.safetyPort = port; }
   public static setNotificationPort(port: ProfessionalMessagingNotificationPort): void { ProfessionalMessagingService.notificationPort = port; }
   public static setAvailabilityPolicyPort(port: MessagingAvailabilityPolicyPort): void { ProfessionalMessagingService.availabilityPort = port; }
@@ -429,6 +432,99 @@ export class ProfessionalMessagingService {
       'care.thread_participant_removed',
       {thread_id:threadId,participant_id:p.id}
     );
+  }
+
+  public static async storeProtectedContent(params: {
+    thread_id: string;
+    actor_id: string;
+    actor_type: ThreadParticipantType.USER | ThreadParticipantType.PROFESSIONAL;
+    content: string;
+  }): Promise<{ content_reference: string }> {
+    ProfessionalMessagingService.assertRepository();
+    const thread = await ProfessionalMessagingService.getThread(params.thread_id);
+    await ProfessionalMessagingService.assertThreadRelationshipActiveForMutation(thread);
+    if (thread.status !== ProfessionalThreadStatus.OPEN) {
+      throw new DomainInvariantError(`Cannot store content for ${thread.status} care thread.`);
+    }
+
+    const participant = await ProfessionalMessagingService.repository.findParticipant(
+      thread.id,
+      params.actor_id
+    );
+    if (
+      !participant ||
+      participant.status !== ThreadParticipantStatus.ACTIVE ||
+      participant.actor_type !== params.actor_type
+    ) {
+      throw new AuthorizationError(
+        'Only an active care-thread participant may create protected message content.',
+        { errorCode: 'AUTHZ_003' }
+      );
+    }
+
+    if (params.actor_type === ThreadParticipantType.USER) {
+      if (params.actor_id !== thread.subject_user_id) {
+        throw new AuthorizationError(
+          'User may only create message content in their own care thread.',
+          { errorCode: 'AUTHZ_003' }
+        );
+      }
+    } else {
+      await RelationshipAccessEvaluator.assertAccess({
+        relationshipId: thread.care_relationship_id,
+        professionalId: params.actor_id,
+        dataDomain: DataDomain.MESSAGING,
+        action: ActionPermission.MESSAGE,
+        purpose: 'CARE_COORDINATION'
+      });
+    }
+
+    const raw = params.content.trim();
+    if (!raw) {
+      throw new DomainInvariantError('Professional message content cannot be empty.');
+    }
+
+    const id = generateUUIDv7();
+    const contentReference = `care-message-content:${id}`;
+    const encrypted = await FieldEncryptor.encryptField(
+      'ProfessionalMessageContent',
+      'encrypted_content',
+      raw,
+      'clinical-records-master'
+    );
+    const record: ProfessionalMessageContent = {
+      id,
+      content_reference: contentReference,
+      thread_id: thread.id,
+      created_by: params.actor_id,
+      encrypted_content: encrypted,
+      created_at: new Date().toISOString()
+    };
+
+    if (ProfessionalMessagingService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await ProfessionalMessagingService.repository.saveProtectedContent(
+          record,
+          uow.getClient()
+        );
+      }, 'SERIALIZABLE');
+    } else {
+      await ProfessionalMessagingService.repository.saveProtectedContent(record);
+    }
+
+    AuditService.record({
+      actor_type: params.actor_type === ThreadParticipantType.USER ? 'USER' : 'STAFF',
+      actor_id: params.actor_id,
+      action: 'CARE_MESSAGE.CONTENT_STORED',
+      resource_type: 'professional_message_content',
+      resource_id: id,
+      purpose: 'Care Communication',
+      authorization_basis: { relationshipId: thread.care_relationship_id },
+      result: 'ALLOWED',
+      metadata: { threadId: thread.id }
+    });
+
+    return { content_reference: contentReference };
   }
 
   public static async sendMessage(params: SendMessageParams): Promise<ProfessionalMessage> {
