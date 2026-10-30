@@ -44,6 +44,7 @@ export interface GetBookableSlotsParams {
 export class AvailabilitySlotService {
   private static repository: IAvailabilityRepository = new InMemoryAvailabilityRepository();
   private static appointmentFetcher?: (providerId: string, startRange: string, endRange: string) => Promise<Array<{ start_at: string; end_at: string; status: AppointmentState }>>;
+  private static nowProvider: () => Date = () => new Date();
 
   public static setRepository(repo: IAvailabilityRepository): void {
     this.repository = repo;
@@ -51,6 +52,10 @@ export class AvailabilitySlotService {
 
   public static getRepository(): IAvailabilityRepository {
     return this.repository;
+  }
+
+  public static setClockForTesting(provider?: () => Date): void {
+    this.nowProvider = provider || (() => new Date());
   }
 
   public static setAppointmentFetcher(
@@ -63,7 +68,7 @@ export class AvailabilitySlotService {
    * Computes clean, verified, conflict-free bookable slots with signed tamper-resistant tokens.
    */
   public static async getBookableSlots(params: GetBookableSlotsParams): Promise<BookableSlot[]> {
-    const now = new Date();
+    const now = this.nowProvider();
     const nowMs = now.getTime();
 
     // 1. Revalidate Provider Status & Verified Credentials
