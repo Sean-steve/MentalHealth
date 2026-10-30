@@ -23,7 +23,8 @@ import {
   NotificationServiceMessagingAdapter,
   ProtectedMessageSafetyScannerPort,
   SafetyKernelMessagingAdapter,
-  CrisisResponseSafetySignalForwarder
+  CrisisResponseSafetySignalForwarder,
+  UnconfiguredMessagingSafetyAdapter
 } from '../professional_messaging/index.js';
 
 export interface Sprint22RuntimeStatus {
@@ -74,6 +75,10 @@ export function configureSprint22Runtime(options: {
         options.messagingSafetyScanner,
         new CrisisResponseSafetySignalForwarder()
       )
+    );
+  } else {
+    ProfessionalMessagingService.setSafetyPort(
+      new UnconfiguredMessagingSafetyAdapter()
     );
   }
 
