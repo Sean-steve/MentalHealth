@@ -104,6 +104,10 @@ if(failures.length===0){
   if(!carePlanSources.includes('DataClassification.CLINICAL_RECORD')) failures.push('care plan events are not classified as CLINICAL_RECORD');
   if(!tests.includes('spoofed-assessment-completion')) failures.push('anti-spoof owner-domain completion regression missing');
   if(!tests.includes('projects real clinical-task state')) failures.push('care-plan task projection regression missing');
+  if(!tests.includes('generates one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
+  if(!tests.includes('deduplicates policy-driven task reminders')) failures.push('reminder deduplication regression missing');
+  if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
+  if(!tests.includes('reconciles plan, unfinished tasks and messaging')) failures.push('relationship-closure acceptance regression missing');
   if(!tests.includes('generates only one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
   if(!tests.includes('deduplicates policy-driven task reminders')) failures.push('reminder deduplication regression missing');
   if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
