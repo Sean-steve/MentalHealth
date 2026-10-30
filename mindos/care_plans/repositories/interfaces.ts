@@ -40,7 +40,6 @@ export interface ICarePlanRepository {
     replacement: CarePlanVersionReplacement,
     tx?: DatabaseClient
   ): Promise<void>;
-  createPlanWithInitialVersion(plan: CarePlan, version: CarePlanVersion): Promise<void>;
   savePlan(plan: CarePlan): Promise<void>;
   findPlanById(id: string): Promise<CarePlan | null>;
   findPlanByRelationshipId(relationshipId: string): Promise<CarePlan | null>;
