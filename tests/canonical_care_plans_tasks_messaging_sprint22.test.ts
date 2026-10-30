@@ -767,9 +767,9 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
     });
 
     const repository = CarePlanService.getRepository() as any;
-    const originalFinalize = repository.savePlanReviewTransactional.bind(repository);
+    const originalFinalize = repository.completePlanReviewTransactional.bind(repository);
     let failFinalizeOnce = true;
-    repository.savePlanReviewTransactional = async (...args: any[]) => {
+    repository.completePlanReviewTransactional = async (...args: any[]) => {
       if (failFinalizeOnce) {
         failFinalizeOnce = false;
         throw new Error('SIMULATED_REVIEW_COMPLETION_PERSISTENCE_FAILURE');
@@ -805,7 +805,7 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
       assert.ok(started?.new_version_id);
       assert.equal(afterAction?.current_version_id, started?.new_version_id);
 
-      repository.savePlanReviewTransactional = originalFinalize;
+      repository.completePlanReviewTransactional = originalFinalize;
       const completed = await CarePlanReviewService.executeReview(request);
       assert.ok(completed.completed_at);
       assert.equal(completed.new_version_id, started?.new_version_id);
@@ -813,7 +813,7 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
       const versions = await repository.findVersionsByPlanId(plan.id);
       assert.equal(versions.length, 2);
     } finally {
-      repository.savePlanReviewTransactional = originalFinalize;
+      repository.completePlanReviewTransactional = originalFinalize;
     }
   });
 
@@ -836,8 +836,8 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
     });
 
     const repository = CarePlanService.getRepository() as any;
-    const originalFinalize = repository.savePlanReviewTransactional.bind(repository);
-    repository.savePlanReviewTransactional = async () => {
+    const originalFinalize = repository.completePlanReviewTransactional.bind(repository);
+    repository.completePlanReviewTransactional = async () => {
       throw new Error('SIMULATED_REVIEW_FINALIZE_FAILURE');
     };
 
@@ -852,7 +852,7 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
         /SIMULATED_REVIEW_FINALIZE_FAILURE/
       );
 
-      repository.savePlanReviewTransactional = originalFinalize;
+      repository.completePlanReviewTransactional = originalFinalize;
       await assert.rejects(
         () => CarePlanReviewService.executeReview({
           reviewId: review.id,
@@ -865,7 +865,7 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
           /different outcome/i.test(err.message)
       );
     } finally {
-      repository.savePlanReviewTransactional = originalFinalize;
+      repository.completePlanReviewTransactional = originalFinalize;
     }
   });
 
