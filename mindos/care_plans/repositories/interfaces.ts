@@ -53,6 +53,23 @@ export interface ICarePlanRepository {
     expectedPlanVersion: number,
     tx?: DatabaseClient
   ): Promise<void>;
+
+  reviewGoalAggregate(
+    goal: CareGoal,
+    review: CareGoalReview,
+    expectedStatus: CareGoalStatus,
+    tx?: DatabaseClient
+  ): Promise<void>;
+
+  saveContentAssignmentTransactional(
+    assignment: ContentAssignment,
+    tx?: DatabaseClient
+  ): Promise<void>;
+
+  saveAssessmentAssignmentTransactional(
+    assignment: AssessmentAssignment,
+    tx?: DatabaseClient
+  ): Promise<void>;
   savePlan(plan: CarePlan): Promise<void>;
   findPlanById(id: string): Promise<CarePlan | null>;
   findPlanByRelationshipId(relationshipId: string): Promise<CarePlan | null>;
