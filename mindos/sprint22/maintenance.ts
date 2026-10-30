@@ -1,3 +1,5 @@
+import { CarePlanService } from '../care_plans/index.js';
+import { ProfessionalMessagingService } from '../professional_messaging/index.js';
 import {
   ClinicalTaskService,
   ClinicalTaskScheduler,
@@ -91,4 +93,38 @@ export async function runSprint22Maintenance(
   }
 
   return { reconciled, reminders, recurrence };
+}
+
+export interface Sprint22RelationshipClosureResult {
+  relationship_id: string;
+  care_plan: {
+    plan_id?: string;
+    action: 'NONE' | 'TERMINATED' | 'REVOKED';
+  };
+  clinical_tasks: {
+    cancelled: string[];
+  };
+  professional_messaging: {
+    closed_threads: string[];
+  };
+}
+
+/**
+ * Retry-safe cross-domain reconciliation for a terminated/revoked care relationship.
+ * Each bounded context remains authoritative for its own records and preserves
+ * completed historical state.
+ */
+export async function reconcileSprint22RelationshipClosure(
+  relationshipId: string
+): Promise<Sprint22RelationshipClosureResult> {
+  const carePlan = await CarePlanService.reconcileRelationshipClosure(relationshipId);
+  const clinicalTasks = await ClinicalTaskService.reconcileRelationshipClosure(relationshipId);
+  const closedThreads = await ProfessionalMessagingService.reconcileRelationship(relationshipId);
+
+  return {
+    relationship_id: relationshipId,
+    care_plan: carePlan,
+    clinical_tasks: clinicalTasks,
+    professional_messaging: { closed_threads: closedThreads }
+  };
 }
