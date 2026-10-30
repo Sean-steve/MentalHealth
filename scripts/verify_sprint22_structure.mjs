@@ -43,6 +43,7 @@ if(failures.length===0){
   const plan=read('mindos/care_plans/plans/care_plan_service.ts');
   const carePlanApi=read('mindos/care_plans/api/routes.ts');
   const carePlanReview=read('mindos/care_plans/reviews/care_plan_review_service.ts');
+  const assignmentService=read('mindos/care_plans/assignments/assignment_service.ts');
   const task=read('mindos/clinical_tasks/application/clinical_task_service.ts');
   const scheduler=read('mindos/clinical_tasks/application/clinical_task_scheduler.ts');
   const taskPorts=read('mindos/clinical_tasks/application/ports.ts');
@@ -76,6 +77,12 @@ if(failures.length===0){
      !carePlanApi.includes('Invalid review_type')||
      !carePlanApi.includes('Invalid Care Plan review outcome')) failures.push('Care Plan API enum validation incomplete');
   if(/reviewFrequencyDays\s*\?\?\s*30|reviewFrequencyDays\s*\|\|\s*30/.test(plan)) failures.push('care plan invents a 30-day review cadence');
+  if(!plan.includes('requires subject-user acknowledgement before activation')||
+     !plan.includes('if(version.acknowledged_by_user) return plan')) failures.push('Care Plan acknowledgement gate missing');
+  if(!plan.includes('cannot create a replacement active version')||
+     !plan.includes('Current Care Plan version')) failures.push('terminal/stale Care Plan revision guard missing');
+  if(!assignmentService.includes('RelationshipAccessEvaluator.assertAccess')||
+     !assignmentService.includes('does not belong to the current Care Plan version')) failures.push('assignment service authorization/version binding missing');
   if(!task.includes('trusted system actor')) failures.push('owner-domain completion is not restricted to trusted system actors');
   if(!task.includes('User-assigned clinical task must target the subject of the care relationship')) failures.push('cross-user task creation is not denied');
   if(!taskApi.includes('SYSTEM-owned clinical tasks cannot be created through the external HTTP API')) failures.push('external API can create SYSTEM-owned tasks');
@@ -111,6 +118,11 @@ if(failures.length===0){
      !messagingApi.includes('Invalid message_type')) failures.push('messaging runtime enum validation incomplete');
   if(!messaging.includes('Reply target must belong to the same care thread')) failures.push('cross-thread reply integrity guard missing');
   if(!messagingSafety.includes('ProtectedMessageSafetyScannerPort')||!messagingSafety.includes('SafetySignalForwarderPort')) failures.push('privacy-preserving messaging Safety bridge incomplete');
+  if(!messagingSafety.includes('CrisisResponseSafetySignalForwarder')||
+     !messagingSafety.includes('CrisisResponseOrchestrator')||
+     !messagingSafety.includes('SignalSourceType.SYSTEM_OBSERVATION')) failures.push('canonical messaging Safety forwarder missing');
+  if(!runtime.includes('messagingSafetyScanner')||
+     !runtime.includes('UnconfiguredMessagingSafetyAdapter')) failures.push('messaging Safety runtime does not fail closed/reset when scanner is absent');
   if(!attachmentPolicy.includes('DenyByDefaultMessagingAttachmentPolicy')||!messaging.includes('attachmentPolicyPort.validate')) failures.push('attachment policy is not deny-by-default');
   for (const [name, source] of [['migration', migration], ['messaging', messaging]]) {
     if (/;\\\\n|,\\\\n/.test(source)) failures.push(`${name} contains a literal \\n patch artifact`);
@@ -138,6 +150,8 @@ if(failures.length===0){
   if(!tests.includes('rejects a reply reference that points into another care thread')) failures.push('cross-thread reply regression missing');
   if(!tests.includes('makes completed Care Plan review retries idempotent')) failures.push('Care Plan review retry regression missing');
   if(!tests.includes('rejects a stale Care Plan review')) failures.push('stale Care Plan review regression missing');
+  if(!tests.includes('does not let a professional bypass required user acknowledgement')) failures.push('acknowledgement-gate regression missing');
+  if(!tests.includes('does not allow a terminal Care Plan to be resurrected')) failures.push('terminal plan immutability regression missing');
   if(!tests.includes('generates only one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
   if(!tests.includes('deduplicates policy-driven task reminders')) failures.push('reminder deduplication regression missing');
   if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
