@@ -1,7 +1,9 @@
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
+import { UnitOfWork } from '../../platform/database/index.js';
 import { EventBus } from '../../platform/events/index.js';
 import { AuditService } from '../../platform/audit/index.js';
 import { DataClassification } from '../../platform/shared/data_classification.js';
+import { CorrelationManager } from '../../platform/shared/correlation.js';
 import { validateStateTransition } from '../../platform/shared/state_machines.js';
 import { AuthorizationError, DomainInvariantError, NotFoundError } from '../../platform/errors/index.js';
 import {
@@ -76,6 +78,147 @@ export class ProfessionalMessagingService {
     if (!ProfessionalMessagingService.repository) throw new DomainInvariantError('ProfessionalMessagingRepository not initialized.');
   }
 
+  private static buildParticipant(
+    threadId: string,
+    actorType: ThreadParticipantType,
+    actorId: string,
+    role: string,
+    existing?: ProfessionalThreadParticipant | null
+  ): ProfessionalThreadParticipant {
+    return {
+      id: existing?.id || generateUUIDv7(),
+      thread_id: threadId,
+      actor_type: actorType,
+      actor_id: actorId,
+      participant_role: role,
+      status: ThreadParticipantStatus.ACTIVE,
+      joined_at: new Date().toISOString(),
+      access_scope: ['MESSAGE_READ', 'MESSAGE_SEND']
+    };
+  }
+
+  private static async persistParticipantMutation(
+    participant: ProfessionalThreadParticipant,
+    eventType: string,
+    eventPayload: Record<string, unknown>
+  ): Promise<void> {
+    if (ProfessionalMessagingService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await ProfessionalMessagingService.repository.saveParticipantTransactional(
+          participant,
+          uow.getClient()
+        );
+        uow.registerOutboxEvent(
+          eventType,
+          'professional_messaging',
+          participant.id,
+          eventPayload,
+          {
+            correlation_id: CorrelationManager.getCorrelationId(),
+            data_classification: DataClassification.CLINICAL_RECORD,
+            producer_domain: 'professional_messaging'
+          }
+        );
+      }, 'SERIALIZABLE');
+      return;
+    }
+
+    await ProfessionalMessagingService.repository.saveParticipantTransactional(
+      participant
+    );
+    EventBus.enqueue(
+      eventType,
+      'professional_messaging',
+      participant.id,
+      DataClassification.CLINICAL_RECORD,
+      eventPayload
+    );
+  }
+
+  private static async persistMessageStateMutation(
+    message: ProfessionalMessage,
+    expectedStatus: MessageDeliveryStatus,
+    event?: { type: string; payload: Record<string, unknown> }
+  ): Promise<void> {
+    if (ProfessionalMessagingService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await ProfessionalMessagingService.repository.saveMessageWithExpectedStatus(
+          message,
+          expectedStatus,
+          uow.getClient()
+        );
+        if (event) {
+          uow.registerOutboxEvent(
+            event.type,
+            'professional_messaging',
+            message.id,
+            event.payload,
+            {
+              correlation_id: CorrelationManager.getCorrelationId(),
+              data_classification: DataClassification.CLINICAL_RECORD,
+              producer_domain: 'professional_messaging'
+            }
+          );
+        }
+      }, 'SERIALIZABLE');
+      return;
+    }
+
+    await ProfessionalMessagingService.repository.saveMessageWithExpectedStatus(
+      message,
+      expectedStatus
+    );
+    if (event) {
+      EventBus.enqueue(
+        event.type,
+        'professional_messaging',
+        message.id,
+        DataClassification.CLINICAL_RECORD,
+        event.payload
+      );
+    }
+  }
+
+  private static async persistThreadStateMutation(
+    thread: ProfessionalMessageThread,
+    expectedVersion: number,
+    event: { type: string; payload: Record<string, unknown> }
+  ): Promise<void> {
+    if (ProfessionalMessagingService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await ProfessionalMessagingService.repository.saveThreadWithExpectedVersion(
+          thread,
+          expectedVersion,
+          uow.getClient()
+        );
+        uow.registerOutboxEvent(
+          event.type,
+          'professional_messaging',
+          thread.id,
+          event.payload,
+          {
+            correlation_id: CorrelationManager.getCorrelationId(),
+            data_classification: DataClassification.CLINICAL_RECORD,
+            producer_domain: 'professional_messaging'
+          }
+        );
+      }, 'SERIALIZABLE');
+      return;
+    }
+
+    await ProfessionalMessagingService.repository.saveThreadWithExpectedVersion(
+      thread,
+      expectedVersion
+    );
+    EventBus.enqueue(
+      event.type,
+      'professional_messaging',
+      thread.id,
+      DataClassification.CLINICAL_RECORD,
+      event.payload
+    );
+  }
+
   public static async openThread(params: OpenThreadParams): Promise<ProfessionalMessageThread> {
     ProfessionalMessagingService.assertRepository();
     const relationship = await CareRelationshipService.getRelationship(params.care_relationship_id);
@@ -108,36 +251,139 @@ export class ProfessionalMessagingService {
       response_expectation_reference: params.response_expectation_reference || availability.response_expectation_reference,
       version: 1
     };
-    await ProfessionalMessagingService.repository.saveThread(thread);
-    await ProfessionalMessagingService.saveParticipant(thread.id, ThreadParticipantType.USER, relationship.subject_user_id, 'SUBJECT', params.created_by);
-    await ProfessionalMessagingService.saveParticipant(thread.id, ThreadParticipantType.PROFESSIONAL, professionalId, 'CARE_PROFESSIONAL', params.created_by);
+    const participants = [
+      ProfessionalMessagingService.buildParticipant(
+        thread.id,
+        ThreadParticipantType.USER,
+        relationship.subject_user_id,
+        'SUBJECT'
+      ),
+      ProfessionalMessagingService.buildParticipant(
+        thread.id,
+        ThreadParticipantType.PROFESSIONAL,
+        professionalId,
+        'CARE_PROFESSIONAL'
+      )
+    ];
 
-    EventBus.enqueue('care.thread_opened', 'professional_messaging', thread.id, DataClassification.CLINICAL_RECORD, {
-      thread_id: thread.id, relationship_id: relationship.id, subject_user_id: relationship.subject_user_id
+    if (ProfessionalMessagingService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await ProfessionalMessagingService.repository.createThreadAggregate(
+          thread,
+          participants,
+          uow.getClient()
+        );
+        uow.registerOutboxEvent(
+          'care.thread_opened',
+          'professional_messaging',
+          thread.id,
+          {
+            thread_id: thread.id,
+            relationship_id: relationship.id,
+            subject_user_id: relationship.subject_user_id
+          },
+          {
+            correlation_id: CorrelationManager.getCorrelationId(),
+            data_classification: DataClassification.CLINICAL_RECORD,
+            producer_domain: 'professional_messaging'
+          }
+        );
+        for (const participant of participants) {
+          uow.registerOutboxEvent(
+            'care.thread_participant_added',
+            'professional_messaging',
+            participant.id,
+            {
+              thread_id: thread.id,
+              participant_id: participant.id,
+              actor_type: participant.actor_type
+            },
+            {
+              correlation_id: CorrelationManager.getCorrelationId(),
+              data_classification: DataClassification.CLINICAL_RECORD,
+              producer_domain: 'professional_messaging'
+            }
+          );
+        }
+      }, 'SERIALIZABLE');
+    } else {
+      await ProfessionalMessagingService.repository.createThreadAggregate(
+        thread,
+        participants
+      );
+      EventBus.enqueue(
+        'care.thread_opened',
+        'professional_messaging',
+        thread.id,
+        DataClassification.CLINICAL_RECORD,
+        {
+          thread_id: thread.id,
+          relationship_id: relationship.id,
+          subject_user_id: relationship.subject_user_id
+        }
+      );
+      for (const participant of participants) {
+        EventBus.enqueue(
+          'care.thread_participant_added',
+          'professional_messaging',
+          participant.id,
+          DataClassification.CLINICAL_RECORD,
+          {
+            thread_id: thread.id,
+            participant_id: participant.id,
+            actor_type: participant.actor_type
+          }
+        );
+      }
+    }
+
+    AuditService.record({
+      actor_type: params.creator_type === ThreadParticipantType.USER ? 'USER' : 'STAFF',
+      actor_id: params.created_by,
+      action: 'CARE_MESSAGE_THREAD.OPENED',
+      resource_type: 'professional_message_thread',
+      resource_id: thread.id,
+      purpose: 'Care Coordination',
+      authorization_basis: { relationshipId: relationship.id },
+      result: 'ALLOWED',
+      metadata: { participantCount: participants.length, threadType: thread.thread_type }
     });
     return thread;
   }
 
-  private static async saveParticipant(threadId: string, actorType: ThreadParticipantType, actorId: string, role: string, addedBy: string): Promise<ProfessionalThreadParticipant> {
+  private static async saveParticipant(
+    threadId: string,
+    actorType: ThreadParticipantType,
+    actorId: string,
+    role: string,
+    addedBy: string
+  ): Promise<ProfessionalThreadParticipant> {
     const existing = await ProfessionalMessagingService.repository.findParticipant(threadId, actorId);
     if (existing?.status === ThreadParticipantStatus.ACTIVE) return existing;
-    const p: ProfessionalThreadParticipant = {
-      id: existing?.id || generateUUIDv7(), thread_id: threadId, actor_type: actorType, actor_id: actorId,
-      participant_role: role, status: ThreadParticipantStatus.ACTIVE, joined_at: new Date().toISOString(),
-      access_scope: ['MESSAGE_READ', 'MESSAGE_SEND']
-    };
-    await ProfessionalMessagingService.repository.saveParticipant(p);
-    EventBus.enqueue('care.thread_participant_added', 'professional_messaging', p.id, DataClassification.CLINICAL_RECORD, {
-      thread_id: threadId, participant_id: p.id, actor_type: actorType
-    });
+
+    const participant = ProfessionalMessagingService.buildParticipant(
+      threadId,
+      actorType,
+      actorId,
+      role,
+      existing
+    );
+    await ProfessionalMessagingService.persistParticipantMutation(
+      participant,
+      'care.thread_participant_added',
+      {
+        thread_id: threadId,
+        participant_id: participant.id,
+        actor_type: actorType
+      }
+    );
     AuditService.record({
       actor_type: 'STAFF', actor_id: addedBy, action: 'CARE_MESSAGE_THREAD.PARTICIPANT_ADDED',
       resource_type: 'professional_message_thread', resource_id: threadId, purpose: 'Care Coordination',
       authorization_basis: { threadId }, result: 'ALLOWED', metadata: { participantType: actorType }
     });
-    return p;
+    return participant;
   }
-
   public static async addProfessionalParticipant(threadId: string, professionalId: string, addedByProfessionalId: string, role = 'CARE_TEAM'): Promise<ProfessionalThreadParticipant> {
     const thread = await ProfessionalMessagingService.getThread(threadId);
     await RelationshipAccessEvaluator.assertAccess({
@@ -162,11 +408,13 @@ export class ProfessionalMessagingService {
     if (p.actor_type === ThreadParticipantType.USER && p.actor_id === thread.subject_user_id) {
       throw new DomainInvariantError('The subject user cannot be removed from their own care thread.');
     }
-    p.status = ThreadParticipantStatus.REMOVED; p.left_at = new Date().toISOString();
-    await ProfessionalMessagingService.repository.saveParticipant(p);
-    EventBus.enqueue('care.thread_participant_removed', 'professional_messaging', p.id, DataClassification.CLINICAL_RECORD, {
-      thread_id: threadId, participant_id: p.id
-    });
+    p.status = ThreadParticipantStatus.REMOVED;
+    p.left_at = new Date().toISOString();
+    await ProfessionalMessagingService.persistParticipantMutation(
+      p,
+      'care.thread_participant_removed',
+      {thread_id:threadId,participant_id:p.id}
+    );
   }
 
   public static async sendMessage(params: SendMessageParams): Promise<ProfessionalMessage> {
@@ -218,34 +466,122 @@ export class ProfessionalMessagingService {
       safety_monitoring_status: !safety.configured ? 'NOT_CONFIGURED' : safety.candidate_signal ? 'CANDIDATE_SIGNAL_FORWARDED' : 'EVALUATED_NO_SIGNAL',
       safety_reference: safety.safety_reference, idempotency_key: params.idempotency_key
     };
-    await ProfessionalMessagingService.repository.saveMessage(message);
-    EventBus.enqueue('care.message_sent', 'professional_messaging', message.id, DataClassification.CLINICAL_RECORD, {
-      message_id: message.id, thread_id: thread.id, sender_type: message.sender_type,
+    const messageSentPayload = {
+      message_id: message.id,
+      thread_id: thread.id,
+      sender_type: message.sender_type,
       safety_monitoring_status: message.safety_monitoring_status
-    });
-    if (safety.candidate_signal) {
-      EventBus.enqueue('care.message_safety_escalated', 'professional_messaging', message.id, DataClassification.CLINICAL_RECORD, {
-        message_id: message.id, thread_id: thread.id, safety_reference: safety.safety_reference
-      });
+    };
+    let createResult: {created:boolean;id:string};
+
+    if (ProfessionalMessagingService.repository.requiresUnitOfWork()) {
+      createResult = await UnitOfWork.run(async uow => {
+        const result = await ProfessionalMessagingService.repository.createMessageIdempotent(
+          message,
+          uow.getClient()
+        );
+        if (result.created) {
+          uow.registerOutboxEvent(
+            'care.message_sent',
+            'professional_messaging',
+            message.id,
+            messageSentPayload,
+            {
+              correlation_id: CorrelationManager.getCorrelationId(),
+              data_classification: DataClassification.CLINICAL_RECORD,
+              producer_domain: 'professional_messaging'
+            }
+          );
+          if (safety.candidate_signal) {
+            uow.registerOutboxEvent(
+              'care.message_safety_escalated',
+              'professional_messaging',
+              message.id,
+              {
+                message_id: message.id,
+                thread_id: thread.id,
+                safety_reference: safety.safety_reference
+              },
+              {
+                correlation_id: CorrelationManager.getCorrelationId(),
+                data_classification: DataClassification.CLINICAL_RECORD,
+                producer_domain: 'professional_messaging'
+              }
+            );
+          }
+        }
+        return result;
+      }, 'SERIALIZABLE');
+    } else {
+      createResult = await ProfessionalMessagingService.repository.createMessageIdempotent(
+        message
+      );
+      if (createResult.created) {
+        EventBus.enqueue(
+          'care.message_sent',
+          'professional_messaging',
+          message.id,
+          DataClassification.CLINICAL_RECORD,
+          messageSentPayload
+        );
+        if (safety.candidate_signal) {
+          EventBus.enqueue(
+            'care.message_safety_escalated',
+            'professional_messaging',
+            message.id,
+            DataClassification.CLINICAL_RECORD,
+            {
+              message_id: message.id,
+              thread_id: thread.id,
+              safety_reference: safety.safety_reference
+            }
+          );
+        }
+      }
     }
+
+    const persisted = await ProfessionalMessagingService.getMessage(createResult.id);
+    if (!createResult.created) return persisted;
+
     const recipients = (await ProfessionalMessagingService.repository.findParticipants(thread.id))
       .filter(p => p.status === ThreadParticipantStatus.ACTIVE && p.actor_id !== params.sender_id)
       .map(p => ({ actor_type: p.actor_type, actor_id: p.actor_id }));
-    await ProfessionalMessagingService.notificationPort.notifyNewMessage({
+    const notification = await ProfessionalMessagingService.notificationPort.notifyNewMessage({
       thread_id: thread.id,
-      message_id: message.id,
+      message_id: persisted.id,
       recipients
     });
-    return message;
+    if (!notification.accepted) {
+      AuditService.record({
+        actor_type:'SYSTEM',
+        actor_id:'professional-messaging',
+        action:'CARE_MESSAGE.NOTIFICATION_NOT_ACCEPTED',
+        resource_type:'professional_message',
+        resource_id:persisted.id,
+        purpose:'Care Communication Notification',
+        authorization_basis:{threadId:thread.id},
+        result:'ALLOWED',
+        metadata:{recipientCount:recipients.length}
+      });
+    }
+    return persisted;
   }
 
   public static async markDelivered(messageId: string): Promise<ProfessionalMessage> {
     const message = await ProfessionalMessagingService.getMessage(messageId);
     if (message.status === MessageDeliveryStatus.SENT) {
+      const expectedStatus = message.status;
       validateStateTransition('MessageDeliveryStatus', message.status, MessageDeliveryStatus.DELIVERED, message.id, 'system');
-      message.status = MessageDeliveryStatus.DELIVERED; message.delivered_at = new Date().toISOString();
-      await ProfessionalMessagingService.repository.saveMessage(message);
-      EventBus.enqueue('care.message_delivered', 'professional_messaging', message.id, DataClassification.CLINICAL_RECORD, { message_id: message.id, thread_id: message.thread_id });
+      message.status = MessageDeliveryStatus.DELIVERED;
+      message.delivered_at = new Date().toISOString();
+      await ProfessionalMessagingService.persistMessageStateMutation(
+        message,
+        expectedStatus,
+        {
+          type:'care.message_delivered',
+          payload:{message_id:message.id,thread_id:message.thread_id}
+        }
+      );
     }
     return message;
   }
@@ -255,9 +591,14 @@ export class ProfessionalMessagingService {
     const participant = await ProfessionalMessagingService.repository.findParticipant(message.thread_id, actorId);
     if (!participant || participant.status !== ThreadParticipantStatus.ACTIVE) throw new AuthorizationError('Only an active thread participant may mark a message read.', { errorCode: 'AUTHZ_003' });
     if (message.status !== MessageDeliveryStatus.READ) {
+      const expectedStatus = message.status;
       validateStateTransition('MessageDeliveryStatus', message.status, MessageDeliveryStatus.READ, message.id, actorId);
-      message.status = MessageDeliveryStatus.READ; message.read_at = new Date().toISOString();
-      await ProfessionalMessagingService.repository.saveMessage(message);
+      message.status = MessageDeliveryStatus.READ;
+      message.read_at = new Date().toISOString();
+      await ProfessionalMessagingService.persistMessageStateMutation(
+        message,
+        expectedStatus
+      );
     }
     return message;
   }
@@ -290,10 +631,19 @@ export class ProfessionalMessagingService {
       dataDomain: DataDomain.MESSAGING, action: ActionPermission.MESSAGE, purpose: 'CARE_COORDINATION'
     });
     if (thread.status === ProfessionalThreadStatus.CLOSED || thread.status === ProfessionalThreadStatus.ARCHIVED) return thread;
+    const expectedVersion = thread.version;
     validateStateTransition('ProfessionalThreadStatus', thread.status, ProfessionalThreadStatus.CLOSED, thread.id, actorProfessionalId);
-    thread.status = ProfessionalThreadStatus.CLOSED; thread.closed_at = new Date().toISOString(); thread.version += 1;
-    await ProfessionalMessagingService.repository.saveThread(thread);
-    EventBus.enqueue('care.thread_closed', 'professional_messaging', thread.id, DataClassification.CLINICAL_RECORD, { thread_id: thread.id, relationship_id: thread.care_relationship_id });
+    thread.status = ProfessionalThreadStatus.CLOSED;
+    thread.closed_at = new Date().toISOString();
+    thread.version = expectedVersion + 1;
+    await ProfessionalMessagingService.persistThreadStateMutation(
+      thread,
+      expectedVersion,
+      {
+        type:'care.thread_closed',
+        payload:{thread_id:thread.id,relationship_id:thread.care_relationship_id}
+      }
+    );
     return thread;
   }
 
@@ -305,9 +655,23 @@ export class ProfessionalMessagingService {
     for (const thread of await ProfessionalMessagingService.repository.findThreadsByRelationshipId(relationshipId)) {
       if (thread.status === ProfessionalThreadStatus.OPEN || thread.status === ProfessionalThreadStatus.PAUSED) {
         // Reconciliation is system-governed; preserve history but prevent new messages immediately.
-        thread.status = ProfessionalThreadStatus.CLOSED; thread.closed_at = new Date().toISOString(); thread.version += 1;
-        await ProfessionalMessagingService.repository.saveThread(thread); closed.push(thread.id);
-        EventBus.enqueue('care.thread_closed', 'professional_messaging', thread.id, DataClassification.CLINICAL_RECORD, { thread_id: thread.id, relationship_id: relationshipId, reason: 'RELATIONSHIP_ENDED' });
+        const expectedVersion = thread.version;
+        thread.status = ProfessionalThreadStatus.CLOSED;
+        thread.closed_at = new Date().toISOString();
+        thread.version = expectedVersion + 1;
+        await ProfessionalMessagingService.persistThreadStateMutation(
+          thread,
+          expectedVersion,
+          {
+            type:'care.thread_closed',
+            payload:{
+              thread_id:thread.id,
+              relationship_id:relationshipId,
+              reason:'RELATIONSHIP_ENDED'
+            }
+          }
+        );
+        closed.push(thread.id);
       }
     }
     return closed;
