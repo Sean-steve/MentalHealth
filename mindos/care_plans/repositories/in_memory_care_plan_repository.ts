@@ -142,7 +142,9 @@ export class InMemoryCarePlanRepository implements ICarePlanRepository {
     const reviewsSnapshot = new Map(this.goalReviews);
     try {
       this.goals.set(goal.id, structuredClone(goal));
-      this.goalReviews.set(review.id, structuredClone(review));
+      const reviews = this.goalReviews.get(goal.id) || [];
+      reviews.push(structuredClone(review));
+      this.goalReviews.set(goal.id, reviews);
     } catch (error) {
       this.goals = goalsSnapshot;
       this.goalReviews = reviewsSnapshot;
