@@ -15,6 +15,7 @@ import { CarePlanEligibilityService } from '../application/eligibility_service.j
 import {
   RelationshipAccessEvaluator,
   CareRelationshipService,
+  CareRelationshipState,
   DataDomain,
   ActionPermission
 } from '../../care_relationships/index.js';
@@ -284,6 +285,64 @@ export class CarePlanService {
     await CarePlanService.repository.savePlan(plan);
     EventBus.enqueue('care.plan_terminated','care_plans',plan.id,DataClassification.CLINICAL_RECORD,{plan_id:plan.id,reason,terminated_at:now});
     return plan;
+  }
+
+  public static async reconcileRelationshipClosure(
+    relationshipId: string
+  ): Promise<{ plan_id?: string; action: 'NONE' | 'TERMINATED' | 'REVOKED' }> {
+    const relationship = await CareRelationshipService.getRelationship(relationshipId);
+    if (!relationship ||
+        ![CareRelationshipState.TERMINATED, CareRelationshipState.REVOKED].includes(relationship.status)) {
+      return { action: 'NONE' };
+    }
+
+    const plan = await CarePlanService.repository.findPlanByRelationshipId(relationshipId);
+    if (!plan ||
+        [CarePlanState.COMPLETED, CarePlanState.TERMINATED, CarePlanState.REVOKED, CarePlanState.SUPERSEDED].includes(plan.status)) {
+      return { plan_id: plan?.id, action: 'NONE' };
+    }
+
+    const shouldRevoke =
+      relationship.status === CareRelationshipState.REVOKED ||
+      [CarePlanState.DRAFT, CarePlanState.REVIEW_REQUIRED, CarePlanState.PENDING_USER_ACKNOWLEDGEMENT].includes(plan.status);
+    const target = shouldRevoke ? CarePlanState.REVOKED : CarePlanState.TERMINATED;
+
+    validateStateTransition('CarePlanState', plan.status, target, plan.id, 'system');
+    const now = new Date().toISOString();
+    plan.status = target;
+    plan.updated_at = now;
+    plan.version += 1;
+    if (target === CarePlanState.TERMINATED) plan.terminated_at = now;
+    await CarePlanService.repository.savePlan(plan);
+
+    EventBus.enqueue(
+      target === CarePlanState.TERMINATED ? 'care.plan_terminated' : 'care.plan_updated',
+      'care_plans',
+      plan.id,
+      DataClassification.CLINICAL_RECORD,
+      {
+        plan_id: plan.id,
+        relationship_id: relationshipId,
+        status: target,
+        reason: 'CARE_RELATIONSHIP_ENDED'
+      }
+    );
+    AuditService.record({
+      actor_type: 'SYSTEM',
+      actor_id: 'sprint22-reconciliation',
+      action: 'CARE_PLAN.RECONCILED_RELATIONSHIP_CLOSURE',
+      resource_type: 'care_plan',
+      resource_id: plan.id,
+      purpose: 'Care Relationship Closure',
+      authorization_basis: { relationshipId },
+      result: 'ALLOWED',
+      metadata: { targetStatus: target }
+    });
+
+    return {
+      plan_id: plan.id,
+      action: target === CarePlanState.TERMINATED ? 'TERMINATED' : 'REVOKED'
+    };
   }
 
   private static async requirePlan(id:string):Promise<CarePlan>{
