@@ -92,6 +92,33 @@ export class ClinicalTaskService {
     const relationship = await CareRelationshipService.getRelationship(params.care_relationship_id);
     if (!relationship) throw new NotFoundError(`CareRelationship ${params.care_relationship_id} not found.`);
 
+    if (
+      params.assigned_to_type === ClinicalTaskAssigneeType.USER &&
+      params.assigned_to_id !== relationship.subject_user_id
+    ) {
+      throw new AuthorizationError(
+        'User-assigned clinical task must target the subject of the care relationship.',
+        { errorCode: 'AUTHZ_003' }
+      );
+    }
+
+    if (params.assigned_to_type === ClinicalTaskAssigneeType.PROFESSIONAL) {
+      await RelationshipAccessEvaluator.assertAccess({
+        relationshipId: relationship.id,
+        professionalId: params.assigned_to_id,
+        dataDomain: DataDomain.CARE_PLANS,
+        action: ActionPermission.WRITE,
+        purpose: 'CARE_DELIVERY'
+      });
+    }
+
+    if (
+      params.assigned_to_type === ClinicalTaskAssigneeType.CARE_TEAM_ROLE &&
+      !String(params.assigned_to_id || '').trim()
+    ) {
+      throw new DomainInvariantError('Care-team-role task requires an explicit role identifier.');
+    }
+
     const ownerDomain = params.owner_domain || OWNER_DOMAIN_BY_TASK[params.task_type];
     const completionAuthority = params.completion_authority ||
       (ownerDomain ? ClinicalTaskCompletionAuthority.OWNER_DOMAIN :
