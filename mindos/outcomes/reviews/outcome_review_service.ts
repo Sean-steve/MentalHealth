@@ -12,6 +12,8 @@
  */
 
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
+import { UnitOfWork } from '../../platform/database/index.js';
+import { CorrelationManager } from '../../platform/shared/correlation.js';
 import { EventBus } from '../../platform/events/index.js';
 import { AuditService } from '../../platform/audit/index.js';
 import { DataClassification } from '../../platform/shared/data_classification.js';
@@ -188,23 +190,34 @@ export class OutcomeReviewService {
     review.completed_at = frozenAt;
     review.updated_at = frozenAt;
 
-    await OutcomeReviewService.repository.saveCompletedReviewWithSnapshot(review, snapshot);
+    const completionEvent = {
+      review_id: review.id,
+      subject_user_id: review.subject_user_id,
+      care_relationship_id: review.care_relationship_id,
+      reviewer_id: params.reviewer_id,
+      decision: params.decision,
+      snapshot_id: snapshotId
+    };
 
-    // Enqueue review completion event
-    EventBus.enqueue(
-      'outcome.review_completed',
-      'outcomes',
-      review.id,
-      DataClassification.CLINICAL_RECORD,
-      {
-        review_id: review.id,
-        subject_user_id: review.subject_user_id,
-        care_relationship_id: review.care_relationship_id,
-        reviewer_id: params.reviewer_id,
-        decision: params.decision,
-        snapshot_id: snapshotId
-      }
-    );
+    if (OutcomeReviewService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await OutcomeReviewService.repository.saveCompletedReviewWithSnapshotTransactional(review, snapshot, uow.getClient());
+        uow.registerOutboxEvent(
+          'outcome.review_completed',
+          'outcomes',
+          review.id,
+          completionEvent,
+          {
+            correlation_id: CorrelationManager.getCorrelationId(),
+            data_classification: DataClassification.CLINICAL_RECORD,
+            producer_domain: 'outcomes'
+          }
+        );
+      }, 'SERIALIZABLE');
+    } else {
+      await OutcomeReviewService.repository.saveCompletedReviewWithSnapshot(review, snapshot);
+      EventBus.enqueue('outcome.review_completed','outcomes',review.id,DataClassification.CLINICAL_RECORD,completionEvent);
+    }
 
     // Audit completion
     AuditService.record({

@@ -15,6 +15,7 @@ import {
 import { OutcomeMeasurementValidity } from '../domain/types.js';
 
 export class InMemoryOutcomeRepository implements IOutcomeRepository {
+  public requiresUnitOfWork(): boolean { return false; }
   private measurements: Map<string, OutcomeMeasurement> = new Map();
   private baselines: Map<string, OutcomeBaseline[]> = new Map(); // append-only history by `${userId}:${measureCode}`
   private reviews: Map<string, OutcomeReview> = new Map();
@@ -22,7 +23,10 @@ export class InMemoryOutcomeRepository implements IOutcomeRepository {
   private snapshots: Map<string, OutcomeSnapshot> = new Map();
 
   public async saveMeasurement(measurement: OutcomeMeasurement): Promise<void> {
-    this.measurements.set(measurement.id, { ...measurement });
+    this.measurements.set(measurement.id, structuredClone(measurement));
+  }
+  public async saveMeasurementTransactional(measurement: OutcomeMeasurement): Promise<void> {
+    await this.saveMeasurement(measurement);
   }
 
   public async findMeasurementById(id: string): Promise<OutcomeMeasurement | null> {
@@ -166,6 +170,9 @@ export class InMemoryOutcomeRepository implements IOutcomeRepository {
     const snapshotCopy=structuredClone(snapshot);
     this.snapshots.set(snapshot.id,snapshotCopy);
     this.reviews.set(review.id,reviewCopy);
+  }
+  public async saveCompletedReviewWithSnapshotTransactional(review: OutcomeReview, snapshot: OutcomeSnapshot): Promise<void> {
+    await this.saveCompletedReviewWithSnapshot(review,snapshot);
   }
 
   public async findSnapshotById(id: string): Promise<OutcomeSnapshot | null> {

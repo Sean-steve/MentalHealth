@@ -1,4 +1,4 @@
-import { getPool } from '../../platform/database/index.js';
+import { getPool, DatabaseClient } from '../../platform/database/index.js';
 import { IOutcomeRepository } from './interfaces.js';
 import {
   OutcomeMeasurement,OutcomeBaseline,OutcomeReview,OutcomeAlert,OutcomeSnapshot
@@ -52,8 +52,13 @@ const toSnapshot=(r:any):OutcomeSnapshot=>({
 });
 
 export class PgOutcomeRepository implements IOutcomeRepository {
+  public requiresUnitOfWork(): boolean { return true; }
   async saveMeasurement(m:OutcomeMeasurement):Promise<void>{
-    await getPool().query(
+    await this.saveMeasurementTransactional(m);
+  }
+  async saveMeasurementTransactional(m:OutcomeMeasurement,tx?:DatabaseClient):Promise<void>{
+    const runner:any=tx||getPool();
+    await runner.query(
       `INSERT INTO outcome_measurements
        (id,subject_user_id,measure_definition_id,measure_code,value_json,unit,measured_at,recorded_at,
         source_type,source_reference,instrument_version,provenance,validity_status,invalidation_reason,invalidated_at,
@@ -176,6 +181,33 @@ export class PgOutcomeRepository implements IOutcomeRepository {
     );
   }
   async saveCompletedReviewWithSnapshot(v:OutcomeReview,s:OutcomeSnapshot):Promise<void>{
+    await this.saveCompletedReviewWithSnapshotTransactional(v,s);
+  }
+  async saveCompletedReviewWithSnapshotTransactional(v:OutcomeReview,s:OutcomeSnapshot,tx?:DatabaseClient):Promise<void>{
+    if(tx){
+      await tx.query(
+        `INSERT INTO outcome_snapshots
+         (id,review_id,subject_user_id,measure_states,trend_states,care_plan_version_id,frozen_at,hash)
+         VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7,$8) ON CONFLICT(review_id) DO NOTHING`,
+        [s.id,s.review_id,s.subject_user_id,JSON.stringify(s.measure_states),JSON.stringify(s.trend_states),s.care_plan_version_id||null,s.frozen_at,s.hash]
+      );
+      await tx.query(
+        `INSERT INTO outcome_reviews
+         (id,subject_user_id,care_relationship_id,care_plan_id,review_type,status,reviewer_id,measurement_refs,trend_refs,
+          scheduled_for,started_at,completed_at,decision,reason_codes,clinical_notes,recommended_actions,snapshot_id,created_at,updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13,$14::jsonb,$15,$16::jsonb,$17,$18,$19)
+         ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,reviewer_id=EXCLUDED.reviewer_id,
+         measurement_refs=EXCLUDED.measurement_refs,trend_refs=EXCLUDED.trend_refs,scheduled_for=EXCLUDED.scheduled_for,
+         started_at=EXCLUDED.started_at,completed_at=EXCLUDED.completed_at,decision=EXCLUDED.decision,
+         reason_codes=EXCLUDED.reason_codes,clinical_notes=EXCLUDED.clinical_notes,
+         recommended_actions=EXCLUDED.recommended_actions,snapshot_id=EXCLUDED.snapshot_id,updated_at=EXCLUDED.updated_at`,
+        [v.id,v.subject_user_id,v.care_relationship_id,v.care_plan_id||null,v.review_type,v.status,v.reviewer_id||null,
+         JSON.stringify(v.measurement_refs),JSON.stringify(v.trend_refs),v.scheduled_for||null,v.started_at||null,
+         v.completed_at||null,v.decision||null,JSON.stringify(v.reason_codes),v.clinical_notes||null,
+         JSON.stringify(v.recommended_actions),v.snapshot_id||null,v.created_at,v.updated_at]
+      );
+      return;
+    }
     const client=await getPool().connect();
     try{
       await client.query('BEGIN');

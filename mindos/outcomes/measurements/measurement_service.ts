@@ -13,6 +13,8 @@
  */
 
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
+import { UnitOfWork } from '../../platform/database/index.js';
+import { CorrelationManager } from '../../platform/shared/correlation.js';
 import { EventBus } from '../../platform/events/index.js';
 import { AuditService } from '../../platform/audit/index.js';
 import { DataClassification } from '../../platform/shared/data_classification.js';
@@ -113,7 +115,39 @@ export class OutcomeMeasurementService {
       created_at: recorded_at
     };
 
-    await OutcomeMeasurementService.repository.saveMeasurement(measurement);
+    const measurementEventPayload = {
+      measurement_id: measurementId,
+      subject_user_id: params.subject_user_id,
+      measure_code: params.measure_code,
+      provenance: params.provenance,
+      source_type: params.source_type
+    };
+
+    if (OutcomeMeasurementService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await OutcomeMeasurementService.repository.saveMeasurementTransactional(measurement, uow.getClient());
+        uow.registerOutboxEvent(
+          'outcome.measurement_recorded',
+          'outcomes',
+          measurementId,
+          measurementEventPayload,
+          {
+            correlation_id: CorrelationManager.getCorrelationId(),
+            data_classification: DataClassification.CLINICAL_RECORD,
+            producer_domain: 'outcomes'
+          }
+        );
+      }, 'SERIALIZABLE');
+    } else {
+      await OutcomeMeasurementService.repository.saveMeasurement(measurement);
+      EventBus.enqueue(
+        'outcome.measurement_recorded',
+        'outcomes',
+        measurementId,
+        DataClassification.CLINICAL_RECORD,
+        measurementEventPayload
+      );
+    }
 
     // Auto-project to Clinical Timeline (Sections 7, 8, 129)
     await ClinicalTimelineService.recordEvent({
@@ -131,21 +165,6 @@ export class OutcomeMeasurementService {
       care_plan_id: params.care_plan_id,
       actor_id: params.recorded_by
     });
-
-    // Enqueue transactional outbox event (Section 104, 107)
-    EventBus.enqueue(
-      'outcome.measurement_recorded',
-      'outcomes',
-      measurementId,
-      DataClassification.CLINICAL_RECORD,
-      {
-        measurement_id: measurementId,
-        subject_user_id: params.subject_user_id,
-        measure_code: params.measure_code,
-        provenance: params.provenance,
-        source_type: params.source_type
-      }
-    );
 
     // Audit recording (Section 108)
     AuditService.record({

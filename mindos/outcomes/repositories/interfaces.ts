@@ -4,6 +4,7 @@
  * Sprint 23 Bounded Context
  */
 
+import { DatabaseClient } from '../../platform/database/index.js';
 import {
   OutcomeMeasurement,
   OutcomeBaseline,
@@ -13,7 +14,9 @@ import {
 } from '../domain/entities.js';
 
 export interface IOutcomeRepository {
+  requiresUnitOfWork(): boolean;
   saveMeasurement(measurement: OutcomeMeasurement): Promise<void>;
+  saveMeasurementTransactional(measurement: OutcomeMeasurement, tx?: DatabaseClient): Promise<void>;
   findMeasurementById(id: string): Promise<OutcomeMeasurement | null>;
   findMeasurementBySource(sourceType: string, sourceReference: string): Promise<OutcomeMeasurement | null>;
   findMeasurementsByUserAndMeasure(userId: string, measureCode: string, includeInvalidated?: boolean): Promise<OutcomeMeasurement[]>;
@@ -34,6 +37,7 @@ export interface IOutcomeRepository {
 
   saveSnapshot(snapshot: OutcomeSnapshot): Promise<void>;
   saveCompletedReviewWithSnapshot(review: OutcomeReview, snapshot: OutcomeSnapshot): Promise<void>;
+  saveCompletedReviewWithSnapshotTransactional(review: OutcomeReview, snapshot: OutcomeSnapshot, tx?: DatabaseClient): Promise<void>;
   findSnapshotById(id: string): Promise<OutcomeSnapshot | null>;
 
   clear(): void;
