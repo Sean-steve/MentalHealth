@@ -11,6 +11,14 @@ import { AuthorizationError, DomainInvariantError } from '../../platform/errors/
 
 export const clinicalTaskRouter = Router();
 
+function isEnumValue<T extends Record<string, string>>(
+  enumeration: T,
+  value: unknown
+): value is T[keyof T] {
+  return typeof value === 'string' &&
+    Object.values(enumeration).includes(value as T[keyof T]);
+}
+
 function actor(req: Request): {
   id: string;
   type: ClinicalTaskAssigneeType.USER | ClinicalTaskAssigneeType.PROFESSIONAL;
@@ -84,6 +92,16 @@ clinicalTaskRouter.post('/', async (req: Request, res: Response, next: NextFunct
       });
     }
 
+    if (!isEnumValue(ClinicalTaskType, task_type)) {
+      return res.status(400).json({ error: 'Invalid task_type.' });
+    }
+    if (!isEnumValue(ClinicalTaskAssigneeType, assigned_to_type)) {
+      return res.status(400).json({ error: 'Invalid assigned_to_type.' });
+    }
+    if (priority !== undefined && !isEnumValue(ClinicalTaskPriority, priority)) {
+      return res.status(400).json({ error: 'Invalid task priority.' });
+    }
+
     if (assigned_to_type === ClinicalTaskAssigneeType.SYSTEM) {
       throw new AuthorizationError(
         'SYSTEM-owned clinical tasks cannot be created through the external HTTP API.',
@@ -107,8 +125,8 @@ clinicalTaskRouter.post('/', async (req: Request, res: Response, next: NextFunct
       care_relationship_id,
       care_plan_id,
       care_goal_id,
-      task_type: task_type as ClinicalTaskType,
-      assigned_to_type: assigned_to_type as ClinicalTaskAssigneeType,
+      task_type,
+      assigned_to_type,
       assigned_to_id,
       priority: priority as ClinicalTaskPriority | undefined,
       title,
