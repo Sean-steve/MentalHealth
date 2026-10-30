@@ -158,7 +158,7 @@ if(failures.length===0){
   if(!tests.includes('rejects a stale Care Plan review')) failures.push('stale Care Plan review regression missing');
   if(!tests.includes('does not let a professional bypass required user acknowledgement')) failures.push('acknowledgement-gate regression missing');
   if(!tests.includes('does not allow a terminal Care Plan to be resurrected')) failures.push('terminal plan immutability regression missing');
-  if(!tests.includes('generates only one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
+  if(!tests.includes('generates one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
   if(!tests.includes('deduplicates policy-driven task reminders')) failures.push('reminder deduplication regression missing');
   if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
 }
