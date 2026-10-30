@@ -194,6 +194,17 @@ export class ProfessionalMessagingService {
     }
     if (!params.content_reference) throw new DomainInvariantError('Message requires a protected content reference; raw content is not stored in the thread metadata record.');
 
+    if (params.reply_to_message_id) {
+      const replyTarget = await ProfessionalMessagingService.getMessage(
+        params.reply_to_message_id
+      );
+      if (replyTarget.thread_id !== thread.id) {
+        throw new DomainInvariantError(
+          'Reply target must belong to the same care thread.'
+        );
+      }
+    }
+
     const messageId = generateUUIDv7();
     const safety = await ProfessionalMessagingService.safetyPort.evaluateCandidate({
       subject_user_id: thread.subject_user_id, thread_id: thread.id, message_id: messageId,
