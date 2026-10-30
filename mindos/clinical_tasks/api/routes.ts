@@ -118,7 +118,7 @@ clinicalTaskRouter.post('/:id/start', async (req: Request, res: Response, next: 
   try {
     const a = actor(req);
     await ClinicalTaskService.getTaskForActor(req.params.id, a.id, a.type);
-    const task = await ClinicalTaskService.startTask(req.params.id, a.id);
+    const task = await ClinicalTaskService.startTask(req.params.id, a.id, a.type);
     res.json({ task });
   } catch (err) {
     next(err);
