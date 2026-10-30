@@ -1,55 +1,64 @@
 /**
- * MindOS Canonical Clinical Change Rules & Cutoffs
- * Authority: Master Architecture Index Section 7 & 14, Volumes I, III, XV & Appendices B / C / Q
- * Sprint 23 Bounded Context
- * 
- * Rules:
- * - Minimal Clinically Important Difference (MCID) definitions.
- * - Invariant (Section 43): Use only canonical clinical cutoffs; do not invent arbitrary thresholds.
+ * Governed clinical-change rule registry.
+ * No threshold is considered authoritative unless it is explicitly approved,
+ * versioned and linked to a Clinical Governance artifact.
  */
-
 import { ClinicalChangeRule } from '../domain/types.js';
+import { DomainInvariantError } from '../../platform/errors/index.js';
 
-export const CANONICAL_CLINICAL_CHANGE_RULES: Record<string, ClinicalChangeRule> = {
-  PHQ9_TOTAL: {
-    measure_code: 'PHQ9_TOTAL',
-    mcid: 5, // Canonical MCID for PHQ-9 is 5 points
-    reliable_change_threshold: 6,
-    critical_worsening_threshold: 10,
-    critical_safety_threshold: 20 // Severe depression threshold
-  },
-  GAD7_TOTAL: {
-    measure_code: 'GAD7_TOTAL',
-    mcid: 4, // Canonical MCID for GAD-7 is 4 points
-    reliable_change_threshold: 5,
-    critical_worsening_threshold: 8,
-    critical_safety_threshold: 15 // Severe anxiety threshold
-  },
-  WHO5_TOTAL: {
-    measure_code: 'WHO5_TOTAL',
-    mcid: 10, // Canonical MCID for WHO-5 is 10 points
-    reliable_change_threshold: 15,
-    critical_worsening_threshold: 20,
-    critical_safety_threshold: 28 // Significant depression indication <= 28
-  },
-  CSSRS_RISK_BAND: {
-    measure_code: 'CSSRS_RISK_BAND',
-    mcid: 1, // 1 band step
-    critical_worsening_threshold: 1,
-    critical_safety_threshold: 2 // Band 2 (Moderate) or 3 (High) triggers safety evaluation
-  },
-  SLEEP_HOURS_USER_REPORTED: {
-    measure_code: 'SLEEP_HOURS_USER_REPORTED',
-    mcid: 1.5,
-    target_min: 7,
-    target_max: 9,
-    critical_worsening_threshold: 3
-  },
-  GOAL_CONFIDENCE_RATING: {
-    measure_code: 'GOAL_CONFIDENCE_RATING',
-    mcid: 2,
-    target_min: 7,
-    target_max: 10,
-    critical_worsening_threshold: 3
+export class ClinicalChangeRuleRegistry {
+  private static rules = new Map<string, ClinicalChangeRule>();
+
+  private static key(measureCode: string, version: number): string {
+    return `${measureCode}:${version}`;
   }
-};
+
+  public static registerApprovedRule(rule: ClinicalChangeRule): void {
+    if (rule.approval_state !== 'APPROVED') {
+      throw new DomainInvariantError('Only APPROVED clinical-change rules may be registered for execution.');
+    }
+    if (!rule.clinical_artifact_id || !rule.clinical_artifact_version || !rule.approved_by || !rule.approved_at) {
+      throw new DomainInvariantError('Clinical-change rule requires governance artifact and approval provenance.');
+    }
+    if (!Number.isInteger(rule.version) || rule.version < 1) {
+      throw new DomainInvariantError('Clinical-change rule version must be a positive integer.');
+    }
+    if (rule.mcid !== undefined && rule.mcid <= 0) {
+      throw new DomainInvariantError('Clinical-change rule MCID must be positive when supplied.');
+    }
+    if (rule.target_min !== undefined && rule.target_max !== undefined && rule.target_min > rule.target_max) {
+      throw new DomainInvariantError('Clinical-change target_min cannot exceed target_max.');
+    }
+    this.rules.set(this.key(rule.measure_code, rule.version), { ...rule });
+  }
+
+  public static getApprovedRule(measureCode: string, at = new Date()): ClinicalChangeRule | undefined {
+    const candidates = Array.from(this.rules.values())
+      .filter(r => r.measure_code === measureCode && r.approval_state === 'APPROVED')
+      .filter(r => Date.parse(r.effective_from) <= at.getTime())
+      .filter(r => !r.effective_until || Date.parse(r.effective_until) > at.getTime())
+      .sort((a,b) => b.version - a.version);
+    const rule = candidates[0];
+    return rule ? { ...rule } : undefined;
+  }
+
+  public static listApprovedRules(): ClinicalChangeRule[] {
+    return Array.from(this.rules.values())
+      .filter(r => r.approval_state === 'APPROVED')
+      .map(r => ({ ...r }));
+  }
+
+  public static revoke(measureCode: string, version: number): void {
+    const key = this.key(measureCode, version);
+    const existing = this.rules.get(key);
+    if (existing) this.rules.set(key, { ...existing, approval_state: 'REVOKED' });
+  }
+
+  public static resetForTesting(): void {
+    this.rules.clear();
+  }
+}
+
+// Deliberately empty. There are no hard-coded executable clinical thresholds.
+// Runtime must hydrate the registry from approved Clinical Governance records.
+export const CANONICAL_CLINICAL_CHANGE_RULES: Readonly<Record<string, never>> = Object.freeze({});

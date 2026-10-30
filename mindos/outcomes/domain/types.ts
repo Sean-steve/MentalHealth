@@ -44,11 +44,20 @@ export interface ComparabilityCheckResult {
 }
 
 export interface ClinicalChangeRule {
+  id: string;
   measure_code: string;
-  mcid: number; // Minimal Clinically Important Difference
+  version: number;
+  mcid?: number;
   reliable_change_threshold?: number;
   critical_worsening_threshold?: number;
   critical_safety_threshold?: number;
   target_min?: number;
   target_max?: number;
+  clinical_artifact_id: string;
+  clinical_artifact_version: string;
+  approval_state: 'APPROVED' | 'REVOKED' | 'EXPIRED';
+  approved_by: string;
+  approved_at: string;
+  effective_from: string;
+  effective_until?: string;
 }

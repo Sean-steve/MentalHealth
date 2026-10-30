@@ -1,36 +1,35 @@
 /**
- * MindOS Canonical Outcome Trend Engine
- * Authority: Master Architecture Index Section 7 & 14, Volumes I, III, XV & Appendices B / C / Q
- * Sprint 23 Bounded Context
- * 
- * Rules:
- * - Deterministic trend calculation based on comparable valid measurements.
- * - Invariant (Section 46): If count < 2 => INSUFFICIENT_DATA, never fabricated trend.
- * - Invariant (Section 32): Incomparable versions => INCOMPARABLE.
- * - Invariant (Section 39, 40): Trend does NOT equal diagnosis. Trend never mutates RiskState directly.
- * - Invariant (Section 109): Professional overrides store both computed and overridden classifications.
+ * Deterministic outcome trend engine.
+ * Clinical significance, target ranges and Safety thresholds require an approved
+ * ClinicalChangeRule from Clinical Governance. No fallback threshold exists.
  */
-
-import { OutcomeTrend, OutcomeSeries, OutcomeMeasurement } from '../domain/entities.js';
+import { OutcomeTrend, OutcomeSeries } from '../domain/entities.js';
 import {
   OutcomeTrendState,
   OutcomeDirectionality,
   DeteriorationSeverity,
   TrendConfidence
 } from '../domain/types.js';
-import { CANONICAL_CLINICAL_CHANGE_RULES } from './clinical_change_rules.js';
+import { ClinicalChangeRuleRegistry } from './clinical_change_rules.js';
+
+function unknownTrend(series: OutcomeSeries, reason: string): OutcomeTrend {
+  return {
+    measure_code: series.measure_code,
+    trend_state: OutcomeTrendState.UNKNOWN,
+    confidence: 'INSUFFICIENT',
+    reason_codes: [reason],
+    is_clinically_significant: false,
+    measurement_count: series.measurements.length,
+    requires_review: true,
+    evaluated_at: new Date().toISOString()
+  };
+}
 
 export class OutcomeTrendEngine {
-  /**
-   * Evaluates trend for an OutcomeSeries.
-   */
   public static evaluateSeries(series: OutcomeSeries): OutcomeTrend {
     const measureCode = series.measure_code;
     const measurements = series.measurements;
-    const rule = CANONICAL_CLINICAL_CHANGE_RULES[measureCode];
-    const mcid = rule ? rule.mcid : 1;
 
-    // 1. Data sufficiency check (Sections 38, 46, 138)
     if (measurements.length < 2) {
       return {
         measure_code: measureCode,
@@ -44,7 +43,6 @@ export class OutcomeTrendEngine {
       };
     }
 
-    // 2. Comparability check (Sections 31, 32, 139)
     if (series.comparability_status === 'INCOMPARABLE') {
       return {
         measure_code: measureCode,
@@ -59,100 +57,115 @@ export class OutcomeTrendEngine {
     }
 
     const baselineMeasurement =
-      measurements.find((m) => m.id === series.baseline_measurement_id) || measurements[0];
+      measurements.find(m => m.id === series.baseline_measurement_id) || measurements[0];
     const latestMeasurement = measurements[measurements.length - 1];
-
     const baselineVal = baselineMeasurement.value;
     const latestVal = latestMeasurement.value;
 
-    // If values are not numbers (e.g. categorical), evaluate categorical stability
     if (typeof baselineVal !== 'number' || typeof latestVal !== 'number') {
-      const isIdentical = baselineVal === latestVal;
+      const identical = baselineVal === latestVal;
       return {
         measure_code: measureCode,
-        trend_state: isIdentical ? OutcomeTrendState.STABLE : OutcomeTrendState.MIXED,
+        trend_state: identical ? OutcomeTrendState.STABLE : OutcomeTrendState.MIXED,
         confidence: 'MODERATE',
-        reason_codes: [isIdentical ? 'CATEGORICAL_VALUE_UNCHANGED' : 'CATEGORICAL_VALUE_CHANGED'],
-        is_clinically_significant: !isIdentical,
+        reason_codes: [identical ? 'CATEGORICAL_VALUE_UNCHANGED' : 'CATEGORICAL_VALUE_CHANGED_REQUIRES_REVIEW'],
+        is_clinically_significant: false,
         baseline_value: baselineVal,
         latest_value: latestVal,
         measurement_count: measurements.length,
-        requires_review: !isIdentical,
+        requires_review: !identical,
         evaluated_at: new Date().toISOString()
       };
     }
 
+    const rule = ClinicalChangeRuleRegistry.getApprovedRule(measureCode);
+    if (!rule) return unknownTrend(series, 'NO_APPROVED_CLINICAL_CHANGE_RULE');
+
     const directionality = series.measure_definition.directionality;
     const changeAmount = Number((latestVal - baselineVal).toFixed(2));
-    const isSignificant = Math.abs(changeAmount) >= mcid;
-
-    let trendState = OutcomeTrendState.STABLE;
+    let trendState = OutcomeTrendState.UNKNOWN;
     let deteriorationSeverity: DeteriorationSeverity = 'NONE';
     const reasonCodes: string[] = [];
+    let isSignificant = false;
 
-    if (directionality === OutcomeDirectionality.LOWER_IS_BETTER) {
-      if (changeAmount <= -mcid) {
-        trendState = OutcomeTrendState.IMPROVING;
-        reasonCodes.push('SCORE_DECREASED_BEYOND_MCID');
-      } else if (changeAmount >= mcid) {
-        trendState = OutcomeTrendState.WORSENING;
-        reasonCodes.push('SCORE_INCREASED_BEYOND_MCID');
-      } else {
-        trendState = OutcomeTrendState.STABLE;
-        reasonCodes.push('SCORE_WITHIN_MCID_STABILITY_BAND');
+    if (directionality === OutcomeDirectionality.TARGET_RANGE) {
+      if (rule.target_min === undefined || rule.target_max === undefined) {
+        return unknownTrend(series, 'APPROVED_RULE_MISSING_TARGET_RANGE');
       }
-    } else if (directionality === OutcomeDirectionality.HIGHER_IS_BETTER) {
-      if (changeAmount >= mcid) {
-        trendState = OutcomeTrendState.IMPROVING;
-        reasonCodes.push('SCORE_INCREASED_BEYOND_MCID');
-      } else if (changeAmount <= -mcid) {
-        trendState = OutcomeTrendState.WORSENING;
-        reasonCodes.push('SCORE_DECREASED_BEYOND_MCID');
-      } else {
-        trendState = OutcomeTrendState.STABLE;
-        reasonCodes.push('SCORE_WITHIN_MCID_STABILITY_BAND');
-      }
-    } else if (directionality === OutcomeDirectionality.TARGET_RANGE) {
-      const min = rule?.target_min ?? 7;
-      const max = rule?.target_max ?? 9;
-      const wasInTarget = baselineVal >= min && baselineVal <= max;
-      const isInTarget = latestVal >= min && latestVal <= max;
-
+      const wasInTarget = baselineVal >= rule.target_min && baselineVal <= rule.target_max;
+      const isInTarget = latestVal >= rule.target_min && latestVal <= rule.target_max;
       if (!wasInTarget && isInTarget) {
         trendState = OutcomeTrendState.IMPROVING;
-        reasonCodes.push('ENTERED_CLINICAL_TARGET_RANGE');
+        reasonCodes.push('ENTERED_APPROVED_TARGET_RANGE');
       } else if (wasInTarget && !isInTarget) {
         trendState = OutcomeTrendState.WORSENING;
-        reasonCodes.push('EXITED_CLINICAL_TARGET_RANGE');
+        reasonCodes.push('EXITED_APPROVED_TARGET_RANGE');
       } else {
         trendState = OutcomeTrendState.STABLE;
-        reasonCodes.push(isInTarget ? 'MAINTAINED_IN_TARGET_RANGE' : 'REMAINS_OUTSIDE_TARGET_RANGE');
+        reasonCodes.push(isInTarget ? 'MAINTAINED_IN_APPROVED_TARGET_RANGE' : 'REMAINS_OUTSIDE_APPROVED_TARGET_RANGE');
       }
+      isSignificant = trendState !== OutcomeTrendState.STABLE;
+    } else if (
+      directionality === OutcomeDirectionality.LOWER_IS_BETTER ||
+      directionality === OutcomeDirectionality.HIGHER_IS_BETTER
+    ) {
+      if (rule.mcid === undefined) return unknownTrend(series, 'APPROVED_RULE_MISSING_MCID');
+      const mcid = rule.mcid;
+      isSignificant = Math.abs(changeAmount) >= mcid;
+      if (directionality === OutcomeDirectionality.LOWER_IS_BETTER) {
+        if (changeAmount <= -mcid) {
+          trendState = OutcomeTrendState.IMPROVING;
+          reasonCodes.push('SCORE_DECREASED_BEYOND_APPROVED_MCID');
+        } else if (changeAmount >= mcid) {
+          trendState = OutcomeTrendState.WORSENING;
+          reasonCodes.push('SCORE_INCREASED_BEYOND_APPROVED_MCID');
+        } else {
+          trendState = OutcomeTrendState.STABLE;
+          reasonCodes.push('SCORE_WITHIN_APPROVED_MCID_STABILITY_BAND');
+        }
+      } else {
+        if (changeAmount >= mcid) {
+          trendState = OutcomeTrendState.IMPROVING;
+          reasonCodes.push('SCORE_INCREASED_BEYOND_APPROVED_MCID');
+        } else if (changeAmount <= -mcid) {
+          trendState = OutcomeTrendState.WORSENING;
+          reasonCodes.push('SCORE_DECREASED_BEYOND_APPROVED_MCID');
+        } else {
+          trendState = OutcomeTrendState.STABLE;
+          reasonCodes.push('SCORE_WITHIN_APPROVED_MCID_STABILITY_BAND');
+        }
+      }
+    } else {
+      return unknownTrend(series, 'NON_DIRECTIONAL_MEASURE_REQUIRES_REVIEW');
     }
 
-    // Evaluate deterioration severity and safety thresholds (Sections 44, 60, 61, 144, 145)
     if (trendState === OutcomeTrendState.WORSENING) {
       deteriorationSeverity = 'REVIEW_REQUIRED';
-
-      if (rule?.critical_worsening_threshold && Math.abs(changeAmount) >= rule.critical_worsening_threshold) {
+      if (
+        rule.critical_worsening_threshold !== undefined &&
+        Math.abs(changeAmount) >= rule.critical_worsening_threshold
+      ) {
         deteriorationSeverity = 'URGENT_REVIEW';
-        reasonCodes.push('CRITICAL_WORSENING_THRESHOLD_EXCEEDED');
+        reasonCodes.push('APPROVED_CRITICAL_WORSENING_THRESHOLD_EXCEEDED');
       }
-
-      if (rule?.critical_safety_threshold) {
-        if (directionality === OutcomeDirectionality.LOWER_IS_BETTER && latestVal >= rule.critical_safety_threshold) {
+      if (rule.critical_safety_threshold !== undefined) {
+        const safetyBreached =
+          directionality === OutcomeDirectionality.LOWER_IS_BETTER
+            ? latestVal >= rule.critical_safety_threshold
+            : directionality === OutcomeDirectionality.HIGHER_IS_BETTER
+              ? latestVal <= rule.critical_safety_threshold
+              : false;
+        if (safetyBreached) {
           deteriorationSeverity = 'SAFETY_SIGNAL';
-          reasonCodes.push('CRITICAL_SAFETY_THRESHOLD_BREACHED');
-        } else if (directionality === OutcomeDirectionality.HIGHER_IS_BETTER && latestVal <= rule.critical_safety_threshold) {
-          deteriorationSeverity = 'SAFETY_SIGNAL';
-          reasonCodes.push('CRITICAL_SAFETY_THRESHOLD_BREACHED');
+          reasonCodes.push('APPROVED_CRITICAL_SAFETY_THRESHOLD_BREACHED');
         }
       }
     }
 
     const confidence: TrendConfidence = measurements.length >= 3 ? 'HIGH' : 'MODERATE';
-    const relativeChange =
-      baselineVal !== 0 ? Number((((latestVal - baselineVal) / Math.abs(baselineVal)) * 100).toFixed(1)) : undefined;
+    const relativeChange = baselineVal !== 0
+      ? Number((((latestVal - baselineVal) / Math.abs(baselineVal)) * 100).toFixed(1))
+      : undefined;
 
     return {
       measure_code: measureCode,
@@ -165,7 +178,7 @@ export class OutcomeTrendEngine {
       baseline_value: baselineVal,
       latest_value: latestVal,
       measurement_count: measurements.length,
-      requires_review: trendState === OutcomeTrendState.WORSENING,
+      requires_review: trendState === OutcomeTrendState.WORSENING || trendState === OutcomeTrendState.UNKNOWN,
       deterioration_severity: deteriorationSeverity,
       evaluated_at: new Date().toISOString()
     };
