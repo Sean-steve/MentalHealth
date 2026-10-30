@@ -5,7 +5,8 @@ import {
   ProfessionalMessageThread,
   ProfessionalThreadParticipant,
   ProfessionalMessage,
-  ProfessionalMessageAttachment
+  ProfessionalMessageAttachment,
+  ProfessionalMessageContent
 } from '../domain/entities.js';
 import {
   ProfessionalThreadStatus,
@@ -59,6 +60,15 @@ type MessageRow = {
   safety_monitoring_status: SafetyMonitoringStatus;
   safety_reference: string | null;
   idempotency_key: string;
+};
+
+type ProtectedContentRow = {
+  id: string;
+  content_reference: string;
+  thread_id: string;
+  created_by: string;
+  encrypted_content: string;
+  created_at: string;
 };
 
 type AttachmentRow = {
@@ -128,6 +138,15 @@ const toMessage = (row: MessageRow): ProfessionalMessage => ({
   safety_monitoring_status: row.safety_monitoring_status,
   safety_reference: row.safety_reference || undefined,
   idempotency_key: row.idempotency_key
+});
+
+const toProtectedContent = (row: ProtectedContentRow): ProfessionalMessageContent => ({
+  id: row.id,
+  content_reference: row.content_reference,
+  thread_id: row.thread_id,
+  created_by: row.created_by,
+  encrypted_content: row.encrypted_content,
+  created_at: row.created_at
 });
 
 const toAttachment = (row: AttachmentRow): ProfessionalMessageAttachment => ({
@@ -348,6 +367,28 @@ export class PgProfessionalMessagingRepository implements IProfessionalMessaging
     return res.rows.map(toMessage);
   }
 
+  public async saveProtectedContent(content: ProfessionalMessageContent, tx?: DatabaseClient): Promise<void> {
+    const sql =
+      'INSERT INTO professional_message_contents (id, content_reference, thread_id, created_by, encrypted_content, created_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (content_reference) DO NOTHING';
+    const params = [
+      content.id, content.content_reference, content.thread_id,
+      content.created_by, content.encrypted_content, content.created_at
+    ];
+    if (tx) {
+      await this.requireTransactionClient(tx).query(sql, params);
+      return;
+    }
+    await getPool().query(sql, params);
+  }
+
+  public async findProtectedContentByReference(contentReference: string): Promise<ProfessionalMessageContent | null> {
+    const res = await getPool().query<ProtectedContentRow>(
+      'SELECT * FROM professional_message_contents WHERE content_reference = $1',
+      [contentReference]
+    );
+    return res.rows[0] ? toProtectedContent(res.rows[0]) : null;
+  }
+
   public async saveAttachment(attachment: ProfessionalMessageAttachment): Promise<void> {
     await getPool().query(
       'INSERT INTO professional_message_attachments (id, thread_id, message_id, evidence_reference, mime_type, size_bytes, scan_status, data_classification, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO UPDATE SET scan_status=EXCLUDED.scan_status, data_classification=EXCLUDED.data_classification',
@@ -370,6 +411,7 @@ export class PgProfessionalMessagingRepository implements IProfessionalMessaging
   public async clear(): Promise<void> {
     const pool = getPool();
     await pool.query('DELETE FROM professional_message_attachments');
+    await pool.query('DELETE FROM professional_message_contents');
     await pool.query('DELETE FROM professional_messages');
     await pool.query('DELETE FROM professional_thread_participants');
     await pool.query('DELETE FROM professional_message_threads');
