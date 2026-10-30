@@ -54,6 +54,7 @@ import {
 } from '../mindos/care_plans/index.js';
 import { reconcileSprint22RelationshipClosure } from '../mindos/sprint22/index.js';
 import { AuthorizationError, DomainInvariantError } from '../mindos/platform/errors/index.js';
+import { EventBus } from '../mindos/platform/events/index.js';
 
 const userId = 'user-s22-0001';
 const professionalId = 'prof-s22-0001';
@@ -812,6 +813,47 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
     } finally {
       repository.savePlanReviewTransactional = originalFinalize;
     }
+  });
+
+  it('emits exactly one Care Plan review completion event under concurrent finalization', async () => {
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'Concurrent review finalization plan',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+    await CarePlanService.activatePlan(plan.id, professionalId);
+
+    const review = await CarePlanReviewService.scheduleReview({
+      planId: plan.id,
+      reviewType: CarePlanReviewType.SCHEDULED,
+      scheduledFor: new Date().toISOString(),
+      reviewerId: professionalId
+    });
+
+    EventBus.clearOutbox();
+    const request = {
+      reviewId: review.id,
+      outcome: CarePlanReviewOutcome.CONTINUE,
+      goalReviews: [],
+      reviewerId: professionalId
+    };
+
+    const [first, second] = await Promise.all([
+      CarePlanReviewService.executeReview(request),
+      CarePlanReviewService.executeReview(request)
+    ]);
+
+    assert.ok(first.completed_at);
+    assert.equal(second.completed_at, first.completed_at);
+    const completionEvents = EventBus.getOutbox().filter(
+      record =>
+        record.event_type === 'care.plan_review_completed' &&
+        JSON.parse(record.payload).aggregate_id === review.id
+    );
+    assert.equal(completionEvents.length, 1);
   });
 
   it('makes completed Care Plan review retries idempotent', async () => {
