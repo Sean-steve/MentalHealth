@@ -1,7 +1,9 @@
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
+import { UnitOfWork } from '../../platform/database/index.js';
 import { EventBus } from '../../platform/events/index.js';
 import { AuditService } from '../../platform/audit/index.js';
 import { DataClassification } from '../../platform/shared/data_classification.js';
+import { CorrelationManager } from '../../platform/shared/correlation.js';
 import { validateStateTransition } from '../../platform/shared/state_machines.js';
 import { AuthorizationError, DomainInvariantError, NotFoundError } from '../../platform/errors/index.js';
 import {
@@ -24,6 +26,9 @@ import {
   ClinicalTaskEvidenceType
 } from '../domain/types.js';
 import { IClinicalTaskRepository } from '../repositories/interfaces.js';
+import { CarePlanService } from '../../care_plans/plans/care_plan_service.js';
+import { CareGoalService } from '../../care_plans/goals/care_goal_service.js';
+import { CarePlanState } from '../../care_plans/domain/types.js';
 
 const OWNER_DOMAIN_BY_TASK: Partial<Record<ClinicalTaskType, string>> = {
   [ClinicalTaskType.ASSESSMENT]: 'assessments',
@@ -75,6 +80,93 @@ export class ClinicalTaskService {
     if (!ClinicalTaskService.repository) throw new DomainInvariantError('ClinicalTaskRepository not initialized.');
   }
 
+  private static async persistTaskStateMutation(
+    task: ClinicalTask,
+    expectedState: ClinicalTaskState,
+    event?: { type: string; payload: Record<string, unknown> }
+  ): Promise<void> {
+    if (ClinicalTaskService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await ClinicalTaskService.repository.saveTaskWithExpectedState(
+          task,
+          expectedState,
+          uow.getClient()
+        );
+        if (event) {
+          uow.registerOutboxEvent(
+            event.type,
+            'clinical_tasks',
+            task.id,
+            event.payload,
+            {
+              correlation_id: CorrelationManager.getCorrelationId(),
+              data_classification: DataClassification.CLINICAL_RECORD,
+              producer_domain: 'clinical_tasks'
+            }
+          );
+        }
+      }, 'SERIALIZABLE');
+      return;
+    }
+
+    await ClinicalTaskService.repository.saveTaskWithExpectedState(
+      task,
+      expectedState
+    );
+    if (event) {
+      EventBus.enqueue(
+        event.type,
+        'clinical_tasks',
+        task.id,
+        DataClassification.CLINICAL_RECORD,
+        event.payload
+      );
+    }
+  }
+
+  private static async persistTaskCompletion(
+    task: ClinicalTask,
+    evidence: ClinicalTaskEvidence,
+    expectedState: ClinicalTaskState,
+    event: { type: string; payload: Record<string, unknown> }
+  ): Promise<void> {
+    if (ClinicalTaskService.repository.requiresUnitOfWork()) {
+      await UnitOfWork.run(async uow => {
+        await ClinicalTaskService.repository.completeTaskAggregate(
+          task,
+          evidence,
+          expectedState,
+          uow.getClient()
+        );
+        uow.registerOutboxEvent(
+          event.type,
+          'clinical_tasks',
+          task.id,
+          event.payload,
+          {
+            correlation_id: CorrelationManager.getCorrelationId(),
+            data_classification: DataClassification.CLINICAL_RECORD,
+            producer_domain: 'clinical_tasks'
+          }
+        );
+      }, 'SERIALIZABLE');
+      return;
+    }
+
+    await ClinicalTaskService.repository.completeTaskAggregate(
+      task,
+      evidence,
+      expectedState
+    );
+    EventBus.enqueue(
+      event.type,
+      'clinical_tasks',
+      task.id,
+      DataClassification.CLINICAL_RECORD,
+      event.payload
+    );
+  }
+
   public static async createTask(params: CreateClinicalTaskParams): Promise<ClinicalTask> {
     ClinicalTaskService.assertRepository();
     if (params.idempotency_key) {
@@ -91,6 +183,9 @@ export class ClinicalTaskService {
     });
     const relationship = await CareRelationshipService.getRelationship(params.care_relationship_id);
     if (!relationship) throw new NotFoundError(`CareRelationship ${params.care_relationship_id} not found.`);
+    if (relationship.status !== CareRelationshipState.ACTIVE) {
+      throw new DomainInvariantError('Clinical Task creation requires an active care relationship.');
+    }
 
     if (
       params.assigned_to_type === ClinicalTaskAssigneeType.USER &&
@@ -117,6 +212,36 @@ export class ClinicalTaskService {
       !String(params.assigned_to_id || '').trim()
     ) {
       throw new DomainInvariantError('Care-team-role task requires an explicit role identifier.');
+    }
+
+    let linkedPlanCurrentVersionId: string | undefined;
+    if (params.care_plan_id) {
+      const plan = await CarePlanService.getPlan(params.care_plan_id);
+      if (!plan) throw new NotFoundError(`CarePlan ${params.care_plan_id} not found.`);
+      if (plan.care_relationship_id !== relationship.id) {
+        throw new AuthorizationError(
+          'Clinical Task Care Plan does not belong to the requested care relationship.',
+          { errorCode: 'AUTHZ_003' }
+        );
+      }
+      if (plan.status !== CarePlanState.ACTIVE) {
+        throw new DomainInvariantError('Clinical Task linked Care Plan must be ACTIVE.');
+      }
+      linkedPlanCurrentVersionId = plan.current_version_id;
+    }
+
+    if (params.care_goal_id) {
+      if (!params.care_plan_id || !linkedPlanCurrentVersionId) {
+        throw new DomainInvariantError('Clinical Task care_goal_id requires care_plan_id.');
+      }
+      const goal = await CareGoalService.getGoal(params.care_goal_id);
+      if (!goal) throw new NotFoundError(`CareGoal ${params.care_goal_id} not found.`);
+      if (goal.care_plan_version_id !== linkedPlanCurrentVersionId) {
+        throw new AuthorizationError(
+          'Clinical Task Care Goal does not belong to the current Care Plan version.',
+          { errorCode: 'AUTHZ_003' }
+        );
+      }
     }
 
     const ownerDomain = params.owner_domain || OWNER_DOMAIN_BY_TASK[params.task_type];
@@ -161,20 +286,122 @@ export class ClinicalTaskService {
       idempotency_key: params.idempotency_key,
       updated_at: now
     };
-    await ClinicalTaskService.repository.saveTask(task);
 
-    for (const dependencyId of params.dependency_task_ids || []) {
-      await ClinicalTaskService.addDependency(task.id, dependencyId);
+    const dependencies: ClinicalTaskDependency[] = [];
+    const uniqueDependencyIds = [...new Set(params.dependency_task_ids || [])];
+    let ready = true;
+    for (const dependencyId of uniqueDependencyIds) {
+      if (dependencyId === task.id) {
+        throw new DomainInvariantError('Clinical task cannot depend on itself.');
+      }
+      const upstream = await ClinicalTaskService.getTask(dependencyId);
+      if (upstream.care_relationship_id !== task.care_relationship_id) {
+        throw new AuthorizationError(
+          'Clinical Task dependency must belong to the same care relationship.',
+          { errorCode: 'AUTHZ_003' }
+        );
+      }
+      if (
+        task.care_plan_id &&
+        upstream.care_plan_id &&
+        upstream.care_plan_id !== task.care_plan_id
+      ) {
+        throw new AuthorizationError(
+          'Clinical Task dependency must belong to the same Care Plan.',
+          { errorCode: 'AUTHZ_003' }
+        );
+      }
+      if (upstream.status !== ClinicalTaskState.COMPLETED) ready = false;
+      dependencies.push({
+        id: generateUUIDv7(),
+        task_id: task.id,
+        depends_on_task_id: upstream.id,
+        dependency_type: ClinicalTaskDependencyType.COMPLETION_REQUIRED,
+        created_at: now
+      });
     }
-    await ClinicalTaskService.refreshReadiness(task.id, params.creator_professional_id);
-    const saved = await ClinicalTaskService.getTask(task.id);
 
-    EventBus.enqueue('care.task_created', 'clinical_tasks', task.id, DataClassification.CLINICAL_RECORD, {
+    const initialTarget = ready ? ClinicalTaskState.READY : ClinicalTaskState.BLOCKED;
+    validateStateTransition(
+      'ClinicalTaskState',
+      ClinicalTaskState.PENDING,
+      initialTarget,
+      task.id,
+      params.creator_professional_id
+    );
+    task.status = initialTarget;
+
+    const createdPayload = {
       task_id: task.id,
       subject_user_id: task.subject_user_id,
       relationship_id: task.care_relationship_id,
       task_type: task.task_type
-    });
+    };
+    let result: { created: boolean; task_id: string };
+
+    if (ClinicalTaskService.repository.requiresUnitOfWork()) {
+      result = await UnitOfWork.run(async uow => {
+        const created = await ClinicalTaskService.repository.createTaskAggregate(
+          task,
+          dependencies,
+          uow.getClient()
+        );
+        if (created.created) {
+          uow.registerOutboxEvent(
+            'care.task_created',
+            'clinical_tasks',
+            task.id,
+            createdPayload,
+            {
+              correlation_id: CorrelationManager.getCorrelationId(),
+              data_classification: DataClassification.CLINICAL_RECORD,
+              producer_domain: 'clinical_tasks'
+            }
+          );
+          if (initialTarget === ClinicalTaskState.READY) {
+            uow.registerOutboxEvent(
+              'care.task_ready',
+              'clinical_tasks',
+              task.id,
+              { task_id: task.id },
+              {
+                correlation_id: CorrelationManager.getCorrelationId(),
+                data_classification: DataClassification.CLINICAL_RECORD,
+                producer_domain: 'clinical_tasks'
+              }
+            );
+          }
+        }
+        return created;
+      }, 'SERIALIZABLE');
+    } else {
+      result = await ClinicalTaskService.repository.createTaskAggregate(
+        task,
+        dependencies
+      );
+      if (result.created) {
+        EventBus.enqueue(
+          'care.task_created',
+          'clinical_tasks',
+          task.id,
+          DataClassification.CLINICAL_RECORD,
+          createdPayload
+        );
+        if (initialTarget === ClinicalTaskState.READY) {
+          EventBus.enqueue(
+            'care.task_ready',
+            'clinical_tasks',
+            task.id,
+            DataClassification.CLINICAL_RECORD,
+            { task_id: task.id }
+          );
+        }
+      }
+    }
+
+    const saved = await ClinicalTaskService.getTask(result.task_id);
+    if (!result.created) return saved;
+
     AuditService.record({
       actor_type: 'STAFF', actor_id: params.creator_professional_id, action: 'CLINICAL_TASK.CREATED',
       resource_type: 'clinical_task', resource_id: task.id, purpose: 'Care Coordination',
@@ -183,7 +410,6 @@ export class ClinicalTaskService {
     });
     return saved;
   }
-
   public static async getTask(taskId: string): Promise<ClinicalTask> {
     ClinicalTaskService.assertRepository();
     const task = await ClinicalTaskService.repository.findTaskById(taskId);
@@ -293,12 +519,17 @@ export class ClinicalTaskService {
     }
     const target = ready ? ClinicalTaskState.READY : ClinicalTaskState.BLOCKED;
     if (task.status !== target) {
+      const expectedState = task.status;
       validateStateTransition('ClinicalTaskState', task.status, target, task.id, actorId);
-      task.status = target; task.updated_at = new Date().toISOString();
-      await ClinicalTaskService.repository.saveTask(task);
-      if (target === ClinicalTaskState.READY) {
-        EventBus.enqueue('care.task_ready', 'clinical_tasks', task.id, DataClassification.CLINICAL_RECORD, { task_id: task.id });
-      }
+      task.status = target;
+      task.updated_at = new Date().toISOString();
+      await ClinicalTaskService.persistTaskStateMutation(
+        task,
+        expectedState,
+        target === ClinicalTaskState.READY
+          ? { type:'care.task_ready', payload:{task_id:task.id} }
+          : undefined
+      );
     }
     return task;
   }
@@ -383,9 +614,13 @@ export class ClinicalTaskService {
         ? ClinicalTaskAssigneeType.PROFESSIONAL
         : task.assigned_to_type);
     await ClinicalTaskService.assertActorMatchesAssignment(task, actorId, effectiveActorType);
+    const expectedState = task.status;
     validateStateTransition('ClinicalTaskState', task.status, ClinicalTaskState.IN_PROGRESS, task.id, actorId);
-    task.status = ClinicalTaskState.IN_PROGRESS; task.started_at = new Date().toISOString(); task.updated_at = task.started_at;
-    await ClinicalTaskService.repository.saveTask(task); return task;
+    task.status = ClinicalTaskState.IN_PROGRESS;
+    task.started_at = new Date().toISOString();
+    task.updated_at = task.started_at;
+    await ClinicalTaskService.persistTaskStateMutation(task, expectedState);
+    return task;
   }
 
   public static async completeTask(params: CompleteClinicalTaskParams): Promise<ClinicalTask> {
@@ -422,18 +657,29 @@ export class ClinicalTaskService {
     if (![ClinicalTaskState.READY, ClinicalTaskState.IN_PROGRESS, ClinicalTaskState.OVERDUE].includes(task.status)) {
       throw new DomainInvariantError(`Clinical task ${task.id} cannot complete from ${task.status}.`);
     }
+    const expectedState = task.status;
     validateStateTransition('ClinicalTaskState', task.status, ClinicalTaskState.COMPLETED, task.id, params.actor_id);
     const now = new Date().toISOString();
-    task.status = ClinicalTaskState.COMPLETED; task.completed_at = now; task.updated_at = now;
-    await ClinicalTaskService.repository.saveTask(task);
+    task.status = ClinicalTaskState.COMPLETED;
+    task.completed_at = now;
+    task.updated_at = now;
     const evidence: ClinicalTaskEvidence = {
       id: generateUUIDv7(), task_id: task.id, evidence_type: params.evidence_type,
       evidence_reference: params.evidence_reference, recorded_by: params.actor_id, recorded_at: now
     };
-    await ClinicalTaskService.repository.saveEvidence(evidence);
-    EventBus.enqueue('care.task_completed', 'clinical_tasks', task.id, DataClassification.CLINICAL_RECORD, {
-      task_id: task.id, subject_user_id: task.subject_user_id, completion_source: params.completion_source || params.actor_type
-    });
+    await ClinicalTaskService.persistTaskCompletion(
+      task,
+      evidence,
+      expectedState,
+      {
+        type:'care.task_completed',
+        payload:{
+          task_id:task.id,
+          subject_user_id:task.subject_user_id,
+          completion_source:params.completion_source || params.actor_type
+        }
+      }
+    );
     const dependents = await ClinicalTaskService.repository.findDependents(task.id);
     for (const dep of dependents) await ClinicalTaskService.refreshReadiness(dep.task_id, 'system');
     return task;
@@ -445,10 +691,15 @@ export class ClinicalTaskService {
       relationshipId: task.care_relationship_id, professionalId: actorProfessionalId,
       dataDomain: DataDomain.CARE_PLANS, action: ActionPermission.WRITE, purpose: 'CARE_DELIVERY'
     });
+    const expectedState = task.status;
     validateStateTransition('ClinicalTaskState', task.status, ClinicalTaskState.CANCELLED, task.id, actorProfessionalId);
-    task.status = ClinicalTaskState.CANCELLED; task.updated_at = new Date().toISOString();
-    await ClinicalTaskService.repository.saveTask(task);
-    EventBus.enqueue('care.task_cancelled', 'clinical_tasks', task.id, DataClassification.CLINICAL_RECORD, { task_id: task.id });
+    task.status = ClinicalTaskState.CANCELLED;
+    task.updated_at = new Date().toISOString();
+    await ClinicalTaskService.persistTaskStateMutation(
+      task,
+      expectedState,
+      {type:'care.task_cancelled',payload:{task_id:task.id}}
+    );
     return task;
   }
 
@@ -475,20 +726,19 @@ export class ClinicalTaskService {
       validateStateTransition('ClinicalTaskState', task.status, ClinicalTaskState.CANCELLED, task.id, 'system');
       task.status = ClinicalTaskState.CANCELLED;
       task.updated_at = new Date().toISOString();
-      await ClinicalTaskService.repository.saveTask(task);
-      cancelled.push(task.id);
-
-      EventBus.enqueue(
-        'care.task_cancelled',
-        'clinical_tasks',
-        task.id,
-        DataClassification.CLINICAL_RECORD,
+      await ClinicalTaskService.persistTaskStateMutation(
+        task,
+        priorStatus,
         {
-          task_id: task.id,
-          relationship_id: relationshipId,
-          reason: 'CARE_RELATIONSHIP_ENDED'
+          type:'care.task_cancelled',
+          payload:{
+            task_id:task.id,
+            relationship_id:relationshipId,
+            reason:'CARE_RELATIONSHIP_ENDED'
+          }
         }
       );
+      cancelled.push(task.id);
       AuditService.record({
         actor_type: 'SYSTEM',
         actor_id: 'sprint22-reconciliation',
@@ -516,10 +766,16 @@ export class ClinicalTaskService {
       const current = await ClinicalTaskService.repository.findTaskById(task.id);
       if (current?.due_at && Date.parse(current.due_at) < now.getTime() &&
           [ClinicalTaskState.READY, ClinicalTaskState.IN_PROGRESS].includes(current.status)) {
+        const expectedState = current.status;
         validateStateTransition('ClinicalTaskState', current.status, ClinicalTaskState.OVERDUE, current.id, 'system');
-        current.status = ClinicalTaskState.OVERDUE; current.updated_at = now.toISOString();
-        await ClinicalTaskService.repository.saveTask(current); overdue.push(current.id);
-        EventBus.enqueue('care.task_overdue', 'clinical_tasks', current.id, DataClassification.CLINICAL_RECORD, { task_id: current.id });
+        current.status = ClinicalTaskState.OVERDUE;
+        current.updated_at = now.toISOString();
+        await ClinicalTaskService.persistTaskStateMutation(
+          current,
+          expectedState,
+          {type:'care.task_overdue',payload:{task_id:current.id}}
+        );
+        overdue.push(current.id);
       }
     }
     return { overdue, readied };
