@@ -310,6 +310,77 @@ export class PgCarePlanRepository implements ICarePlanRepository {
     }
   }
 
+  public async savePlanAndVersionAggregate(
+    plan: CarePlan,
+    version: CarePlanVersion,
+    expectedPlanVersion: number,
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+
+    await client.query(
+      'UPDATE care_plan_versions SET status=$1, approved_by=$2, acknowledged_by_user=$3, acknowledged_at=$4, effective_until=$5 WHERE id=$6 AND care_plan_id=$7',
+      [
+        version.status,
+        version.approved_by || null,
+        Boolean(version.acknowledged_by_user),
+        version.acknowledged_at || null,
+        version.effective_until || null,
+        version.id,
+        plan.id
+      ]
+    );
+
+    const updated = await client.query<{ id: string }>(
+      'UPDATE care_plans SET status=$1, current_version_id=$2, target_end_at=$3, completed_at=$4, terminated_at=$5, updated_at=$6, version=$7 WHERE id=$8 AND version=$9 RETURNING id',
+      [
+        plan.status,
+        plan.current_version_id,
+        plan.target_end_at || null,
+        plan.completed_at || null,
+        plan.terminated_at || null,
+        plan.updated_at,
+        plan.version,
+        plan.id,
+        expectedPlanVersion
+      ]
+    );
+    if (updated.length !== 1) {
+      throw new ConcurrencyError(
+        `Care Plan ${plan.id} was concurrently modified during lifecycle update.`,
+        { planId: plan.id, expectedVersion: expectedPlanVersion }
+      );
+    }
+  }
+
+  public async savePlanWithExpectedVersion(
+    plan: CarePlan,
+    expectedPlanVersion: number,
+    tx?: DatabaseClient
+  ): Promise<void> {
+    const client = this.requireTransactionClient(tx);
+    const updated = await client.query<{ id: string }>(
+      'UPDATE care_plans SET status=$1, current_version_id=$2, target_end_at=$3, completed_at=$4, terminated_at=$5, updated_at=$6, version=$7 WHERE id=$8 AND version=$9 RETURNING id',
+      [
+        plan.status,
+        plan.current_version_id,
+        plan.target_end_at || null,
+        plan.completed_at || null,
+        plan.terminated_at || null,
+        plan.updated_at,
+        plan.version,
+        plan.id,
+        expectedPlanVersion
+      ]
+    );
+    if (updated.length !== 1) {
+      throw new ConcurrencyError(
+        `Care Plan ${plan.id} was concurrently modified during lifecycle update.`,
+        { planId: plan.id, expectedVersion: expectedPlanVersion }
+      );
+    }
+  }
+
   public async savePlan(plan: CarePlan): Promise<void> {
     await getPool().query(
       'INSERT INTO care_plans (id, subject_user_id, care_relationship_id, primary_professional_id, care_team_id, plan_type, status, current_version_id, started_at, target_end_at, completed_at, terminated_at, created_at, updated_at, version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, current_version_id=EXCLUDED.current_version_id, target_end_at=EXCLUDED.target_end_at, completed_at=EXCLUDED.completed_at, terminated_at=EXCLUDED.terminated_at, updated_at=EXCLUDED.updated_at, version=EXCLUDED.version',
