@@ -54,7 +54,7 @@ export class CarePlanReviewService {
     return review;
   }
 
-  private static async persistCompletedReview(review:CarePlanReview):Promise<void>{
+  private static async persistCompletedReview(review:CarePlanReview):Promise<boolean>{
     const eventPayload={
       review_id:review.id,
       plan_id:review.care_plan_id,
@@ -63,34 +63,40 @@ export class CarePlanReviewService {
     };
 
     if(CarePlanReviewService.repository.requiresUnitOfWork()){
+      let finalized=false;
       await UnitOfWork.run(async uow=>{
-        await CarePlanReviewService.repository.savePlanReviewTransactional(
+        finalized=await CarePlanReviewService.repository.completePlanReviewTransactional(
           review,
           uow.getClient()
         );
-        uow.registerOutboxEvent(
-          'care.plan_review_completed',
-          'care_plans',
-          review.id,
-          eventPayload,
-          {
-            correlation_id:CorrelationManager.getCorrelationId(),
-            data_classification:DataClassification.CLINICAL_RECORD,
-            producer_domain:'care_plans'
-          }
-        );
+        if(finalized){
+          uow.registerOutboxEvent(
+            'care.plan_review_completed',
+            'care_plans',
+            review.id,
+            eventPayload,
+            {
+              correlation_id:CorrelationManager.getCorrelationId(),
+              data_classification:DataClassification.CLINICAL_RECORD,
+              producer_domain:'care_plans'
+            }
+          );
+        }
       },'SERIALIZABLE');
-      return;
+      return finalized;
     }
 
-    await CarePlanReviewService.repository.savePlanReviewTransactional(review);
-    EventBus.enqueue(
-      'care.plan_review_completed',
-      'care_plans',
-      review.id,
-      DataClassification.CLINICAL_RECORD,
-      eventPayload
-    );
+    const finalized=await CarePlanReviewService.repository.completePlanReviewTransactional(review);
+    if(finalized){
+      EventBus.enqueue(
+        'care.plan_review_completed',
+        'care_plans',
+        review.id,
+        DataClassification.CLINICAL_RECORD,
+        eventPayload
+      );
+    }
+    return finalized;
   }
 
   public static async executeReview(params:ExecuteReviewParams):Promise<CarePlanReview>{
@@ -233,7 +239,14 @@ export class CarePlanReviewService {
     }
 
     review.completed_at=new Date().toISOString();
-    await CarePlanReviewService.persistCompletedReview(review);
+    const finalized=await CarePlanReviewService.persistCompletedReview(review);
+    if(!finalized){
+      const completed=await CarePlanReviewService.repository.findPlanReviewById(review.id);
+      if(completed?.completed_at) return completed;
+      throw new DomainInvariantError(
+        'Care Plan review completion lost its compare-and-set race without a completed record.'
+      );
+    }
 
     AuditService.record({
       actor_type:'STAFF',actor_id:params.reviewerId,action:'CARE_PLAN.REVIEW_COMPLETED',
