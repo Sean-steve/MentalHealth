@@ -358,6 +358,7 @@ export class ClinicalTaskService {
 
     for (const task of await ClinicalTaskService.repository.findTasksByRelationshipId(relationshipId)) {
       if (terminal.has(task.status)) continue;
+      const priorStatus = task.status;
       validateStateTransition('ClinicalTaskState', task.status, ClinicalTaskState.CANCELLED, task.id, 'system');
       task.status = ClinicalTaskState.CANCELLED;
       task.updated_at = new Date().toISOString();
@@ -384,7 +385,7 @@ export class ClinicalTaskService {
         purpose: 'Care Relationship Closure',
         authorization_basis: { relationshipId },
         result: 'ALLOWED',
-        metadata: { priorStatus: task.status }
+        metadata: { priorStatus }
       });
     }
 
