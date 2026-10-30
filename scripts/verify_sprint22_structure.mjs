@@ -41,6 +41,7 @@ for(const p of required) if(!fs.existsSync(path.join(root,p))) failures.push(`mi
 
 if(failures.length===0){
   const plan=read('mindos/care_plans/plans/care_plan_service.ts');
+  const carePlanApi=read('mindos/care_plans/api/routes.ts');
   const task=read('mindos/clinical_tasks/application/clinical_task_service.ts');
   const scheduler=read('mindos/clinical_tasks/application/clinical_task_scheduler.ts');
   const taskPorts=read('mindos/clinical_tasks/application/ports.ts');
@@ -49,6 +50,7 @@ if(failures.length===0){
   const taskApi=read('mindos/clinical_tasks/api/routes.ts');
   const progress=read('mindos/care_plans/progress/care_plan_progress_service.ts');
   const messaging=read('mindos/professional_messaging/application/professional_messaging_service.ts');
+  const messagingApi=read('mindos/professional_messaging/api/routes.ts');
   const messagingSafety=read('mindos/professional_messaging/adapters/safety_adapter.ts');
   const attachmentPolicy=read('mindos/professional_messaging/adapters/attachment_policy.ts');
   const migration=read('mindos/platform/database/migrations/020_canonical_care_plans_tasks_messaging.sql');
@@ -63,10 +65,19 @@ if(failures.length===0){
   ].join('\n');
 
   if(!plan.includes('createPlanWithInitialVersion')) failures.push('care plan creation is not atomic');
+  if(!carePlanApi.includes('normalizeProfessionalGoals')||
+     !carePlanApi.includes('normalizeProfessionalInterventions')||
+     !carePlanApi.includes('generateUUIDv7')) failures.push('Care Plan API does not normalize client domain records');
+  if(!carePlanApi.includes('Invalid plan_type')||
+     !carePlanApi.includes('Invalid review_type')||
+     !carePlanApi.includes('Invalid Care Plan review outcome')) failures.push('Care Plan API enum validation incomplete');
   if(/reviewFrequencyDays\s*\?\?\s*30|reviewFrequencyDays\s*\|\|\s*30/.test(plan)) failures.push('care plan invents a 30-day review cadence');
   if(!task.includes('trusted system actor')) failures.push('owner-domain completion is not restricted to trusted system actors');
   if(!task.includes('User-assigned clinical task must target the subject of the care relationship')) failures.push('cross-user task creation is not denied');
   if(!taskApi.includes('SYSTEM-owned clinical tasks cannot be created through the external HTTP API')) failures.push('external API can create SYSTEM-owned tasks');
+  if(!taskApi.includes('Invalid task_type')||
+     !taskApi.includes('Invalid assigned_to_type')||
+     !taskApi.includes('Invalid task priority')) failures.push('task API runtime enum validation incomplete');
   if(taskApi.includes('completion_authority: completion_authority')||taskApi.includes('owner_domain,')) failures.push('external task creation API exposes authoritative completion fields');
   if(!task.includes('assertActorMatchesAssignment')||
      !task.includes('CareTeamService.getMembership')||
@@ -91,6 +102,10 @@ if(failures.length===0){
   }
   if(!progress.includes('ClinicalTaskService.listTasksForPlan')) failures.push('care plan progress is not linked to real clinical tasks');
   if(!messaging.includes('NOT_CONFIGURED')) failures.push('messaging safety-unconfigured state is not explicit');
+  if(messagingApi.includes('response_expectation_reference')) failures.push('messaging API still accepts client-defined response expectations');
+  if(!messagingApi.includes('Invalid thread_type')||
+     !messagingApi.includes('Invalid message_type')) failures.push('messaging runtime enum validation incomplete');
+  if(!messaging.includes('Reply target must belong to the same care thread')) failures.push('cross-thread reply integrity guard missing');
   if(!messagingSafety.includes('ProtectedMessageSafetyScannerPort')||!messagingSafety.includes('SafetySignalForwarderPort')) failures.push('privacy-preserving messaging Safety bridge incomplete');
   if(!attachmentPolicy.includes('DenyByDefaultMessagingAttachmentPolicy')||!messaging.includes('attachmentPolicyPort.validate')) failures.push('attachment policy is not deny-by-default');
   for (const [name, source] of [['migration', migration], ['messaging', messaging]]) {
@@ -116,6 +131,7 @@ if(failures.length===0){
   if(!tests.includes('reconciles plan, unfinished tasks and messaging')) failures.push('relationship-closure acceptance regression missing');
   if(!tests.includes('denies task action immediately after relationship termination')) failures.push('termination race regression missing');
   if(!tests.includes('rejects cross-user task assignment outside the care relationship subject')) failures.push('cross-user task assignment denial regression missing');
+  if(!tests.includes('rejects a reply reference that points into another care thread')) failures.push('cross-thread reply regression missing');
   if(!tests.includes('generates only one idempotent next occurrence')) failures.push('recurrence acceptance regression missing');
   if(!tests.includes('deduplicates policy-driven task reminders')) failures.push('reminder deduplication regression missing');
   if(!tests.includes('fails closed for care-message attachments')) failures.push('attachment fail-closed regression missing');
