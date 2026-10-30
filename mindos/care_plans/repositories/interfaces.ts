@@ -14,8 +14,32 @@ import {
   AssessmentAssignment
 } from '../domain/entities.js';
 import { CarePlanState, CareGoalStatus } from '../domain/types.js';
+import { DatabaseClient } from '../../platform/database/index.js';
+
+export interface CarePlanVersionReplacement {
+  plan: CarePlan;
+  current_version: CarePlanVersion;
+  next_version: CarePlanVersion;
+  goals: CareGoal[];
+  interventions: CareIntervention[];
+  expected_plan_version: number;
+}
 
 export interface ICarePlanRepository {
+  requiresUnitOfWork(): boolean;
+
+  createPlanAggregate(
+    plan: CarePlan,
+    version: CarePlanVersion,
+    goals: CareGoal[],
+    interventions: CareIntervention[],
+    tx?: DatabaseClient
+  ): Promise<void>;
+
+  replaceActiveVersionAggregate(
+    replacement: CarePlanVersionReplacement,
+    tx?: DatabaseClient
+  ): Promise<void>;
   createPlanWithInitialVersion(plan: CarePlan, version: CarePlanVersion): Promise<void>;
   savePlan(plan: CarePlan): Promise<void>;
   findPlanById(id: string): Promise<CarePlan | null>;
