@@ -265,6 +265,9 @@ describe('MindOS Sprint 20: Canonical Availability & Appointment Scheduling Plat
   });
 
   beforeEach(() => {
+    AvailabilitySlotService.setClockForTesting(
+      () => new Date('2026-10-01T00:00:00.000Z')
+    );
     AppointmentService.resetForTesting();
     AppointmentBookingService.setSafetyRiskChecker(async () => 'SAFE');
   });
