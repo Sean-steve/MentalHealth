@@ -91,6 +91,7 @@ export interface ICarePlanRepository {
   findInterventionById(id: string): Promise<CareIntervention | null>;
   findInterventionsByVersionId(versionId: string): Promise<CareIntervention[]>;
 
+  beginPlanReviewExecution(review: CarePlanReview): Promise<boolean>;
   savePlanReviewTransactional(review: CarePlanReview, tx?: DatabaseClient): Promise<void>;
   savePlanReview(review: CarePlanReview): Promise<void>;
   findPlanReviewById(id: string): Promise<CarePlanReview | null>;
