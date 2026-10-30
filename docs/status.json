@@ -28,7 +28,7 @@
       "number": "22",
       "title": "Care Plans, Clinical Tasks & Professional Messaging",
       "status": "PARTIAL",
-      "note": "Care Plans, PostgreSQL repositories and API/runtime wiring are present. Clinical Tasks now include dependency safety, authoritative completion, governed recurrence, reminder deduplication, overdue reconciliation, relationship-closure cancellation and assignment revalidation. Professional Messaging includes relationship-scoped access, idempotent delivery, notification integration, privacy-preserving Safety bridge, deny-by-default attachments and closure reconciliation. Structural CI is enforced; full Sprint 1–22 executable regression remains blocked by the incomplete foundation import in GitHub."
+      "note": "Care Plans, Clinical Tasks and Professional Messaging are runtime-wired with PostgreSQL repositories and migration 020. Core mutations use UnitOfWork + transactional outbox; goal reviews and assignments now follow the same durability rule. Care Goal/Intervention creation is relationship-scoped at the service boundary. Care Plan review execution now uses an atomic intent claim plus a retry-safe saga with preallocated version IDs and transactional completion events. Recurrence, reminder dedupe, relationship-closure reconciliation, notifications, protected-content Safety forwarding and deny-by-default attachments are implemented. Remaining certification blockers: no approved Professional Messaging protected-content classifier is configured, and the GitHub repo still lacks the full Sprint 1–21 foundation needed for dependency-backed Sprint 1–22 regression, PostgreSQL migration/E2E/security/privacy/build certification."
     },
     {
       "number": "23",
@@ -44,6 +44,21 @@
     }
   ],
   "timeline": [
+    {
+      "date": "30 Oct 2026",
+      "title": "Care Plan review durability hardened",
+      "detail": "Review execution now atomically claims reviewer/outcome intent, preallocates MODIFY version IDs, resumes safely after partial failure, prevents outcome switching, and writes completion through the transactional outbox."
+    },
+    {
+      "date": "30 Oct 2026",
+      "title": "Care Plan sub-domain authorization hardened",
+      "detail": "Care Goal and Care Intervention creation now revalidate the current Care Plan version and care-relationship scope; user-created goals are limited to the subject with USER_SELECTED provenance."
+    },
+    {
+      "date": "30 Oct 2026",
+      "title": "Sprint 22 transactional outbox expanded",
+      "detail": "Goal reviews and content/assessment assignments now use UnitOfWork-backed PostgreSQL persistence with canonical outbox events instead of save-then-publish behavior."
+    },
     {
       "date": "30 Oct 2026",
       "title": "Sprint 22 operational maintenance",
