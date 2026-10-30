@@ -18,6 +18,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: sprint22-structural-main
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
