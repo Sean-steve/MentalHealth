@@ -35,7 +35,23 @@ import {
   ProfessionalThreadStatus,
   resetProfessionalMessagingForTesting
 } from '../mindos/professional_messaging/index.js';
-import { CarePlanService, CarePlanProgressService, CarePlanReviewService, resetCarePlansForTesting, CarePlanType, CarePlanState, CarePlanReviewType, CarePlanReviewOutcome } from '../mindos/care_plans/index.js';
+import {
+  CarePlanService,
+  CarePlanProgressService,
+  CarePlanReviewService,
+  CareGoalService,
+  CareInterventionService,
+  resetCarePlansForTesting,
+  CarePlanType,
+  CarePlanState,
+  CarePlanReviewType,
+  CarePlanReviewOutcome,
+  CareGoalType,
+  CareGoalProvenance,
+  GoalPriority,
+  GoalTargetType,
+  CareInterventionType
+} from '../mindos/care_plans/index.js';
 import { reconcileSprint22RelationshipClosure } from '../mindos/sprint22/index.js';
 import { AuthorizationError, DomainInvariantError } from '../mindos/platform/errors/index.js';
 
@@ -85,6 +101,144 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
         summary: 'Governed plan', actorId: professionalId
       }),
       (err: Error) => err instanceof DomainInvariantError && /review frequency/i.test(err.message)
+    );
+  });
+
+  it('enforces service-level relationship authorization for goals and interventions', async () => {
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'Authorization boundary plan',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+
+    await assert.rejects(
+      () => CareGoalService.createGoal({
+        carePlanVersionId: plan.current_version_id,
+        goalCode: 'UNAUTHORIZED_GOAL',
+        goalType: CareGoalType.WELLBEING,
+        title: 'Must not be created',
+        descriptionReference: 'protected-description:unauthorized',
+        priority: GoalPriority.NORMAL,
+        targetType: GoalTargetType.USER_RATING,
+        provenance: CareGoalProvenance.PROFESSIONAL_RECOMMENDED,
+        creatorId: 'unrelated-professional-s22',
+        actorRole: 'PROFESSIONAL'
+      }),
+      AuthorizationError
+    );
+
+    await assert.rejects(
+      () => CareInterventionService.createIntervention({
+        carePlanVersionId: plan.current_version_id,
+        interventionType: CareInterventionType.CONTENT,
+        referenceType: 'CONTENT_VERSION',
+        referenceId: 'content:test',
+        title: 'Must not be created',
+        frequency: 'governed-schedule:test',
+        responsibleActorType: 'USER',
+        creatorId: 'unrelated-professional-s22'
+      }),
+      AuthorizationError
+    );
+  });
+
+  it('limits user-created goals to the subject and USER_SELECTED provenance', async () => {
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'User goal boundary plan',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+
+    await assert.rejects(
+      () => CareGoalService.createGoal({
+        carePlanVersionId: plan.current_version_id,
+        goalCode: 'USER_PROVENANCE_FORGERY',
+        goalType: CareGoalType.WELLBEING,
+        title: 'Forged provenance',
+        descriptionReference: 'protected-description:forged',
+        priority: GoalPriority.NORMAL,
+        targetType: GoalTargetType.USER_RATING,
+        provenance: CareGoalProvenance.PROFESSIONAL_RECOMMENDED,
+        creatorId: userId,
+        actorRole: 'USER'
+      }),
+      AuthorizationError
+    );
+
+    const goal = await CareGoalService.createGoal({
+      carePlanVersionId: plan.current_version_id,
+      goalCode: 'USER_SELECTED_GOAL',
+      goalType: CareGoalType.WELLBEING,
+      title: 'My own wellbeing goal',
+      descriptionReference: 'protected-description:user-selected',
+      priority: GoalPriority.NORMAL,
+      targetType: GoalTargetType.USER_RATING,
+      provenance: CareGoalProvenance.USER_SELECTED,
+      creatorId: userId,
+      actorRole: 'USER'
+    });
+
+    assert.equal(goal.created_by, userId);
+    assert.equal(goal.provenance, CareGoalProvenance.USER_SELECTED);
+  });
+
+  it('rejects goal and intervention mutation against a superseded plan version', async () => {
+    const plan = await CarePlanService.createDraftPlan({
+      relationshipId,
+      authorProfessionalId: professionalId,
+      planType: CarePlanType.PSYCHOLOGICAL_SUPPORT,
+      summary: 'Version binding plan',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+    await CarePlanService.activatePlan(plan.id, professionalId);
+    const oldVersionId = plan.current_version_id;
+
+    await CarePlanService.createNewVersion({
+      planId: plan.id,
+      authorProfessionalId: professionalId,
+      summary: 'Replacement version',
+      goals: [],
+      interventions: [],
+      changeRationale: 'Version-binding regression',
+      reviewFrequencyDays: 14,
+      actorId: professionalId
+    });
+
+    await assert.rejects(
+      () => CareGoalService.createGoal({
+        carePlanVersionId: oldVersionId,
+        goalCode: 'STALE_GOAL',
+        goalType: CareGoalType.WELLBEING,
+        title: 'Stale goal',
+        descriptionReference: 'protected-description:stale',
+        priority: GoalPriority.NORMAL,
+        targetType: GoalTargetType.USER_RATING,
+        provenance: CareGoalProvenance.PROFESSIONAL_RECOMMENDED,
+        creatorId: professionalId,
+        actorRole: 'PROFESSIONAL'
+      }),
+      AuthorizationError
+    );
+
+    await assert.rejects(
+      () => CareInterventionService.createIntervention({
+        carePlanVersionId: oldVersionId,
+        interventionType: CareInterventionType.CONTENT,
+        referenceType: 'CONTENT_VERSION',
+        referenceId: 'content:stale',
+        title: 'Stale intervention',
+        frequency: 'governed-schedule:stale',
+        responsibleActorType: 'USER',
+        creatorId: professionalId
+      }),
+      AuthorizationError
     );
   });
 
