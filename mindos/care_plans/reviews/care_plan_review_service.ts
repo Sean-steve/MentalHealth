@@ -5,7 +5,7 @@ import { generateUUIDv7 } from '../../platform/database/uuid.js';
 import { EventBus } from '../../platform/events/index.js';
 import { AuditService } from '../../platform/audit/index.js';
 import { DataClassification } from '../../platform/shared/data_classification.js';
-import { NotFoundError } from '../../platform/errors/index.js';
+import { AuthorizationError, DomainInvariantError, NotFoundError } from '../../platform/errors/index.js';
 import {
   RelationshipAccessEvaluator, DataDomain, ActionPermission
 } from '../../care_relationships/index.js';
@@ -59,6 +59,29 @@ export class CarePlanReviewService {
     if(review.completed_at) return review;
     const plan=await CarePlanService.getPlan(review.care_plan_id);
     if(!plan) throw new NotFoundError(`CarePlan ${review.care_plan_id} not found.`);
+
+    if(plan.current_version_id!==review.care_plan_version_id){
+      throw new DomainInvariantError(
+        'Care Plan review is stale because the current plan version has changed.'
+      );
+    }
+
+    for(const goalReview of params.goalReviews){
+      const goal=await CarePlanReviewService.repository.findGoalById(goalReview.goal_id);
+      if(!goal) throw new NotFoundError(`CareGoal ${goalReview.goal_id} not found.`);
+      if(goal.care_plan_version_id!==review.care_plan_version_id){
+        throw new AuthorizationError(
+          'Care Goal review does not belong to the Care Plan version under review.',
+          {errorCode:'AUTHZ_003'}
+        );
+      }
+      if(goalReview.reviewed_by!==params.reviewerId){
+        throw new AuthorizationError(
+          'Care Goal review author does not match the authorized Care Plan reviewer.',
+          {errorCode:'AUTHZ_003'}
+        );
+      }
+    }
 
     const now=new Date().toISOString();
     review.started_at=review.started_at||now;review.completed_at=now;review.reviewer_id=params.reviewerId;
