@@ -1,16 +1,90 @@
-import { IProfessionalMessagingRepository } from './interfaces.js';
+import { IProfessionalMessagingRepository, MessagingCreateResult } from './interfaces.js';
 import {
   ProfessionalMessageThread,
   ProfessionalThreadParticipant,
   ProfessionalMessage,
   ProfessionalMessageAttachment
 } from '../domain/entities.js';
+import { MessageDeliveryStatus } from '../domain/types.js';
 
 export class InMemoryProfessionalMessagingRepository implements IProfessionalMessagingRepository {
   private threads = new Map<string, ProfessionalMessageThread>();
   private participants = new Map<string, ProfessionalThreadParticipant>();
   private messages = new Map<string, ProfessionalMessage>();
   private attachments = new Map<string, ProfessionalMessageAttachment>();
+
+  requiresUnitOfWork(): boolean { return false; }
+
+  async createThreadAggregate(
+    thread: ProfessionalMessageThread,
+    participants: ProfessionalThreadParticipant[]
+  ): Promise<void> {
+    const threadsSnapshot = new Map(this.threads);
+    const participantsSnapshot = new Map(this.participants);
+    try {
+      this.threads.set(thread.id, structuredClone(thread));
+      for (const participant of participants) {
+        this.participants.set(participant.id, structuredClone(participant));
+      }
+    } catch (error) {
+      this.threads = threadsSnapshot;
+      this.participants = participantsSnapshot;
+      throw error;
+    }
+  }
+
+  async createMessageIdempotent(
+    message: ProfessionalMessage
+  ): Promise<MessagingCreateResult> {
+    const existing = Array.from(this.messages.values()).find(
+      item =>
+        item.thread_id === message.thread_id &&
+        item.idempotency_key === message.idempotency_key
+    );
+    if (existing) return { created: false, id: existing.id };
+    this.messages.set(message.id, structuredClone(message));
+    return { created: true, id: message.id };
+  }
+
+  async saveMessageWithExpectedStatus(
+    message: ProfessionalMessage,
+    expectedStatus: MessageDeliveryStatus
+  ): Promise<void> {
+    const current = this.messages.get(message.id);
+    if (!current || current.status !== expectedStatus) {
+      throw new Error(
+        'CONCURRENCY_CONFLICT: Professional Message status changed before update.'
+      );
+    }
+    this.messages.set(message.id, structuredClone(message));
+  }
+
+  async saveThreadWithExpectedVersion(
+    thread: ProfessionalMessageThread,
+    expectedVersion: number
+  ): Promise<void> {
+    const current = this.threads.get(thread.id);
+    if (!current || current.version !== expectedVersion) {
+      throw new Error(
+        'CONCURRENCY_CONFLICT: Professional Message Thread changed before update.'
+      );
+    }
+    this.threads.set(thread.id, structuredClone(thread));
+  }
+
+  async saveParticipantTransactional(
+    participant: ProfessionalThreadParticipant
+  ): Promise<void> {
+    const existing = Array.from(this.participants.values()).find(
+      item =>
+        item.thread_id === participant.thread_id &&
+        item.actor_id === participant.actor_id
+    );
+    if (existing && existing.id !== participant.id) {
+      this.participants.delete(existing.id);
+    }
+    this.participants.set(participant.id, structuredClone(participant));
+  }
 
   async saveThread(thread: ProfessionalMessageThread): Promise<void> { this.threads.set(thread.id, structuredClone(thread)); }
   async findThreadById(id: string): Promise<ProfessionalMessageThread | null> { const x=this.threads.get(id); return x?structuredClone(x):null; }
