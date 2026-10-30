@@ -1,7 +1,58 @@
-<!doctype html><meta charset="utf-8"><title>MindOS Sprint 22 Reconciliation</title><style>body{max-width:930px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #f3c767;color:#f3c767;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700}.done{color:#5fe0ad}.pending{color:#f3c767}</style>
-<a href="../index.html">← Build tracker</a><h1>Sprint 22 reconciliation</h1><span class="tag">RECONCILING — NOT YET ACCEPTED AS COMPLETE</span>
-<h2>Preserved</h2><ul><li class="done">Existing <code>mindos/care_plans/</code> architecture: plan/version entities, eligibility, goals, interventions, assignments, reviews and progress projection.</li><li class="done">Existing canonical Sprint-22 state-machine and event registry entries.</li></ul>
-<h2>Corrections applied to prototype</h2><ul><li class="done">Removed the silent 30-day Care Plan review default. A governed review cadence is now required or inherited from an existing governed version.</li><li class="done">Content assignment now fails closed when governed content cannot be resolved and rejects mismatched active versions.</li><li class="done">Assessment assignment now validates against the governed Assessment Registry instead of accepting arbitrary instrument identifiers.</li><li class="done">Added a dedicated <code>clinical_tasks</code> bounded context with canonical states, assignees, priority, owner-domain completion, dependency graph, cycle prevention, evidence, idempotency, overdue reconciliation and events.</li><li class="done">Added a dedicated <code>professional_messaging</code> bounded context with relationship-scoped authorization, participants, idempotent send, delivery/read state, protected content references, clean-attachment gate, relationship termination reconciliation and privacy-minimized events.</li><li class="done">Messaging explicitly reports Safety monitoring as <code>NOT_CONFIGURED</code> until an approved Safety adapter is installed; it does not pretend a clinician/emergency service is monitoring the thread.</li><li class="done">Added migration <code>020_canonical_care_plans_tasks_messaging.sql</code>.</li><li class="done">Added <code>canonical_care_plans_tasks_messaging_sprint22.test.ts</code>.</li></ul>
-<h2>Validation</h2><p class="done">Targeted TypeScript analysis of the reconciled Sprint-22/23 modules and tests shows zero new non-environment type errors.</p><p class="pending">The full executable test suite is not yet proven because the uploaded snapshot did not contain installed dependencies and dependency installation could not be completed in the current isolated runtime.</p>
-<h2>Still required before COMPLETE</h2><ul><li class="pending">Wire Sprint-22 HTTP/API surfaces into the main runtime.</li><li class="pending">Replace prototype in-memory repositories with PostgreSQL implementations using migration 020.</li><li class="pending">Install/configure an approved Professional Messaging Safety adapter and Notification adapter.</li><li class="pending">Run migration validation, full Sprint 1–22 regression, security/privacy/E2E tests and production build.</li></ul>
-<p><strong>Decision:</strong> Sprint 22 is materially reconciled at the domain/prototype level, but remains PARTIAL until persistence/runtime wiring and real regression execution pass.</p>
+<!doctype html><meta charset="utf-8"><title>MindOS Sprint 22 Reconciliation</title><style>body{max-width:950px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #f3c767;color:#f3c767;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700}.done{color:#5fe0ad}.pending{color:#f3c767}.blocked{color:#ff8e8e}</style>
+<a href="../tracker.html">← Engineering tracker</a><h1>Sprint 22 reconciliation</h1><span class="tag">PARTIAL — PRODUCTION CERTIFICATION PENDING</span>
+<p>MindOS Sprint 22 is no longer only a domain prototype. Care Plans, Clinical Tasks and Professional Messaging now have runtime/API wiring, PostgreSQL repositories, migration coverage, maintenance orchestration and hardened safety/authorization boundaries. It is intentionally not marked complete until the full dependency-backed Sprint 1–22 regression can run.</p>
+
+<h2>Implemented</h2>
+<ul>
+<li class="done"><strong>Care Plans:</strong> versioned plan lifecycle, governed review cadence, user-acknowledgement gate, goals, interventions, assignments, reviews and progress projection.</li>
+<li class="done"><strong>Clinical Tasks:</strong> dependency graph/cycle prevention, relationship-scoped assignment, owner-domain completion, evidence, overdue/readiness reconciliation, bounded recurrence, policy-configured recurrence, reminder deduplication and persistent reminder receipts.</li>
+<li class="done"><strong>Professional Messaging:</strong> care-relationship-scoped threads, participants, protected content references, idempotent send, delivery/read states, notification integration, same-thread reply validation, relationship closure, privacy-preserving Safety forwarding and deny-by-default attachment governance.</li>
+<li class="done"><strong>PostgreSQL:</strong> Care Plan, Clinical Task and Professional Messaging repositories are wired for production mode through <code>mindos/sprint22/runtime.ts</code>; migration <code>020_canonical_care_plans_tasks_messaging.sql</code> covers the Sprint-22 persistence model.</li>
+<li class="done"><strong>API:</strong> Sprint-22 routers are mounted under <code>/api/v1</code> from the main server. External APIs reject SYSTEM task creation, owner-domain completion forgery, client-defined messaging response expectations and invalid enum/state values.</li>
+</ul>
+
+<h2>Durability & concurrency hardening</h2>
+<ul>
+<li class="done">Core Care Plan, Clinical Task and Professional Messaging mutations use application-owned <code>UnitOfWork</code> transactions with canonical transactional-outbox events.</li>
+<li class="done">Care Goal review now persists the goal mutation + review record atomically and registers <code>care.goal_updated</code> through the outbox.</li>
+<li class="done">Content and Assessment assignments now persist atomically with <code>care.assignment_created</code>.</li>
+<li class="done">Clinical Task persistence has optimistic state checks, idempotency keys and authoritative completion evidence.</li>
+<li class="done">Professional Messaging has optimistic delivery/thread updates and idempotent message creation.</li>
+<li class="done">Care Plan review execution now persists an atomic reviewer/outcome intent before plan mutation, uses a preallocated version ID for MODIFY, resumes after partial failure without duplicating versions, blocks outcome switching, and persists <code>care.plan_review_completed</code> through the transactional outbox.</li>
+</ul>
+
+<h2>Authorization & clinical-integrity hardening</h2>
+<ul>
+<li class="done">Care Goal creation independently revalidates the plan/relationship at the service boundary; users may create only their own <code>USER_SELECTED</code> goals.</li>
+<li class="done">Professional Care Goal and Care Intervention creation requires relationship-scoped Care Plan write access and the current editable plan version.</li>
+<li class="done">Task start/completion revalidates assignment, relationship state and care-team membership; relationship termination races fail closed.</li>
+<li class="done">Care Plan reviews reject stale plan versions and cross-plan goal reviews.</li>
+<li class="done">Active/superseded Care Plan versions cannot be silently mutated in place.</li>
+<li class="done">No guessed 30-day clinical review cadence remains.</li>
+</ul>
+
+<h2>Safety & communication boundaries</h2>
+<ul>
+<li class="done">Care-message metadata never needs raw message content; Safety integration works through a protected-content classifier port and forwards qualifying candidates into the authoritative <code>CrisisResponseOrchestrator</code>.</li>
+<li class="done">The runtime reports messaging Safety as <code>EXPLICIT_SCANNER_REQUIRED</code> unless a governed protected-content classifier is provided.</li>
+<li class="done">MindOS does not reuse the AI Companion keyword pre-check as Professional Messaging clinical monitoring without governance approval.</li>
+<li class="done">Attachments fail closed until a governed file/media policy verifies malware scan, MIME/size and data-classification requirements.</li>
+<li class="done">Messaging never claims real-time clinician/emergency monitoring.</li>
+</ul>
+
+<h2>Validation now in GitHub</h2>
+<ul>
+<li class="done"><code>Verify Sprint 22 structure</code> — green on the hardened architecture, including outbox, authorization, recurrence, Safety and review-saga invariants.</li>
+<li class="done"><code>Verify Sprint 22 TypeScript syntax</code> — green on the cumulative Sprint-22 TypeScript changes through the latest product-code commit.</li>
+<li class="done">Acceptance suite includes recurrence/reminder idempotency, attachment fail-closed behavior, relationship closure, termination races, cross-user assignment denial, cross-thread reply denial, stale-review protection, user acknowledgement, terminal-plan immutability, service-level goal/intervention authorization and Care Plan review failure-recovery scenarios.</li>
+</ul>
+
+<h2>Remaining before Sprint 22 can be certified COMPLETE</h2>
+<ul>
+<li class="blocked"><strong>Full foundation import:</strong> the GitHub repository still does not contain the complete Sprint 1–21 foundation. The original archive has been recovered and audited, but the current connector/runtime boundary cannot bulk-stream those local bytes into GitHub.</li>
+<li class="pending"><strong>Executable regression:</strong> after the foundation is present in GitHub, run dependency-backed typecheck, Sprint 1–22 tests, PostgreSQL migration validation, integration/E2E, security/privacy, event-contract and production build checks.</li>
+<li class="pending"><strong>Messaging Safety classifier:</strong> configure an explicitly governed Professional Messaging protected-content classifier. The existing AI Companion raw-text pre-check is purpose-specific and is not being silently repurposed.</li>
+<li class="pending"><strong>Attachment/media adapter:</strong> connect the deny-by-default attachment policy to an approved media scanning/storage service before attachments can be enabled.</li>
+</ul>
+
+<p><strong>Current decision:</strong> Sprint 22 is functionally and architecturally advanced, with major production durability/security gaps closed. Status remains <strong>PARTIAL</strong> until the full foundation can be regression-tested and the governed messaging Safety/media adapters are configured.</p>
