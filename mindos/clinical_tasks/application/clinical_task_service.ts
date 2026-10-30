@@ -7,6 +7,7 @@ import { AuthorizationError, DomainInvariantError, NotFoundError } from '../../p
 import {
   RelationshipAccessEvaluator,
   CareRelationshipService,
+  CareRelationshipState,
   DataDomain,
   ActionPermission
 } from '../../care_relationships/index.js';
@@ -336,6 +337,58 @@ export class ClinicalTaskService {
     await ClinicalTaskService.repository.saveTask(task);
     EventBus.enqueue('care.task_cancelled', 'clinical_tasks', task.id, DataClassification.CLINICAL_RECORD, { task_id: task.id });
     return task;
+  }
+
+  public static async reconcileRelationshipClosure(
+    relationshipId: string
+  ): Promise<{ cancelled: string[] }> {
+    ClinicalTaskService.assertRepository();
+    const relationship = await CareRelationshipService.getRelationship(relationshipId);
+    if (!relationship ||
+        ![CareRelationshipState.TERMINATED, CareRelationshipState.REVOKED].includes(relationship.status)) {
+      return { cancelled: [] };
+    }
+
+    const cancelled: string[] = [];
+    const terminal = new Set<ClinicalTaskState>([
+      ClinicalTaskState.COMPLETED,
+      ClinicalTaskState.SKIPPED,
+      ClinicalTaskState.CANCELLED
+    ]);
+
+    for (const task of await ClinicalTaskService.repository.findTasksByRelationshipId(relationshipId)) {
+      if (terminal.has(task.status)) continue;
+      validateStateTransition('ClinicalTaskState', task.status, ClinicalTaskState.CANCELLED, task.id, 'system');
+      task.status = ClinicalTaskState.CANCELLED;
+      task.updated_at = new Date().toISOString();
+      await ClinicalTaskService.repository.saveTask(task);
+      cancelled.push(task.id);
+
+      EventBus.enqueue(
+        'care.task_cancelled',
+        'clinical_tasks',
+        task.id,
+        DataClassification.CLINICAL_RECORD,
+        {
+          task_id: task.id,
+          relationship_id: relationshipId,
+          reason: 'CARE_RELATIONSHIP_ENDED'
+        }
+      );
+      AuditService.record({
+        actor_type: 'SYSTEM',
+        actor_id: 'sprint22-reconciliation',
+        action: 'CLINICAL_TASK.CANCELLED_RELATIONSHIP_CLOSURE',
+        resource_type: 'clinical_task',
+        resource_id: task.id,
+        purpose: 'Care Relationship Closure',
+        authorization_basis: { relationshipId },
+        result: 'ALLOWED',
+        metadata: { priorStatus: task.status }
+      });
+    }
+
+    return { cancelled };
   }
 
   public static async reconcile(now = new Date()): Promise<{ overdue: string[]; readied: string[] }> {
