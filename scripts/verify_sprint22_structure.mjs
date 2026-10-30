@@ -66,7 +66,13 @@ if(failures.length===0){
     read('mindos/care_plans/reviews/care_plan_review_service.ts')
   ].join('\n');
 
-  if(!plan.includes('createPlanWithInitialVersion')) failures.push('care plan creation is not atomic');
+  if(!plan.includes('UnitOfWork.run')||
+     !plan.includes('createPlanAggregate')||
+     !plan.includes('replaceActiveVersionAggregate')||
+     !plan.includes('registerOutboxEvent')) failures.push('Care Plan aggregate mutations/outbox are not application-owned Unit-of-Work transactions');
+  if(!carePlanApi.includes('normalizeProfessionalGoals')||
+     !carePlanApi.includes('normalizeProfessionalInterventions')||
+     !carePlanApi.includes('generateUUIDv7')) failures.push('Care Plan API does not normalize client domain records');
   if(!carePlanApi.includes('normalizeProfessionalGoals')||
      !carePlanApi.includes('normalizeProfessionalInterventions')||
      !carePlanApi.includes('generateUUIDv7')) failures.push('Care Plan API does not normalize client domain records');
