@@ -461,4 +461,23 @@ describe('MindOS Sprint 22 reconciliation: Care Plans, Clinical Tasks & Professi
     assert.equal(reconciled.status, ClinicalTaskState.CANCELLED);
   });
 
+
+  it('rejects cross-user task assignment outside the care relationship subject', async () => {
+    await assert.rejects(
+      () => ClinicalTaskService.createTask({
+        care_relationship_id: relationshipId,
+        task_type: ClinicalTaskType.USER_ACTION,
+        assigned_to_type: ClinicalTaskAssigneeType.USER,
+        assigned_to_id: 'different-user-s22',
+        title: 'Cross-user task must be denied',
+        instruction_reference: 'instruction:deny-cross-user',
+        source_type: 'CARE_PLAN',
+        source_reference: 'plan:test',
+        policy_version: 'test-v1',
+        creator_professional_id: professionalId
+      }),
+      AuthorizationError
+    );
+  });
+
 });
