@@ -11,7 +11,11 @@ import {
   ClinicalTaskService,
   ClinicalTaskScheduler,
   PgClinicalTaskRepository,
-  NotificationServiceClinicalTaskReminderAdapter
+  NotificationServiceClinicalTaskReminderAdapter,
+  PolicyRegistryClinicalTaskRecurrenceAdapter,
+  parseClinicalTaskRecurrencePolicies,
+  ClinicalTaskRecurrencePolicy,
+  UnconfiguredClinicalTaskRecurrenceAdapter
 } from '../clinical_tasks/index.js';
 import {
   ProfessionalMessagingService,
@@ -25,7 +29,7 @@ export interface Sprint22RuntimeStatus {
   professional_messaging_safety: 'EXPLICIT_SCANNER_AND_FORWARDER_REQUIRED';
   professional_messaging_attachments: 'DENY_BY_DEFAULT';
   clinical_task_reminders: 'CONFIGURED';
-  clinical_task_recurrence: 'EXPLICIT_POLICY_REQUIRED';
+  clinical_task_recurrence: 'CONFIGURED' | 'EXPLICIT_POLICY_REQUIRED';
 }
 
 let configured = false;
@@ -40,6 +44,7 @@ let status: Sprint22RuntimeStatus = {
 
 export function configureSprint22Runtime(options: {
   usePostgres?: boolean;
+  recurrencePolicies?: ClinicalTaskRecurrencePolicy[];
 } = {}): Sprint22RuntimeStatus {
   const usePostgres = options.usePostgres ?? process.env.NODE_ENV === 'production';
 
@@ -59,6 +64,19 @@ export function configureSprint22Runtime(options: {
   ProfessionalMessagingService.setNotificationPort(new NotificationServiceMessagingAdapter());
   ClinicalTaskScheduler.setReminderPort(new NotificationServiceClinicalTaskReminderAdapter());
 
+  const recurrencePolicies =
+    options.recurrencePolicies ??
+    parseClinicalTaskRecurrencePolicies(process.env.MINDOS_TASK_RECURRENCE_POLICIES_JSON);
+  if (recurrencePolicies.length > 0) {
+    ClinicalTaskScheduler.setRecurrencePort(
+      new PolicyRegistryClinicalTaskRecurrenceAdapter(recurrencePolicies)
+    );
+  } else {
+    ClinicalTaskScheduler.setRecurrencePort(
+      new UnconfiguredClinicalTaskRecurrenceAdapter()
+    );
+  }
+
   configured = true;
   status = {
     persistence: usePostgres ? 'POSTGRES' : 'IN_MEMORY_DEFAULT',
@@ -66,7 +84,7 @@ export function configureSprint22Runtime(options: {
     professional_messaging_safety: 'EXPLICIT_SCANNER_AND_FORWARDER_REQUIRED',
     professional_messaging_attachments: 'DENY_BY_DEFAULT',
     clinical_task_reminders: 'CONFIGURED',
-    clinical_task_recurrence: 'EXPLICIT_POLICY_REQUIRED'
+    clinical_task_recurrence: recurrencePolicies.length > 0 ? 'CONFIGURED' : 'EXPLICIT_POLICY_REQUIRED'
   };
   return { ...status };
 }
