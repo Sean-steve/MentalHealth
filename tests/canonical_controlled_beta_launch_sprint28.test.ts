@@ -161,6 +161,7 @@ describe('MindOS Sprint 28 — Controlled Beta & Kenya Launch Readiness',()=>{
     await assert.rejects(()=>LaunchAuthorizationService.decide({program_id:p.id,decision_type:'LIMITED_KENYA_LAUNCH',reviewer_id:'authority-2',reviewer_role:'RELEASE_AUTHORITY',decision:'APPROVED'}),DomainInvariantError);
     await BetaCohortService.inviteAndEnroll({program_id:p.id,subject_ref:'u1',participant_type:'USER',jurisdiction:'KE',invitation_ref:'i',consent_receipt_ref:'c',eligibility_evidence_refs:['e'],actor_id:'op'});
     await assert.rejects(()=>LaunchAuthorizationService.decide({program_id:p.id,decision_type:'LIMITED_KENYA_LAUNCH',reviewer_id:'authority-2',reviewer_role:'RELEASE_AUTHORITY',decision:'APPROVED'}),DomainInvariantError);
+    await new Promise(r=>setTimeout(r,5));
     await LaunchRepository.saveMonitoringSnapshot({
       id:`00000000-0000-7000-9000-${String(seq).padStart(12,'0')}`,program_id:p.id,build_sha:build,environment:'production',status:'GREEN',critical_launch_blockers:0,
       open_critical_incidents:0,safety_resources_valid:true,incident_response_ready:true,rollback_ready:true,database_healthy:true,dr_ready:true,privacy_lifecycle_clear:true,
