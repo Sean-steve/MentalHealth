@@ -51,6 +51,7 @@ import {
   DomainInvariantError
 } from '../mindos/platform/errors/index.js';
 import { EventBus } from '../mindos/platform/events/index.js';
+import { getSafetyRepository, resetSafetyRepository } from '../mindos/safety/index.js';
 
 const userId = 'user-s23-0001';
 const professionalId = 'prof-s23-0001';
@@ -141,6 +142,7 @@ describe('MindOS Sprint 23 — Longitudinal Clinical Record & Measurement-Based 
     resetClinicalRecordForTesting();
     resetCarePlansForTesting();
     EventBus.clearOutbox();
+    resetSafetyRepository();
   });
 
   it('returns UNKNOWN when no approved clinical-change rule exists', async () => {
@@ -366,18 +368,36 @@ describe('MindOS Sprint 23 — Longitudinal Clinical Record & Measurement-Based 
     );
   });
 
-  it('derives SAFETY_SIGNAL severity only from an approved threshold rule', async () => {
+  it('routes an approved Safety threshold through SafetySignalService and RiskStateEngine', async () => {
     ClinicalChangeRuleRegistry.registerApprovedRule(approvedRule());
+    OutcomeAlertPolicyRegistry.registerApprovedPolicy({
+      id: 'outcome-safety-alert-policy',
+      version: 1,
+      review_due_minutes: { LOW: 240, MEDIUM: 90, HIGH: 30, CRITICAL: 10 },
+      clinical_artifact_id: 'clinical-artifact:outcome-safety-alerts',
+      clinical_artifact_version: '1.0.0',
+      approval_state: 'APPROVED',
+      approved_by: 'clinical-governance-reviewer',
+      approved_at: '2026-01-01T00:00:00.000Z',
+      effective_from: '2026-01-01T00:00:00.000Z'
+    });
+
     await recordPHQ(5, 'safety-rule-1');
-    await recordPHQ(20, 'safety-rule-2');
+    const second = await recordPHQ(20, 'safety-rule-2');
     const trend = OutcomeTrendEngine.evaluateSeries(
       await OutcomeSeriesService.getSeries(userId, 'PHQ9_TOTAL')
     );
     assert.equal(trend.trend_state, OutcomeTrendState.WORSENING);
     assert.equal(trend.deterioration_severity, 'SAFETY_SIGNAL');
-    assert.ok(
-      trend.reason_codes.includes('APPROVED_CRITICAL_SAFETY_THRESHOLD_BREACHED')
-    );
+
+    const safetyRepo = getSafetyRepository();
+    const signals = await safetyRepo.getSignalsByUser(userId);
+    const signal = signals.find(s => s.source_reference === 'outcome-measurement:' + second.id);
+    assert.ok(signal);
+    assert.equal(signal!.signal_code, 'SIG_SEVERE_DISTRESS_OVERWHELM');
+    const riskState = await safetyRepo.getCurrentRiskState(userId);
+    assert.ok(riskState);
+    assert.ok(riskState!.evidence_refs.length >= 1);
   });
 
   it('blocks an unrelated professional from longitudinal outcome access', async () => {
