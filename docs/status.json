@@ -52,10 +52,15 @@
       "number": "26",
       "title": "Platform Hardening",
       "status": "IMPLEMENTED",
-      "note": "CERTIFICATION CANDIDATE. Sprint 26 Platform Hardening passed full certification run 41186710473: 24/24 PostgreSQL migrations, full TypeScript, 482/482 Sprint 1–26 regression tests, 14/14 dedicated Sprint-26 acceptance tests, real PostgreSQL backup/restore drill with persisted migration history (RPO 1s / RTO 2s in CI), secret scan 0 findings, dependency scan 0 Critical/High, production build, and 23-component SBOM. Final PR-head certification remains the merge gate."
+      "note": "CERTIFIED COMPLETE on PR head a4516f9f4c46db66d8477d0236d2e567b59b884d and merged to main as 0d29aa95ab6c90b8e22b4bf9c58850bc510011cc. Final certification run 41186835609 passed 24/24 canonical PostgreSQL migrations, full TypeScript, 482/482 Sprint 1–26 regression tests, 14/14 dedicated Sprint-26 acceptance tests, real PostgreSQL 16 backup/restore drill with persisted migration history, secret scan with 0 findings, dependency vulnerability scan with 0 Critical/High, production build, and 23-component SBOM."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 26 certified and merged to main",
+      "detail": "Final PR head a4516f9f4c46db66d8477d0236d2e567b59b884d passed workflow 41186835609 and merged as 0d29aa95ab6c90b8e22b4bf9c58850bc510011cc. The hardening work also repaired native PostgreSQL migration-history persistence discovered by the DR restore drill."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 26 hardening certification passed",
@@ -217,6 +222,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 26 Platform Hardening is implemented on PR #4 and has passed full certification; final PR-head certification remains before merge."
+    "note": "Sprint 26 Platform Hardening is certified complete and merged to main. GitHub Pages deployment remains driven from main."
   }
 }
