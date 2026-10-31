@@ -32,6 +32,8 @@
     "test:sprint23": "tsx --test tests/canonical_longitudinal_outcomes_sprint23.test.ts",
     "test:sprint24": "tsx --test tests/canonical_clinical_operations_sprint24.test.ts",
     "test:sprint25": "tsx --test tests/canonical_analytics_sprint25.test.ts",
+    "test:sprint26": "tsx --test tests/canonical_platform_hardening_sprint26.test.ts",
+    "sprint26:dr-smoke": "tsx scripts/verify_sprint26_dr.ts",
     "sprint25:postgres-smoke": "tsx scripts/verify_sprint25_postgres.ts",
     "sprint24:postgres-smoke": "tsx scripts/verify_sprint24_postgres.ts",
     "sprint23:postgres-smoke": "tsx scripts/verify_sprint23_postgres.ts"
