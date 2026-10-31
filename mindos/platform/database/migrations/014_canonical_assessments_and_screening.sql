@@ -105,9 +105,7 @@ ALTER TABLE assessment_versions
   ALTER COLUMN scoring_schema DROP NOT NULL,
   ALTER COLUMN interpretation_schema DROP NOT NULL,
   ALTER COLUMN limitations DROP NOT NULL;
-DO $
-BEGIN
-END $;
+
 
 CREATE INDEX IF NOT EXISTS idx_assessment_versions_def ON assessment_versions(assessment_definition_id);
 CREATE INDEX IF NOT EXISTS idx_assessment_versions_status ON assessment_versions(status);
@@ -248,9 +246,7 @@ ALTER TABLE assessment_sessions
   ALTER COLUMN assessment_definition_id SET NOT NULL,
   ALTER COLUMN expires_at SET NOT NULL,
   ALTER COLUMN user_id DROP NOT NULL;
-DO $
-BEGIN
-END $;
+
 
 CREATE INDEX IF NOT EXISTS idx_assessment_sessions_subject ON assessment_sessions(subject_user_id);
 CREATE INDEX IF NOT EXISTS idx_assessment_sessions_status ON assessment_sessions(status);
@@ -283,9 +279,7 @@ WHERE response_value IS NULL;
 ALTER TABLE assessment_responses
   ALTER COLUMN item_key DROP NOT NULL,
   ALTER COLUMN answer_json DROP NOT NULL;
-DO $
-BEGIN
-END $;
+
 
 CREATE INDEX IF NOT EXISTS idx_assessment_responses_session ON assessment_responses(session_id);
 
