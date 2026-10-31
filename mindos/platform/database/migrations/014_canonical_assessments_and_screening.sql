@@ -107,16 +107,6 @@ ALTER TABLE assessment_versions
   ALTER COLUMN limitations DROP NOT NULL;
 DO $
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_assessment_versions_definition_canonical') THEN
-    ALTER TABLE assessment_versions
-      ADD CONSTRAINT fk_assessment_versions_definition_canonical
-      FOREIGN KEY (assessment_definition_id) REFERENCES assessment_definitions(id) ON DELETE CASCADE;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_assessment_versions_supersedes_canonical') THEN
-    ALTER TABLE assessment_versions
-      ADD CONSTRAINT fk_assessment_versions_supersedes_canonical
-      FOREIGN KEY (supersedes_id) REFERENCES assessment_versions(id);
-  END IF;
 END $;
 
 CREATE INDEX IF NOT EXISTS idx_assessment_versions_def ON assessment_versions(assessment_definition_id);
@@ -260,16 +250,6 @@ ALTER TABLE assessment_sessions
   ALTER COLUMN user_id DROP NOT NULL;
 DO $
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_assessment_sessions_definition_canonical') THEN
-    ALTER TABLE assessment_sessions
-      ADD CONSTRAINT fk_assessment_sessions_definition_canonical
-      FOREIGN KEY (assessment_definition_id) REFERENCES assessment_definitions(id);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_assessment_sessions_subject_canonical') THEN
-    ALTER TABLE assessment_sessions
-      ADD CONSTRAINT fk_assessment_sessions_subject_canonical
-      FOREIGN KEY (subject_user_id) REFERENCES users(id) ON DELETE CASCADE;
-  END IF;
 END $;
 
 CREATE INDEX IF NOT EXISTS idx_assessment_sessions_subject ON assessment_sessions(subject_user_id);
@@ -305,11 +285,6 @@ ALTER TABLE assessment_responses
   ALTER COLUMN answer_json DROP NOT NULL;
 DO $
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_assessment_responses_question_canonical') THEN
-    ALTER TABLE assessment_responses
-      ADD CONSTRAINT fk_assessment_responses_question_canonical
-      FOREIGN KEY (question_id) REFERENCES assessment_questions(id);
-  END IF;
 END $;
 
 CREATE INDEX IF NOT EXISTS idx_assessment_responses_session ON assessment_responses(session_id);
