@@ -1,6 +1,6 @@
 import { DomainInvariantError } from '../../platform/errors/index.js';
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
-import { ClinicalOperationsRepository } from '../repositories/in_memory.js';
+import { ClinicalOperationsRepository } from '../repositories/index.js';
 import { ClinicalOperationsCapability } from '../domain/types.js';
 
 export class ClinicalOperationsStaffingRegistry {
