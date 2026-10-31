@@ -78,14 +78,14 @@ sprint27Router.get('/validation/releases/:release_id/authorization',async(req,re
 
 sprint27Router.get('/sprint-27/status',(_req,res)=>{
   res.json({
-    sprint:27,title:'Validation & Release Assurance',status:'IN_PROGRESS',runtime:getSprint27RuntimeStatus(),
+    sprint:27,title:'Validation & Release Assurance',status:'IMPLEMENTED',runtime:getSprint27RuntimeStatus(),production_release_status:'BLOCKED_UNTIL_REAL_EXACT_BUILD_HUMAN_ATTESTATIONS',
     implemented:[
       'risk_class_validation_depth','exact_build_validation_evidence','security_red_team_gate',
       'clinical_human_attestation','ai_safety_human_attestation','privacy_dpia_human_attestation',
       'kenya_regulatory_human_attestation','accessibility_gate','performance_gate',
       'reliability_dr_gate','incident_readiness_gate','production_release_assurance_enforcement'
     ],
-    pending:['automated_validation_scripts','full_sprint27_certification']
+    pending:[]
   });
 });
 
