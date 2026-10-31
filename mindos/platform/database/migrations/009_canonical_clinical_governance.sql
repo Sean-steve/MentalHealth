@@ -14,31 +14,97 @@
 -- UP --
 
 -- 1. Clinical Artifacts Registry (Master registry of governed clinical/clinically relevant assets)
-CREATE TABLE IF NOT EXISTS clinical_artifacts (
-  id UUID PRIMARY KEY,
-  artifact_code VARCHAR(120) UNIQUE NOT NULL,
-  artifact_type VARCHAR(60) NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  description TEXT,
-  owner_domain VARCHAR(120) NOT NULL DEFAULT 'clinical_governance',
-  owner_id VARCHAR(120) NOT NULL,
-  version INTEGER NOT NULL DEFAULT 1,
-  status VARCHAR(40) NOT NULL DEFAULT 'DRAFT',
-  intended_use TEXT NOT NULL,
-  intended_population JSONB NOT NULL DEFAULT '{}',
-  excluded_population JSONB NOT NULL DEFAULT '{}',
-  clinical_risk_class VARCHAR(20) NOT NULL DEFAULT 'CR-0',
-  risk_factors JSONB NOT NULL DEFAULT '{}',
-  jurisdiction_scope TEXT[] NOT NULL DEFAULT '{"KE"}',
-  data_classification VARCHAR(40) NOT NULL DEFAULT 'HEALTH_DATA',
-  clinical_claim_level VARCHAR(40) NOT NULL DEFAULT 'INFORMATIONAL',
-  governed_resource_id UUID,
-  supersedes_id UUID,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- clinical_artifacts is introduced by migration 001. Sprint 10 expands it
+-- additively and keeps the legacy columns synchronized for compatibility.
+ALTER TABLE clinical_artifacts
+  ADD COLUMN IF NOT EXISTS artifact_code VARCHAR(120),
+  ADD COLUMN IF NOT EXISTS name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS description TEXT,
+  ADD COLUMN IF NOT EXISTS owner_domain VARCHAR(120) NOT NULL DEFAULT 'clinical_governance',
+  ADD COLUMN IF NOT EXISTS owner_id VARCHAR(120),
+  ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'DRAFT',
+  ADD COLUMN IF NOT EXISTS intended_use TEXT,
+  ADD COLUMN IF NOT EXISTS intended_population JSONB NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS excluded_population JSONB NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS clinical_risk_class VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS risk_factors JSONB NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS jurisdiction_scope TEXT[] NOT NULL DEFAULT '{"KE"}',
+  ADD COLUMN IF NOT EXISTS data_classification VARCHAR(40) NOT NULL DEFAULT 'HEALTH_DATA',
+  ADD COLUMN IF NOT EXISTS clinical_claim_level VARCHAR(40) NOT NULL DEFAULT 'INFORMATIONAL',
+  ADD COLUMN IF NOT EXISTS governed_resource_id UUID,
+  ADD COLUMN IF NOT EXISTS supersedes_id UUID,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
-CREATE INDEX IF NOT EXISTS idx_clinical_artifacts_code ON clinical_artifacts(artifact_code);
+UPDATE clinical_artifacts
+SET
+  artifact_code = COALESCE(artifact_code, artifact_key),
+  name = COALESCE(name, artifact_key),
+  owner_domain = COALESCE(owner_domain, clinical_domain, 'clinical_governance'),
+  owner_id = COALESCE(owner_id, owner),
+  status = COALESCE(status, state::text, 'DRAFT'),
+  intended_use = COALESCE(intended_use, artifact_key, artifact_type),
+  clinical_risk_class = COALESCE(clinical_risk_class, impact_class, 'CR-0')
+WHERE
+  artifact_code IS NULL OR name IS NULL OR owner_id IS NULL OR
+  intended_use IS NULL OR clinical_risk_class IS NULL;
+
+ALTER TABLE clinical_artifacts
+  ALTER COLUMN artifact_code SET NOT NULL,
+  ALTER COLUMN name SET NOT NULL,
+  ALTER COLUMN owner_id SET NOT NULL,
+  ALTER COLUMN intended_use SET NOT NULL,
+  ALTER COLUMN clinical_risk_class SET NOT NULL,
+  ALTER COLUMN artifact_key DROP NOT NULL,
+  ALTER COLUMN clinical_domain DROP NOT NULL,
+  ALTER COLUMN impact_class DROP NOT NULL,
+  ALTER COLUMN evidence_level DROP NOT NULL,
+  ALTER COLUMN owner DROP NOT NULL;
+
+CREATE OR REPLACE FUNCTION mindos_sync_clinical_artifact_compat()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.artifact_code := COALESCE(NEW.artifact_code, NEW.artifact_key);
+  NEW.artifact_key := COALESCE(NEW.artifact_key, NEW.artifact_code);
+  NEW.name := COALESCE(NEW.name, NEW.artifact_code, NEW.artifact_key);
+  NEW.owner_domain := COALESCE(NEW.owner_domain, NEW.clinical_domain, 'clinical_governance');
+  NEW.clinical_domain := COALESCE(NEW.clinical_domain, NEW.owner_domain);
+  NEW.owner_id := COALESCE(NEW.owner_id, NEW.owner);
+  NEW.owner := COALESCE(NEW.owner, NEW.owner_id);
+  NEW.clinical_risk_class := COALESCE(NEW.clinical_risk_class, NEW.impact_class, 'CR-0');
+  NEW.impact_class := COALESCE(NEW.impact_class, NEW.clinical_risk_class);
+  NEW.evidence_level := COALESCE(NEW.evidence_level, 'GOVERNED');
+  NEW.intended_use := COALESCE(NEW.intended_use, NEW.artifact_code, NEW.artifact_key);
+
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status = 'DRAFT' AND NEW.state::text <> 'DRAFT' THEN
+      NEW.status := NEW.state::text;
+    ELSIF NEW.status <> 'DRAFT' THEN
+      BEGIN
+        NEW.state := NEW.status::clinical_artifact_state_enum;
+      EXCEPTION WHEN invalid_text_representation THEN
+        NULL;
+      END;
+    END IF;
+  ELSE
+    IF NEW.status IS DISTINCT FROM OLD.status THEN
+      BEGIN
+        NEW.state := NEW.status::clinical_artifact_state_enum;
+      EXCEPTION WHEN invalid_text_representation THEN
+        NULL;
+      END;
+    ELSIF NEW.state IS DISTINCT FROM OLD.state THEN
+      NEW.status := NEW.state::text;
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_sync_clinical_artifact_compat ON clinical_artifacts;
+CREATE TRIGGER trg_sync_clinical_artifact_compat
+BEFORE INSERT OR UPDATE ON clinical_artifacts
+FOR EACH ROW EXECUTE FUNCTION mindos_sync_clinical_artifact_compat();
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_clinical_artifacts_code ON clinical_artifacts(artifact_code);
 CREATE INDEX IF NOT EXISTS idx_clinical_artifacts_type ON clinical_artifacts(artifact_type);
 CREATE INDEX IF NOT EXISTS idx_clinical_artifacts_status ON clinical_artifacts(status);
 CREATE INDEX IF NOT EXISTS idx_clinical_artifacts_risk ON clinical_artifacts(clinical_risk_class);
@@ -149,28 +215,48 @@ CREATE INDEX IF NOT EXISTS idx_clinical_contraindications_artifact ON clinical_c
 CREATE INDEX IF NOT EXISTS idx_clinical_contraindications_severity ON clinical_contraindications(severity);
 
 -- 7. Clinical Reviews (Evaluations by eligible clinical reviewers)
-CREATE TABLE IF NOT EXISTS clinical_reviews (
-  id UUID PRIMARY KEY,
-  artifact_id UUID NOT NULL REFERENCES clinical_artifacts(id) ON DELETE CASCADE,
-  artifact_version INTEGER NOT NULL,
-  governance_case_id UUID,
-  governance_review_id UUID,
-  reviewer_id VARCHAR(120) NOT NULL,
-  review_level VARCHAR(60) NOT NULL,
-  required_specialty VARCHAR(80),
-  status VARCHAR(40) NOT NULL DEFAULT 'ASSIGNED',
-  decision VARCHAR(40),
-  checklist JSONB NOT NULL DEFAULT '{}',
-  evidence_assessment JSONB NOT NULL DEFAULT '{}',
-  risk_assessment JSONB NOT NULL DEFAULT '{}',
-  claim_assessment JSONB NOT NULL DEFAULT '{}',
-  limitations_assessment JSONB NOT NULL DEFAULT '{}',
-  decision_reason TEXT,
-  conditions TEXT[] NOT NULL DEFAULT '{}',
-  policy_version VARCHAR(40) NOT NULL DEFAULT '1.0.0',
-  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  completed_at TIMESTAMPTZ
-);
+-- clinical_reviews is introduced in migration 001. Expand it for the Sprint-10
+-- review workflow without replacing historical rows.
+ALTER TABLE clinical_reviews
+  ADD COLUMN IF NOT EXISTS artifact_version INTEGER,
+  ADD COLUMN IF NOT EXISTS governance_case_id UUID,
+  ADD COLUMN IF NOT EXISTS governance_review_id UUID,
+  ADD COLUMN IF NOT EXISTS reviewer_id VARCHAR(120),
+  ADD COLUMN IF NOT EXISTS review_level VARCHAR(60),
+  ADD COLUMN IF NOT EXISTS required_specialty VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'ASSIGNED',
+  ADD COLUMN IF NOT EXISTS checklist JSONB NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS evidence_assessment JSONB NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS risk_assessment JSONB NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS claim_assessment JSONB NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS limitations_assessment JSONB NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS decision_reason TEXT,
+  ADD COLUMN IF NOT EXISTS conditions TEXT[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS policy_version VARCHAR(40) NOT NULL DEFAULT '1.0.0',
+  ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+
+UPDATE clinical_reviews r
+SET
+  artifact_version = COALESCE(r.artifact_version, a.version),
+  reviewer_id = COALESCE(r.reviewer_id, r.assigned_reviewer_id::text),
+  review_level = COALESCE(r.review_level, r.review_type),
+  status = CASE
+    WHEN r.status IS NOT NULL THEN r.status
+    WHEN r.decided_at IS NOT NULL THEN 'COMPLETED'
+    ELSE 'ASSIGNED'
+  END,
+  completed_at = COALESCE(r.completed_at, r.decided_at)
+FROM clinical_artifacts a
+WHERE a.id = r.artifact_id
+  AND (r.artifact_version IS NULL OR r.reviewer_id IS NULL OR r.review_level IS NULL);
+
+ALTER TABLE clinical_reviews
+  ALTER COLUMN artifact_version SET NOT NULL,
+  ALTER COLUMN reviewer_id SET NOT NULL,
+  ALTER COLUMN review_level SET NOT NULL,
+  ALTER COLUMN review_type SET DEFAULT 'STANDARD_CLINICAL_REVIEW',
+  ALTER COLUMN assigned_reviewer_id DROP NOT NULL,
+  ALTER COLUMN decision TYPE VARCHAR(40) USING decision::text;
 
 CREATE INDEX IF NOT EXISTS idx_clinical_reviews_artifact ON clinical_reviews(artifact_id, artifact_version);
 CREATE INDEX IF NOT EXISTS idx_clinical_reviews_reviewer ON clinical_reviews(reviewer_id);
@@ -206,10 +292,48 @@ CREATE INDEX IF NOT EXISTS idx_clinical_approvals_expiry ON clinical_approval_re
 -- DOWN --
 -- Rollback statements
 DROP TABLE IF EXISTS clinical_approval_records;
-DROP TABLE IF EXISTS clinical_reviews;
 DROP TABLE IF EXISTS clinical_contraindications;
 DROP TABLE IF EXISTS clinical_claim_evidence;
 DROP TABLE IF EXISTS clinical_evidence_metadata;
 DROP TABLE IF EXISTS clinical_claims;
 DROP TABLE IF EXISTS clinical_artifact_versions;
-DROP TABLE IF EXISTS clinical_artifacts;
+
+DROP TRIGGER IF EXISTS trg_sync_clinical_artifact_compat ON clinical_artifacts;
+DROP FUNCTION IF EXISTS mindos_sync_clinical_artifact_compat();
+
+ALTER TABLE clinical_reviews
+  DROP COLUMN IF EXISTS completed_at,
+  DROP COLUMN IF EXISTS policy_version,
+  DROP COLUMN IF EXISTS conditions,
+  DROP COLUMN IF EXISTS decision_reason,
+  DROP COLUMN IF EXISTS limitations_assessment,
+  DROP COLUMN IF EXISTS claim_assessment,
+  DROP COLUMN IF EXISTS risk_assessment,
+  DROP COLUMN IF EXISTS evidence_assessment,
+  DROP COLUMN IF EXISTS checklist,
+  DROP COLUMN IF EXISTS status,
+  DROP COLUMN IF EXISTS required_specialty,
+  DROP COLUMN IF EXISTS review_level,
+  DROP COLUMN IF EXISTS reviewer_id,
+  DROP COLUMN IF EXISTS governance_review_id,
+  DROP COLUMN IF EXISTS governance_case_id,
+  DROP COLUMN IF EXISTS artifact_version;
+
+ALTER TABLE clinical_artifacts
+  DROP COLUMN IF EXISTS updated_at,
+  DROP COLUMN IF EXISTS supersedes_id,
+  DROP COLUMN IF EXISTS governed_resource_id,
+  DROP COLUMN IF EXISTS clinical_claim_level,
+  DROP COLUMN IF EXISTS data_classification,
+  DROP COLUMN IF EXISTS jurisdiction_scope,
+  DROP COLUMN IF EXISTS risk_factors,
+  DROP COLUMN IF EXISTS clinical_risk_class,
+  DROP COLUMN IF EXISTS excluded_population,
+  DROP COLUMN IF EXISTS intended_population,
+  DROP COLUMN IF EXISTS intended_use,
+  DROP COLUMN IF EXISTS status,
+  DROP COLUMN IF EXISTS owner_id,
+  DROP COLUMN IF EXISTS owner_domain,
+  DROP COLUMN IF EXISTS description,
+  DROP COLUMN IF EXISTS name,
+  DROP COLUMN IF EXISTS artifact_code;
