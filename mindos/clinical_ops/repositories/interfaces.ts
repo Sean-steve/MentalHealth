@@ -2,7 +2,8 @@ import {
   ClinicalIncident,
   ClinicalOperationsCapability,
   ClinicalOperationsEscalation,
-  ClinicalOperationsFollowUp
+  ClinicalOperationsFollowUp,
+  SafetyPlanShareGrant
 } from '../domain/types.js';
 
 export interface IClinicalOperationsRepository {
@@ -16,5 +17,7 @@ export interface IClinicalOperationsRepository {
   saveIncident(value: ClinicalIncident): Promise<void>;
   getIncident(id: string): Promise<ClinicalIncident | undefined>;
   listIncidents(): Promise<ClinicalIncident[]>;
+  saveSafetyPlanShare(value: SafetyPlanShareGrant): Promise<void>;
+  listSafetyPlanShares(subjectUserId: string, safetyPlanReference?: string): Promise<SafetyPlanShareGrant[]>;
   reset?(): void | Promise<void>;
 }
