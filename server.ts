@@ -28,6 +28,7 @@ import { careNavigationRouter, referralRouter } from './mindos/care_navigation/i
 import { sprint22Router, configureSprint22Runtime } from './mindos/sprint22/index.js';
 import { sprint23Router, configureSprint23Runtime } from './mindos/sprint23/index.js';
 import { sprint24Router, configureSprint24Runtime } from './mindos/sprint24/index.js';
+import { sprint25Router, configureSprint25Runtime } from './mindos/sprint25/index.js';
 
 async function startServer() {
   const app = express();
@@ -52,6 +53,12 @@ async function startServer() {
     process.env.NODE_ENV === 'production';
   const sprint24Runtime = await configureSprint24Runtime({ usePostgres: sprint24UsePostgres });
   logger.info('MindOS Sprint 24 runtime configured', { ...sprint24Runtime });
+
+  const sprint25UsePostgres =
+    process.env.MINDOS_SPRINT25_STORAGE_MODE === 'postgres' ||
+    process.env.NODE_ENV === 'production';
+  const sprint25Runtime = await configureSprint25Runtime({ usePostgres: sprint25UsePostgres });
+  logger.info('MindOS Sprint 25 runtime configured', { ...sprint25Runtime });
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const requestId =
@@ -216,6 +223,9 @@ async function startServer() {
 
   // Sprint 24: Clinical Operations & Human Escalation
   app.use('/api/v1', sprint24Router);
+
+  // Sprint 25: Analytics & Operational Intelligence
+  app.use('/api/v1', sprint25Router);
 
   app.get('/api/v1/content/articles', (req: Request, res: Response) => {
     const lang = (req.query.lang as string) || 'en';
