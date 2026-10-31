@@ -1,7 +1,49 @@
-<!doctype html><meta charset="utf-8"><title>MindOS Sprint 23 Reconciliation</title><style>body{max-width:930px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #f3c767;color:#f3c767;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700}.done{color:#5fe0ad}.pending{color:#f3c767}</style>
-<a href="../index.html">← Build tracker</a><h1>Sprint 23 reconciliation</h1><span class="tag">RECONCILING — NOT YET ACCEPTED AS COMPLETE</span>
-<h2>Preserved</h2><ul><li class="done"><code>mindos/clinical_record/</code>: longitudinal record, provenance-aware timeline, observations and access-aware projections.</li><li class="done"><code>mindos/outcomes/</code>: measure registry, measurements, comparability, baselines, series, trends, reviews, snapshots, alerts, adapters and reconciliation.</li></ul>
-<h2>Clinical-safety corrections applied</h2><ul><li class="done">Removed hard-coded PHQ-9/GAD-7/WHO-5/C-SSRS/sleep/goal-confidence MCID, target and Safety thresholds from the trend engine.</li><li class="done">Created a governed <code>ClinicalChangeRuleRegistry</code>. Clinical interpretation now requires an approved, versioned Clinical Governance artifact with approval provenance.</li><li class="done">When no approved rule exists, numeric trend interpretation returns <code>UNKNOWN</code> + review required instead of inventing MCID/target/safety values.</li><li class="done">Target-range measures return <code>UNKNOWN</code> when an approved target range is absent rather than falling back to 7–9.</li><li class="done">Categorical changes are not automatically labelled clinically significant.</li><li class="done">Fixed Outcome relationship-authorization error typing to use the existing canonical AUTHZ code family.</li><li class="done">Removed raw clinical measurement values from generic outcome event payloads and generic audit metadata; timeline now stores a protected record reference rather than a value string.</li><li class="done">Added migration <code>021_canonical_longitudinal_outcomes.sql</code>, intentionally with no seeded clinical thresholds.</li><li class="done">Added <code>canonical_longitudinal_outcomes_sprint23.test.ts</code> proving no-rule → UNKNOWN and approved-rule → deterministic interpretation.</li></ul>
-<h2>Validation</h2><p class="done">Targeted TypeScript analysis shows zero new non-environment type errors in the reconciled modules/tests.</p><p class="pending">Full executable regression remains blocked by the uploaded snapshot's missing installed dependencies.</p>
-<h2>Still required before COMPLETE</h2><ul><li class="pending">PostgreSQL repository adapters using migration 021.</li><li class="pending">Outcome/Clinical Record HTTP API and main server wiring.</li><li class="pending">Load approved clinical-change policies from Clinical Governance rather than test/bootstrap registration.</li><li class="pending">Full Sprint 1–23 regression, privacy/security, projection replay, migration, E2E and build verification.</li></ul>
-<p><strong>Decision:</strong> the pre-existing Sprint-23 architecture is reusable after the safety reconciliation, but remains PARTIAL until persistence/runtime integration and real validation are complete.</p>
+<!doctype html><meta charset="utf-8"><title>MindOS Sprint 23 Certification</title>
+<style>body{max-width:980px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #5fe0ad;color:#5fe0ad;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.done{color:#5fe0ad}.muted{color:#9db8ae}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card{padding:15px;border:1px solid #21433b;border-radius:14px;background:#0d1c19}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style>
+<a href="../tracker.html">← Engineering tracker</a>
+<h1>Sprint 23 — Longitudinal Clinical Record & Outcomes</h1>
+<span class="tag">CERTIFIED COMPLETE</span>
+<p class="muted">Certified product-code commit: <code>72fd22cf1ee3829f9e69ad94ee70f50a6603fff9</code><br>Certification workflow run: <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/41151425103">41151425103</a></p>
+
+<h2>Implemented</h2>
+<div class="grid">
+<div class="card"><strong>Longitudinal Clinical Record</strong><br><span class="muted">Purpose-scoped aggregate/projection with source-domain authority preserved.</span></div>
+<div class="card"><strong>Clinical Timeline</strong><br><span class="muted">Occurred vs recorded time, provenance, source references, deterministic ordering and invalidation.</span></div>
+<div class="card"><strong>Outcome Measurement</strong><br><span class="muted">Governed measure registry, provenance, source-reference idempotency, units and validity.</span></div>
+<div class="card"><strong>Comparability & Baselines</strong><br><span class="muted">Explicit version/unit comparability; invalid data cannot silently remain baseline.</span></div>
+<div class="card"><strong>Trend Intelligence</strong><br><span class="muted">Deterministic trends; no diagnosis, no RiskState mutation and no invented clinical thresholds.</span></div>
+<div class="card"><strong>Clinical Change Governance</strong><br><span class="muted">Clinical significance requires an approved, versioned Clinical Governance rule.</span></div>
+<div class="card"><strong>Professional Outcome Review</strong><br><span class="muted">Relationship-scoped review workflow with decision/reason evidence.</span></div>
+<div class="card"><strong>Immutable Outcome Snapshots</strong><br><span class="muted">Review evidence is frozen with integrity hash and active Care Plan version reference.</span></div>
+<div class="card"><strong>Outcome Alerts</strong><br><span class="muted">Alert response windows come only from approved policy; alert ≠ Safety escalation.</span></div>
+<div class="card"><strong>Safety Kernel Bridge</strong><br><span class="muted">Approved safety thresholds create candidate SafetySignals through the authoritative Safety Kernel.</span></div>
+<div class="card"><strong>User Progress</strong><br><span class="muted">Minimum-necessary progress views without a fabricated universal mental-health score.</span></div>
+<div class="card"><strong>Professional Dashboard</strong><br><span class="muted">Relationship-authorized outcome/timeline context with IDOR protections.</span></div>
+</div>
+
+<h2>Clinical-safety invariants</h2>
+<ul>
+<li class="done">No seeded MCID, target, deterioration or Safety thresholds.</li>
+<li class="done">Missing approved clinical-change policy → <code>UNKNOWN</code> / review required.</li>
+<li class="done">Incompatible instrument versions → <code>INCOMPARABLE</code>; no silent normalization.</li>
+<li class="done">Product telemetry cannot masquerade as a clinical outcome.</li>
+<li class="done">AI cannot forge clinically-assessed/professional provenance.</li>
+<li class="done">Raw clinical values are excluded from generic event/timeline metadata where protected references suffice.</li>
+<li class="done">Trend != diagnosis; OutcomeAlert != RiskState; Safety Kernel remains authoritative.</li>
+</ul>
+
+<h2>Certification evidence</h2>
+<ul>
+<li class="done">21 / 21 canonical PostgreSQL migrations — PASS</li>
+<li class="done">Full Sprint 1–23 TypeScript typecheck — PASS</li>
+<li class="done">445 / 445 full regression tests — PASS</li>
+<li class="done">17 / 17 dedicated Sprint-23 acceptance tests — PASS</li>
+<li class="done">Sprint-23 PostgreSQL runtime smoke — PASS</li>
+<li class="done">Security secret scan — 0 detected secrets/private keys</li>
+<li class="done">Production frontend/server bundle — PASS</li>
+</ul>
+
+<h2>Foundation repairs completed during certification</h2>
+<p>Legacy Sprint-1 assessment, professional/provider and appointment schemas were reconciled using additive expand/backfill migrations so later canonical migrations work against the real historical database shape. The database CLI and Sprint-23 PostgreSQL verification script now explicitly close native pools after command completion.</p>
+
+<p><strong>Decision:</strong> Sprint 23 is implemented, integrated and certified. No Sprint-23 completion blocker remains.</p>
