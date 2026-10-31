@@ -34,6 +34,7 @@ export interface ReleaseValidationCandidate{
 export interface ValidationEvidence{
   id:string;
   release_id:string;
+  build_sha:string;
   gate:ValidationGate;
   status:ValidationEvidenceStatus;
   evidence_type:string;
@@ -50,6 +51,7 @@ export interface ValidationEvidence{
 export interface ValidationAttestation{
   id:string;
   release_id:string;
+  build_sha:string;
   gate:ValidationGate;
   reviewer_id:string;
   reviewer_role:string;
