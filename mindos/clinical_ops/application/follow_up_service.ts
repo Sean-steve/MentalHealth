@@ -1,6 +1,6 @@
 import { DomainInvariantError, NotFoundError } from '../../platform/errors/index.js';
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
-import { ClinicalOperationsRepository } from '../repositories/in_memory.js';
+import { ClinicalOperationsRepository } from '../repositories/index.js';
 import { ClinicalOperationsFollowUp, ClinicalOperationsFollowUpType } from '../domain/types.js';
 
 export class ClinicalOperationsFollowUpService {
