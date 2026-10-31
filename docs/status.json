@@ -59,9 +59,20 @@
       "title": "Validation & Release Assurance",
       "status": "IMPLEMENTED",
       "note": "CERTIFIED COMPLETE as a technical release-assurance implementation on PR head 8b88031aa89fa2e29cb908ee9caa0d61414f9024 and merged to main as 183ab74a37d9d6b4750e4a2e67916f1a1f7da2b0. Final certification run 41188715852 passed 25/25 PostgreSQL migrations, full TypeScript, 519/519 regression tests, 18/18 release-assurance acceptance tests, 7/7 security/red-team, 6/6 clinical, 6/6 privacy/Kenya-regulatory, 14/14 accessibility baseline, DR restore, PostgreSQL release-assurance persistence, secret/dependency scans, production build, performance budgets and 23-component SBOM. Production activation remains fail-closed until real exact-build clinical, AI-safety, DPO, Kenya regulatory, Risk-A security and Release Authority attestations/external evidence exist."
+    },
+    {
+      "number": "28",
+      "title": "Controlled Beta & Kenya Launch Readiness",
+      "status": "PARTIAL",
+      "note": "IMPLEMENTATION CANDIDATE on sprint-28-controlled-beta-kenya-launch. Exact-build release candidate lock, hashed beta cohort enrollment, hard cohort ceilings, consent/evidence enrollment, launch evidence manifest, operational monitoring, Kenya launch gate, emergency hold/resume, limited-launch progression and post-launch review are implemented. Migration 026 and PostgreSQL lifecycle smoke are included. Real Kenya launch remains blocked until genuine exact-build governance attestations and any human-determined required external regulatory evidence exist."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 28 controlled-launch candidate created",
+      "detail": "Launch control now constrains rollout to exact-build authorization, Kenya-only bounded cohorts, current operational evidence, explicit regulatory applicability evidence, emergency hold controls and evidence-backed post-launch review. CI cannot authorize a real launch."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 27 technically certified and merged to main",
@@ -243,6 +254,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 27 Validation & Release Assurance is technically certified and merged to main. Production launch is intentionally blocked until real exact-build governance attestations and applicable external regulatory evidence are supplied."
+    "note": "Sprint 27 remains technically certified on main. Sprint 28 Controlled Beta & Kenya Launch Readiness is on its dedicated branch pending certification; no real Kenya launch has been authorized."
   }
 }
