@@ -2,7 +2,7 @@ import { DomainInvariantError, NotFoundError } from '../../platform/errors/index
 import { AuditService } from '../../platform/audit/index.js';
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
 import { EscalationState, RiskState } from '../../platform/shared/state_machines.js';
-import { ClinicalOperationsRepository } from '../repositories/in_memory.js';
+import { ClinicalOperationsRepository } from '../repositories/index.js';
 import {
   ClinicalOperationsEscalation,
   ClinicalOperationsEscalationLevel
