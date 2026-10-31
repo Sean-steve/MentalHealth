@@ -14,6 +14,8 @@ export const ClinicalOperationsRepository: IClinicalOperationsRepository = {
   saveIncident: value => active.saveIncident(value),
   getIncident: id => active.getIncident(id),
   listIncidents: () => active.listIncidents(),
+  saveSafetyPlanShare: value => active.saveSafetyPlanShare(value),
+  listSafetyPlanShares: (subjectUserId,safetyPlanReference) => active.listSafetyPlanShares(subjectUserId,safetyPlanReference),
   reset: () => active.reset?.()
 };
 
