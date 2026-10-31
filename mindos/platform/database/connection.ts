@@ -850,6 +850,21 @@ export class DatabaseManager {
     sharedDriver = null;
     DatabaseObservability.resetForTesting();
   }
+
+  /**
+   * Explicit process-lifecycle shutdown for CLIs, workers and graceful server stops.
+   * Native pg pools keep the Node/Bun event loop alive until pool.end() is called.
+   */
+  public static async shutdown(): Promise<void> {
+    const driver = sharedDriver;
+    sharedDriver = null;
+    if (driver instanceof NativePostgresDriver) {
+      await driver.close();
+    } else if (driver instanceof CanonicalPostgresDriver) {
+      driver.reset();
+    }
+    DatabaseObservability.resetForTesting();
+  }
 }
 
 export const PostgresConnectionPool = DatabaseConnectionPool;
