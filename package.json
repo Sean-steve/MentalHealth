@@ -31,6 +31,7 @@
     "test:sprint22": "tsx --test tests/canonical_care_plans_tasks_messaging_sprint22.test.ts",
     "test:sprint23": "tsx --test tests/canonical_longitudinal_outcomes_sprint23.test.ts",
     "test:sprint24": "tsx --test tests/canonical_clinical_operations_sprint24.test.ts",
+    "sprint24:postgres-smoke": "tsx scripts/verify_sprint24_postgres.ts",
     "sprint23:postgres-smoke": "tsx scripts/verify_sprint23_postgres.ts"
   },
   "dependencies": {
