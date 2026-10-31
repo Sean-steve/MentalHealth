@@ -23,50 +23,25 @@ export class RegulatoryCertificationService {
     RegulatoryCertificationService.certifications.clear();
     RegulatoryCertificationService.externalStatuses.clear();
 
-    // 1. Digital Health Agency (DHA) System Registration
-    const dhaId = generateUUIDv7();
-    RegulatoryCertificationService.externalStatuses.set('KE_DHA', {
-      id: dhaId,
-      authority_code: 'DHA',
-      jurisdiction_code: 'KE',
-      registration_type: 'Digital Health Solution Statutory Registration',
-      registration_reference: 'DHA-REG-KE-2026-0041',
-      status: 'REGISTERED',
-      effective_date: '2026-01-01',
-      renewal_due_date: '2027-01-01',
-      verified_at: '2026-01-01T00:00:00.000Z',
-      verified_by: 'lead_regulatory_counsel_ke'
-    });
+    // Canonical authority requirements are registered as PENDING only.
+    // MindOS MUST NOT fabricate or seed legal registration/certification success.
+    const pending = [
+      ['DHA','Digital Health Solution Statutory Registration'],
+      ['ODPC','Data Controller / Processor Registration'],
+      ['KMPDC','Telehealth / Professional Regulatory Applicability Review']
+    ] as const;
 
-    // 2. ODPC Data Controller / Processor Registration
-    const odpcId = generateUUIDv7();
-    RegulatoryCertificationService.externalStatuses.set('KE_ODPC', {
-      id: odpcId,
-      authority_code: 'ODPC',
-      jurisdiction_code: 'KE',
-      registration_type: 'Data Controller & Processor Certificate (Health Sector)',
-      registration_reference: 'ODPC-CERT-KE-2026-088',
-      status: 'REGISTERED',
-      effective_date: '2026-01-01',
-      renewal_due_date: '2028-01-01',
-      verified_at: '2026-01-01T00:00:00.000Z',
-      verified_by: 'lead_regulatory_counsel_ke'
-    });
-
-    // 3. KMPDC Telehealth Operational Clearance
-    const kmpdcId = generateUUIDv7();
-    RegulatoryCertificationService.externalStatuses.set('KE_KMPDC', {
-      id: kmpdcId,
-      authority_code: 'KMPDC',
-      jurisdiction_code: 'KE',
-      registration_type: 'Telehealth Platform Facilitator Operational Clearance',
-      registration_reference: 'KMPDC-TH-KE-2026-112',
-      status: 'REGISTERED',
-      effective_date: '2026-01-01',
-      renewal_due_date: '2027-01-01',
-      verified_at: '2026-01-01T00:00:00.000Z',
-      verified_by: 'lead_regulatory_counsel_ke'
-    });
+    for (const [authority, registrationType] of pending) {
+      RegulatoryCertificationService.externalStatuses.set(`KE_${authority}`, {
+        id: generateUUIDv7(),
+        authority_code: authority,
+        jurisdiction_code: 'KE',
+        registration_type: registrationType,
+        status: 'PENDING',
+        verified_at: '2026-09-04T00:00:00.000Z',
+        verified_by: 'SYSTEM_BASELINE_NOT_LEGAL_APPROVAL'
+      });
+    }
   }
 
   public static getExternalStatus(authorityCode: string, jurisdictionCode = 'KE'): ExternalRegulatoryStatus | undefined {

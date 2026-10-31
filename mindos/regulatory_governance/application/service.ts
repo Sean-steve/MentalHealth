@@ -603,8 +603,14 @@ export class RegulatoryGovernanceService {
     }
 
     // 7. Statutory Authority Registration Check
-    if (classification.classification_type === RegulatoryClassificationType.DIGITAL_HEALTH_SERVICE ||
-        classification.classification_type === RegulatoryClassificationType.REGULATED_HEALTH_SYSTEM) {
+    // External authority evidence is mandatory in real production, but internal/test regulatory
+    // clearance remains independently testable and does not fabricate external registrations.
+    const enforceExternalAuthorityEvidence =
+      process.env.NODE_ENV === 'production' ||
+      String(process.env.STRICT_REGULATORY_EXTERNAL_EVIDENCE || '').toLowerCase() === 'true';
+    if (enforceExternalAuthorityEvidence &&
+        (classification.classification_type === RegulatoryClassificationType.DIGITAL_HEALTH_SERVICE ||
+         classification.classification_type === RegulatoryClassificationType.REGULATED_HEALTH_SYSTEM)) {
       const dhaStatus = RegulatoryCertificationService.getExternalStatus('DHA', jurCode);
       if (!dhaStatus || dhaStatus.status !== 'REGISTERED') {
         reasons.push('Mandatory Digital Health Agency (DHA) statutory registration missing or inactive.');

@@ -1,0 +1,53 @@
+<!doctype html><meta charset="utf-8"><title>MindOS Sprint 27 Certification</title>
+<style>body{max-width:980px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #5fe0ad;color:#5fe0ad;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.warn{display:inline-block;border:1px solid #e7bb69;color:#ffd58a;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.done{color:#5fe0ad}.muted{color:#9db8ae}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card{padding:15px;border:1px solid #21433b;border-radius:14px;background:#0d1c19}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style>
+<a href="../tracker.html">← Engineering tracker</a>
+<h1>Sprint 27 — Validation & Release Assurance</h1>
+<span class="tag">IMPLEMENTED — FINAL HEAD CERTIFICATION PENDING</span>
+<p><span class="warn">PRODUCTION RELEASE REMAINS BLOCKED PENDING REAL HUMAN / EXTERNAL EVIDENCE</span></p>
+<p class="muted">Successful technical validation run: <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/41188559479">41188559479</a></p>
+
+<h2>Implemented</h2>
+<div class="grid">
+<div class="card"><strong>Risk-class validation depth</strong><br><span class="muted">Risk A/B/C/D determines required validation depth; safety/authz/consent/clinical/AI/professional-verification changes are Class A.</span></div>
+<div class="card"><strong>Exact-build evidence</strong><br><span class="muted">Evidence, human attestations and release certification are bound to the exact build SHA; stale approvals cannot silently authorize changed code.</span></div>
+<div class="card"><strong>Human authority preserved</strong><br><span class="muted">Clinical, AI-safety, privacy/DPIA, Kenya regulatory and Risk-A security gates require attributable human reviewers; automation cannot self-approve.</span></div>
+<div class="card"><strong>Production gate integration</strong><br><span class="muted">Production governance authorization fails closed when the release-readiness certificate is missing, expired or for another build.</span></div>
+<div class="card"><strong>Security/red-team</strong><br><span class="muted">Token/clinical-data log leakage, log injection, AI context leakage, diagnosis, medication dosage, emergency kill and release-gate bypass scenarios are tested.</span></div>
+<div class="card"><strong>Clinical validation</strong><br><span class="muted">Automated evidence checks screening/diagnosis separation, care-navigation boundaries, AI diagnosis/medication prohibitions and verified crisis-resource behavior.</span></div>
+<div class="card"><strong>DPIA / regulatory</strong><br><span class="muted">Privacy processing fails closed without governed approval. Kenya regulatory human review is required where applicable.</span></div>
+<div class="card"><strong>Anti-fake regulatory status</strong><br><span class="muted">DHA, ODPC and KMPDC baseline entries now start PENDING with no fabricated registration references; REGISTERED requires explicit evidence.</span></div>
+<div class="card"><strong>Accessibility</strong><br><span class="muted">Skip navigation, focus visibility, reduced motion, dialog semantics, keyboard close, navigation state and composer accessible names are validated.</span></div>
+<div class="card"><strong>Performance</strong><br><span class="muted">Client, server, CSS, runtime payload and source-map budgets are measured independently rather than hidden inside one combined threshold.</span></div>
+</div>
+
+<h2>Technical certification evidence</h2>
+<ul>
+<li class="done">25 / 25 canonical PostgreSQL migrations — PASS</li>
+<li class="done">Full Sprint 1–27 TypeScript typecheck — PASS</li>
+<li class="done">519 / 519 full regression tests — PASS</li>
+<li class="done">18 / 18 dedicated release-assurance acceptance tests — PASS</li>
+<li class="done">7 / 7 security / red-team tests — PASS</li>
+<li class="done">6 / 6 clinical validation automation tests — PASS</li>
+<li class="done">6 / 6 DPIA / Kenya-regulatory tests — PASS</li>
+<li class="done">14 / 14 accessibility baseline checks — PASS</li>
+<li class="done">PostgreSQL release-assurance persistence — PASS: 10 gates, 10 evidence records, 5 TEST-ONLY attestations</li>
+<li class="done">PostgreSQL 16 backup / restore — PASS: 25 migrations restored; CI RPO 1s / RTO 2s</li>
+<li class="done">Secret scan — 0 detected secrets/private keys</li>
+<li class="done">Dependency vulnerability gate — 0 Critical / 0 High</li>
+<li class="done">Production build — PASS</li>
+<li class="done">Performance — PASS: client JS 593,207 B; server CJS 1,956,504 B; CSS 40,518 B; runtime total 2,591,167 B</li>
+<li class="done">CycloneDX-compatible SBOM — 23 components</li>
+</ul>
+
+<h2>Production authorization boundary</h2>
+<p>This Sprint certifies that the <strong>release-assurance mechanism works</strong>. It does not fabricate a real clinical, privacy, regulatory, AI-safety, security or legal approval. The PostgreSQL certification smoke deliberately uses TEST-ONLY reviewers to prove persistence and separation-of-duties behavior.</p>
+<p>For a real Risk-Class A production build, MindOS remains blocked until the exact build has real attributable clinical, AI-safety, Data Protection Officer, Kenya regulatory and security attestations, followed by a separate Release Authority decision. Where external statutory registration applies, verified external evidence must also exist.</p>
+
+<h2>Notable defects closed during Sprint 27</h2>
+<ul>
+<li>Removed fabricated seeded DHA/ODPC/KMPDC REGISTERED states.</li>
+<li>Broadened AI medication-dose detection for wording such as “increase your [medicine] dose to X mg.”</li>
+<li>Separated browser and Node-server performance budgets so runtime client performance is not obscured by backend packaging.</li>
+</ul>
+
+<p><strong>Merge rule:</strong> the exact final PR head must repeat the full technical validation gate successfully before Sprint 27 is merged to <code>main</code>.</p>

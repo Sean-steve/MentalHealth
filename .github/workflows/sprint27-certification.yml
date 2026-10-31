@@ -1,0 +1,148 @@
+name: Certify MindOS Sprint 27
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mindos/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'docs/**'
+      - 'server.ts'
+      - 'package.json'
+      - 'bun.lock'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
+      - '.github/workflows/sprint27-certification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sprint27-certification-pr
+  cancel-in-progress: true
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: mindos_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mindos_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      NODE_ENV: test
+      MINDOS_ENV: test
+      PORT: 3000
+      APP_URL: http://localhost:3000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      DEFAULT_COUNTRY_CODE: KE
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mindos_test
+      DB_POOL_MIN: 1
+      DB_POOL_MAX: 5
+      DB_SSL: "false"
+      DB_TIMEOUT_MS: 5000
+      REDIS_CACHE_URL: redis://localhost:6379/0
+      REDIS_QUEUE_URL: redis://localhost:6379/1
+      CACHE_ENABLED: "true"
+      JWT_SECRET: sprint27-test-jwt-secret-32-characters-minimum
+      SESSION_SECRET: sprint27-test-session-secret-32-characters-minimum
+      AUDIT_INTEGRITY_SALT: sprint27-test-audit-salt
+      ANALYTICS_PSEUDONYM_SALT: sprint27-test-analytics-pseudonym-salt
+      DATA_LIFECYCLE_HASH_SALT: sprint27-test-lifecycle-hash-salt
+      ALLOW_INSECURE_COOKIES: "true"
+      CSRF_ENABLED: "true"
+      AI_PROVIDER: mock_sandbox
+      GEMINI_API_KEY: TEST_ONLY_NOT_REAL
+      PAYMENTS_PROVIDER: mock
+      NOTIFICATIONS_PROVIDER: mock_console
+      NOTIFICATIONS_REAL_DISPATCH: "false"
+      ANALYTICS_ENABLED: "true"
+      STRICT_RELEASE_GATES: "true"
+      SAFETY_POLICY_VERSION: 2.0.0
+      MINDOS_MESSAGE_ATTACHMENT_POLICY_JSON: '{"max_bytes":1048576,"allowed_mime_types":["application/pdf","image/jpeg","image/png"],"allowed_data_classifications":["HEALTH_SENSITIVE","CLINICAL_RECORD"]}'
+      MINDOS_TASK_RECURRENCE_POLICIES_JSON: '[{"rule_key":"TEST_DAILY","interval_minutes":1440,"anchor":"PRIOR_DUE_AT","max_occurrences":3,"policy_version":"TEST-1"}]'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate migration registry
+        run: bun run db:validate-migrations
+
+      - name: Apply canonical migrations to PostgreSQL 16
+        env:
+          MINDOS_DATABASE_DRIVER: postgres
+        run: bun run db:migrate
+
+      - name: Typecheck full Sprint 1-27 source
+        run: bun run typecheck
+
+      - name: Automated QA — canonical Sprint 1-27 regression
+        run: bun run test
+
+      - name: Release assurance — Sprint 27 acceptance
+        run: bun run test:sprint27
+
+      - name: Security and red-team validation
+        run: bun run test:sprint27:red-team
+
+      - name: Clinical validation automation
+        run: bun run test:sprint27:clinical
+
+      - name: DPIA and Kenya regulatory validation
+        run: bun run test:sprint27:privacy-regulatory
+
+      - name: Accessibility baseline validation
+        run: bun run sprint27:a11y
+
+      - name: Security secret scan
+        run: bun run scan:secrets
+
+      - name: Dependency vulnerability gate
+        run: bun run scan:dependencies
+
+      - name: Reliability and disaster-recovery restore validation
+        env:
+          MINDOS_DATABASE_DRIVER: postgres
+        run: bun run sprint26:dr-smoke
+
+      - name: Release-assurance PostgreSQL persistence validation
+        env:
+          MINDOS_DATABASE_DRIVER: postgres
+        run: bun run sprint27:postgres-smoke
+
+      - name: Build production bundle
+        run: bun run build
+
+      - name: Performance budget validation
+        run: bun run sprint27:performance
+
+      - name: Generate SBOM
+        run: bun run build:sbom

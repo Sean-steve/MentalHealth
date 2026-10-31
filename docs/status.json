@@ -53,9 +53,25 @@
       "title": "Platform Hardening",
       "status": "IMPLEMENTED",
       "note": "CERTIFIED COMPLETE on PR head a4516f9f4c46db66d8477d0236d2e567b59b884d and merged to main as 0d29aa95ab6c90b8e22b4bf9c58850bc510011cc. Final certification run 41186835609 passed 24/24 canonical PostgreSQL migrations, full TypeScript, 482/482 Sprint 1–26 regression tests, 14/14 dedicated Sprint-26 acceptance tests, real PostgreSQL 16 backup/restore drill with persisted migration history, secret scan with 0 findings, dependency vulnerability scan with 0 Critical/High, production build, and 23-component SBOM."
+    },
+    {
+      "number": "27",
+      "title": "Validation & Release Assurance",
+      "status": "IMPLEMENTED",
+      "note": "CERTIFICATION CANDIDATE. Sprint 27 Validation & Release Assurance passed run 41188559479: 25/25 PostgreSQL migrations, full TypeScript, 519/519 Sprint 1–27 regression tests, 18/18 release-assurance acceptance tests, 7/7 security/red-team, 6/6 clinical, 6/6 privacy/Kenya-regulatory, 14/14 accessibility baseline, PostgreSQL release-assurance smoke (10 gates/10 evidence/5 test-only attestations), PostgreSQL DR restore (RPO 1s/RTO 2s), secret scan 0, dependency scan 0 Critical/High, production build, measured performance budgets, and 23-component SBOM. This certifies the Sprint-27 implementation only; production activation remains blocked until real exact-build human governance attestations and external regulatory evidence are supplied."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 27 technical validation certification passed",
+      "detail": "Run 41188559479 passed the complete technical validation stack. CI test-only reviewers prove persistence and gate behavior but are not real clinical/privacy/regulatory/security approvals. Production activation remains fail-closed pending real exact-build attestations."
+    },
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 27 validation candidate created",
+      "detail": "Release assurance is now exact-build and fail-closed. Automated evidence cannot impersonate clinical, privacy, Kenya regulatory, AI-safety or Risk-A security reviewers; production governance authorization requires release-readiness certification."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 26 certified and merged to main",
@@ -222,6 +238,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 26 Platform Hardening is certified complete and merged to main. GitHub Pages deployment remains driven from main."
+    "note": "Sprint 27 release-assurance implementation is technically certified on PR #5; final PR-head certification remains before merge. Production launch remains blocked pending real human governance approvals/evidence."
   }
 }
