@@ -25,6 +25,7 @@ export class LaunchAuthorizationService{
     for(const authority of p.required_external_authorities){
       const status=RegulatoryCertificationService.getExternalStatus(authority,'KE');
       if(!status||!['REGISTERED','AUDITED','EXEMPT'].includes(status.status))blockers.push(`EXTERNAL_REGULATORY_EVIDENCE_MISSING:${authority}`);
+      else if(status.renewal_due_date&&Date.parse(status.renewal_due_date)<=Date.now())blockers.push(`EXTERNAL_REGULATORY_EVIDENCE_EXPIRED:${authority}`);
     }
     const snapshots=await LaunchRepository.listMonitoringSnapshots(p.id);
     const latest=[...snapshots].sort((a,b)=>Date.parse(b.captured_at)-Date.parse(a.captured_at))[0];
@@ -50,6 +51,14 @@ export class LaunchAuthorizationService{
     if(p.owner_id===input.reviewer_id)throw new AuthorizationError('Launch program owner cannot be the sole launch authorizer.',{errorCode:'AUTHZ_004'});
     if(input.decision_type==='CONTROLLED_BETA'&&p.state!=='RELEASE_CANDIDATE_LOCKED')throw new DomainInvariantError('Controlled beta authorization requires a locked release candidate.');
     if(input.decision_type==='LIMITED_KENYA_LAUNCH'&&p.state!=='BETA_ACTIVE')throw new DomainInvariantError('Limited Kenya launch authorization requires an active controlled beta.');
+    if(input.decision_type==='LIMITED_KENYA_LAUNCH'){
+      const participants=await LaunchRepository.listParticipants(p.id);
+      if(!participants.some(x=>x.state==='ENROLLED'))throw new DomainInvariantError('Limited Kenya launch requires evidence that the controlled beta actually enrolled participants.');
+      const snapshots=await LaunchRepository.listMonitoringSnapshots(p.id);
+      if(!p.beta_starts_at||!snapshots.some(x=>x.build_sha===p.build_sha&&x.status==='GREEN'&&Date.parse(x.captured_at)>=Date.parse(p.beta_starts_at))){
+        throw new DomainInvariantError('Limited Kenya launch requires a GREEN operational monitoring snapshot captured during the active beta window.');
+      }
+    }
     const evaluation=await this.evaluate(p.id);
     if(input.decision!=='BLOCKED'&&!evaluation.ready)throw new DomainInvariantError(`KENYA_LAUNCH_GATE_BLOCKED: ${evaluation.blockers.join(',')}`);
     if(!evaluation.evidence_package_id)throw new DomainInvariantError('Launch authorization requires a launch evidence package.');
@@ -75,6 +84,7 @@ export class LaunchAuthorizationService{
     if(actor.role.toUpperCase()!=='RELEASE_AUTHORITY')throw new AuthorizationError('Beta activation requires RELEASE_AUTHORITY.',{errorCode:'AUTHZ_002'});
     const p=await LaunchRepository.getProgram(programId);if(!p)throw new NotFoundError('Launch program not found.');
     if(p.state!=='BETA_READY')throw new DomainInvariantError('Controlled beta is not authorized for activation.');
+    const evaluation=await this.evaluate(p.id);if(!evaluation.ready)throw new DomainInvariantError(`BETA_ACTIVATION_BLOCKED: ${evaluation.blockers.join(',')}`);
     p.state='BETA_ACTIVE';p.beta_starts_at=new Date().toISOString();p.updated_at=p.beta_starts_at;await LaunchRepository.saveProgram(p);return p;
   }
 
