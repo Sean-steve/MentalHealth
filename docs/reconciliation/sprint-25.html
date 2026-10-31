@@ -1,0 +1,44 @@
+<!doctype html><meta charset="utf-8"><title>MindOS Sprint 25 Certification</title>
+<style>body{max-width:980px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #5fe0ad;color:#5fe0ad;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.done{color:#5fe0ad}.muted{color:#9db8ae}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card{padding:15px;border:1px solid #21433b;border-radius:14px;background:#0d1c19}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style>
+<a href="../tracker.html">← Engineering tracker</a>
+<h1>Sprint 25 — Analytics & Operational Intelligence</h1>
+<span class="tag">IMPLEMENTED — FINAL HEAD CERTIFICATION PENDING</span>
+<p class="muted">Initial successful certification run: <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/41185289582">41185289582</a></p>
+
+<h2>Implemented</h2>
+<div class="grid">
+<div class="card"><strong>Governed event contracts</strong><br><span class="muted">Only explicitly approved source events enter the analytics pipeline.</span></div>
+<div class="card"><strong>Privacy minimization</strong><br><span class="muted">Health/clinical payloads contribute to aggregate measurement without copying raw journal, AI, assessment or clinical text into ordinary analytics.</span></div>
+<div class="card"><strong>Pseudonymization</strong><br><span class="muted">Subject identifiers are transformed to salted stable pseudonyms; direct identifiers are excluded from aggregate dimensions.</span></div>
+<div class="card"><strong>Versioned metric registry</strong><br><span class="muted">Metric methodology versions are immutable and historical dashboards retain the applicable version.</span></div>
+<div class="card"><strong>Evidence semantics</strong><br><span class="muted">Descriptive/correlational/comparative/causal evidence levels are explicit; metrics cannot silently upgrade to causal claims.</span></div>
+<div class="card"><strong>Cohort suppression</strong><br><span class="muted">Low-count cohorts are suppressed rather than exposed as mental-health analytics.</span></div>
+<div class="card"><strong>Governed dashboards</strong><br><span class="muted">Safety, Product, Business and Outcome dashboards show approved aggregates or explicit NO_GOVERNED_DATA states.</span></div>
+<div class="card"><strong>Experiment policy</strong><br><span class="muted">Crisis/safety safeguards cannot be withheld by ordinary experiments; pricing cannot target inferred distress/vulnerability.</span></div>
+<div class="card"><strong>PostgreSQL persistence</strong><br><span class="muted">Migration 023 persists metric versions and suppressed/governed aggregates while using the canonical analytics_events raw-minimized layer.</span></div>
+<div class="card"><strong>Event bridge</strong><br><span class="muted">Canonical domain events flow through the minimization transformer before analytics persistence.</span></div>
+</div>
+
+<h2>Canonical invariants</h2>
+<ul>
+<li class="done">Outcome / Safety / Care Access outrank engagement/activity as success evidence.</li>
+<li class="done">Raw journal text, private AI conversation text and clinical notes are excluded from ordinary analytics storage.</li>
+<li class="done">No individual mental-health profiles are exposed through dashboard APIs.</li>
+<li class="done">Metric changes create new versions; incompatible historical definitions are not silently recomputed.</li>
+<li class="done">Business metrics with no finance-owned aggregate return NO_GOVERNED_DATA rather than fabricated values.</li>
+<li class="done">Safety false-positive/false-negative rates are not inferred from ordinary runtime events without governed review sets.</li>
+<li class="done">Causal language is blocked unless the metric methodology is explicitly governed as causal.</li>
+</ul>
+
+<h2>Initial certification evidence</h2>
+<ul>
+<li class="done">23 / 23 canonical PostgreSQL migrations — PASS</li>
+<li class="done">Full Sprint 1–25 TypeScript typecheck — PASS</li>
+<li class="done">468 / 468 full regression tests — PASS</li>
+<li class="done">13 / 13 dedicated Sprint-25 acceptance tests — PASS</li>
+<li class="done">Sprint-25 PostgreSQL analytics runtime smoke — PASS</li>
+<li class="done">Security secret scan — 0 detected secrets/private keys</li>
+<li class="done">Production frontend/server bundle — PASS</li>
+</ul>
+
+<p><strong>Merge rule:</strong> the exact final PR head must repeat this full gate successfully before Sprint 25 is merged to <code>main</code>.</p>
