@@ -26,6 +26,30 @@ export interface MigrationStatus {
 export class MigrationEngine {
   private static appliedMigrations: Map<string, string> = new Map();
 
+  private static usesPersistentRegistry(): boolean {
+    return String(process.env.MINDOS_DATABASE_DRIVER || '').toLowerCase() === 'postgres';
+  }
+
+  private static async hydratePersistentRegistry(): Promise<void> {
+    if (!MigrationEngine.usesPersistentRegistry()) return;
+    try {
+      const client = DatabaseManager.getClient();
+      const rows = await client.query<{ version: string; applied_at: string | Date }>(
+        'SELECT version, applied_at FROM schema_migrations ORDER BY version'
+      );
+      MigrationEngine.appliedMigrations.clear();
+      for (const row of rows) {
+        const appliedAt = row.applied_at instanceof Date
+          ? row.applied_at.toISOString()
+          : String(row.applied_at);
+        MigrationEngine.appliedMigrations.set(String(row.version), appliedAt);
+      }
+    } catch {
+      // Migration 001 creates schema_migrations. Before that table exists, an empty registry is expected.
+      MigrationEngine.appliedMigrations.clear();
+    }
+  }
+
   public static getMigrationsDirectory(): string {
     return path.join(process.cwd(), 'mindos', 'platform', 'database', 'migrations');
   }
@@ -66,6 +90,7 @@ export class MigrationEngine {
   }
 
   public static async status(): Promise<MigrationStatus[]> {
+    await MigrationEngine.hydratePersistentRegistry();
     const available = MigrationEngine.listAvailableMigrations();
     return available.map(m => {
       const appliedAt = MigrationEngine.appliedMigrations.get(m.version);
@@ -83,14 +108,25 @@ export class MigrationEngine {
     const applied: string[] = [];
     const client = DatabaseManager.getClient();
 
+    await MigrationEngine.hydratePersistentRegistry();
+
     for (const migration of available) {
       if (!MigrationEngine.appliedMigrations.has(migration.version)) {
         logger.info(`Applying migration: ${migration.version}_${migration.name}`);
         
+        const appliedAt = new Date().toISOString();
         await client.transaction(async (tx) => {
           // Execute SQL UP
           await tx.query(migration.sqlUp);
-          MigrationEngine.appliedMigrations.set(migration.version, new Date().toISOString());
+          if (MigrationEngine.usesPersistentRegistry()) {
+            await tx.query(
+              `INSERT INTO schema_migrations (version, name, applied_at)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name`,
+              [migration.version, migration.name, appliedAt]
+            );
+          }
+          MigrationEngine.appliedMigrations.set(migration.version, appliedAt);
         });
 
         applied.push(`${migration.version}_${migration.name}`);
@@ -102,6 +138,7 @@ export class MigrationEngine {
   }
 
   public static async rollback(): Promise<{ rolledBack: string | null }> {
+    await MigrationEngine.hydratePersistentRegistry();
     const available = MigrationEngine.listAvailableMigrations();
     const appliedList = Array.from(MigrationEngine.appliedMigrations.keys()).sort();
     if (appliedList.length === 0) {
@@ -117,6 +154,9 @@ export class MigrationEngine {
       const client = DatabaseManager.getClient();
       await client.transaction(async (tx) => {
         await tx.query(migration.sqlDown!);
+        if (MigrationEngine.usesPersistentRegistry()) {
+          await tx.query('DELETE FROM schema_migrations WHERE version = $1', [migration.version]);
+        }
         MigrationEngine.appliedMigrations.delete(migration.version);
       });
       return { rolledBack: `${migration.version}_${migration.name}` };

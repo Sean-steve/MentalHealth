@@ -1,0 +1,51 @@
+<!doctype html><meta charset="utf-8"><title>MindOS Sprint 26 Certification</title>
+<style>body{max-width:980px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #5fe0ad;color:#5fe0ad;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.done{color:#5fe0ad}.muted{color:#9db8ae}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card{padding:15px;border:1px solid #21433b;border-radius:14px;background:#0d1c19}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style>
+<a href="../tracker.html">← Engineering tracker</a>
+<h1>Sprint 26 — Platform Hardening</h1>
+<span class="tag">IMPLEMENTED — FINAL HEAD CERTIFICATION PENDING</span>
+<p class="muted">Successful hardening certification run: <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/41186710473">41186710473</a></p>
+
+<h2>Implemented</h2>
+<div class="grid">
+<div class="card"><strong>Privacy lifecycle orchestration</strong><br><span class="muted">Erasure/restriction jobs track primary DB, object, vector, search, analytics and cache dependencies; completion is impossible until all required stores acknowledge.</span></div>
+<div class="card"><strong>Derived-store evidence</strong><br><span class="muted">Per-store acknowledgement, blocked and failed receipts prevent false “deletion complete” states.</span></div>
+<div class="card"><strong>Structured-log hardening</strong><br><span class="muted">Sensitive fields and message text are redacted, injection newlines are removed, and log messages are bounded.</span></div>
+<div class="card"><strong>Reliability hierarchy</strong><br><span class="muted">Safety &gt; Data Integrity &gt; Privacy/Security &gt; Identity/Core &gt; Care &gt; AI/Community &gt; Analytics/Experiments.</span></div>
+<div class="card"><strong>Graceful degradation</strong><br><span class="muted">AI, payment, notification, search, analytics, community and primary-DB failures have explicit safe behaviors; safety static paths remain independent.</span></div>
+<div class="card"><strong>Explicit recovery targets</strong><br><span class="muted">RPO/RTO targets are configured per service; the platform does not invent operational defaults.</span></div>
+<div class="card"><strong>Tested restore evidence</strong><br><span class="muted">A backup is not accepted as recovery evidence unless restore, integrity and migration compatibility pass within configured targets.</span></div>
+<div class="card"><strong>Persistent migration ledger</strong><br><span class="muted">Native PostgreSQL migration history is now written to schema_migrations, surviving process restarts and DR restores.</span></div>
+<div class="card"><strong>Hardening observability</strong><br><span class="muted">Database/event health projections exclude raw request bodies, journals, AI prompts, clinical notes, secrets and tokens.</span></div>
+<div class="card"><strong>Launch readiness</strong><br><span class="muted">Database health, DR restore evidence and blocked privacy lifecycle jobs participate in a release-blocking hardening readiness view.</span></div>
+</div>
+
+<h2>Hardening invariants</h2>
+<ul>
+<li class="done">A privacy lifecycle job cannot report COMPLETE while a required derived store is pending.</li>
+<li class="done">AI outage cannot make safety resources unavailable.</li>
+<li class="done">Primary DB uncertainty moves writes to safe mode; success must not be fabricated.</li>
+<li class="done">Analytics/experiments shed before safety/data-integrity/privacy workloads under backpressure.</li>
+<li class="done">A backup without a successful tested restore is not valid recovery evidence.</li>
+<li class="done">Recovery readiness requires explicit configured RPO/RTO values and measured restore evidence.</li>
+<li class="done">Logs and observability are not exempt from privacy controls.</li>
+</ul>
+
+<h2>Certification evidence</h2>
+<ul>
+<li class="done">24 / 24 canonical PostgreSQL migrations — PASS</li>
+<li class="done">Full Sprint 1–26 TypeScript typecheck — PASS</li>
+<li class="done">482 / 482 full regression tests — PASS</li>
+<li class="done">14 / 14 dedicated Sprint-26 acceptance tests — PASS</li>
+<li class="done">Real PostgreSQL 16 dump/restore drill — PASS</li>
+<li class="done">CI measured restore: RPO 1s / RTO 2s under explicit test targets — PASS</li>
+<li class="done">Restored migration ledger: 24 migrations — PASS</li>
+<li class="done">Security secret scan — 0 detected secrets/private keys</li>
+<li class="done">Dependency vulnerability gate — 0 Critical / 0 High</li>
+<li class="done">Production frontend/server bundle — PASS</li>
+<li class="done">CycloneDX-compatible SBOM — 23 components generated</li>
+</ul>
+
+<h2>Certification repair discovered by DR</h2>
+<p>The restore drill exposed that migration history had previously existed only in process memory even though the <code>schema_migrations</code> table existed. Sprint 26 repaired the migration engine so native PostgreSQL records every applied migration transactionally, making restored migration state verifiable.</p>
+
+<p><strong>Merge rule:</strong> the exact final PR head must repeat the full hardening gate successfully before Sprint 26 is merged to <code>main</code>.</p>
