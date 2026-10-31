@@ -1,0 +1,65 @@
+name: Validate MindOS Sprint 24 foundation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mindos/clinical_ops/**'
+      - 'mindos/sprint24/**'
+      - 'mindos/platform/database/migrations/022_clinical_operations_human_escalation.sql'
+      - 'tests/canonical_clinical_operations_sprint24.test.ts'
+      - 'server.ts'
+      - 'package.json'
+      - '.github/workflows/sprint24-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: mindos_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mindos_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      MINDOS_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mindos_test
+      MINDOS_DATABASE_DRIVER: postgres
+      DB_SSL: "false"
+      DB_TIMEOUT_MS: 5000
+      JWT_SECRET: sprint24-test-jwt-secret-32-characters-minimum
+      SESSION_SECRET: sprint24-test-session-secret-32-characters-minimum
+      AUDIT_INTEGRITY_SALT: sprint24-test-audit-salt
+      APP_URL: http://localhost:3000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      DEFAULT_COUNTRY_CODE: KE
+      AI_PROVIDER: mock_sandbox
+      GEMINI_API_KEY: TEST_ONLY_NOT_REAL
+      PAYMENTS_PROVIDER: mock
+      NOTIFICATIONS_PROVIDER: mock_console
+      SAFETY_POLICY_VERSION: 2.0.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run db:validate-migrations
+      - run: bun run db:migrate
+      - run: bun run typecheck
+      - run: bun run test:sprint24
+      - run: bun run test
+      - run: bun run scan:secrets
+      - run: bun run build
