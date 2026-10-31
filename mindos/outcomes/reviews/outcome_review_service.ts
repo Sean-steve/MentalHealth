@@ -69,6 +69,22 @@ export class OutcomeReviewService {
       throw new DomainInvariantError('OutcomeRepository not initialized.');
     }
 
+    if (params.reviewer_id) {
+      const authDecision = await RelationshipAccessEvaluator.evaluateProfessionalAccess({
+        subjectUserId: params.subject_user_id,
+        professionalId: params.reviewer_id,
+        purpose: 'CARE_DELIVERY',
+        action: 'WRITE',
+        dataDomain: 'CLINICAL_NOTES'
+      });
+      if (!authDecision.allowed) {
+        throw new AuthorizationError(
+          `Professional ${params.reviewer_id} cannot schedule outcome review for subject ${params.subject_user_id}: ${authDecision.reason}`,
+          { errorCode: authDecision.reasonCode || 'AUTHZ_003' }
+        );
+      }
+    }
+
     const reviewId = generateUUIDv7();
     const now = new Date().toISOString();
 
