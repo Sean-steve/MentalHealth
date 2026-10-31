@@ -46,6 +46,10 @@ export class ClinicalOperationsEscalationService {
     // R-OPS-001: no configured staffed capability means no human-review promise/case.
     if (!capability) return null;
 
+    const existing=(await ClinicalOperationsRepository.listEscalations())
+      .find(x=>x.risk_event_id===input.risk_event_id&&x.state!==EscalationState.CANCELLED);
+    if(existing)return existing;
+
     const now = new Date().toISOString();
     const escalation: ClinicalOperationsEscalation = {
       id: generateUUIDv7(),
