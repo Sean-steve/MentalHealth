@@ -3,7 +3,8 @@ import {
   ClinicalIncident,
   ClinicalOperationsCapability,
   ClinicalOperationsEscalation,
-  ClinicalOperationsFollowUp
+  ClinicalOperationsFollowUp,
+  SafetyPlanShareGrant
 } from '../domain/types.js';
 import { IClinicalOperationsRepository } from './interfaces.js';
 
@@ -117,6 +118,31 @@ export class PgClinicalOperationsRepository implements IClinicalOperationsReposi
   async listIncidents():Promise<ClinicalIncident[]>{
     const r=await getPool().query('SELECT * FROM clinical_ops_incidents ORDER BY opened_at DESC,id ASC');
     return r.rows.map((x:any)=>this.mapIncident(x));
+  }
+
+  async saveSafetyPlanShare(v:SafetyPlanShareGrant):Promise<void>{
+    await getPool().query(
+      `INSERT INTO clinical_ops_safety_plan_shares
+       (id,safety_plan_reference,subject_user_id,grantee_type,grantee_id,scopes,status,granted_by,granted_at,revoked_at,revocation_reason)
+       VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11)
+       ON CONFLICT(id) DO UPDATE SET scopes=EXCLUDED.scopes,status=EXCLUDED.status,
+       revoked_at=EXCLUDED.revoked_at,revocation_reason=EXCLUDED.revocation_reason`,
+      [v.id,v.safety_plan_reference,v.subject_user_id,v.grantee_type,v.grantee_id,JSON.stringify(v.scopes),
+       v.status,v.granted_by,v.granted_at,v.revoked_at||null,v.revocation_reason||null]
+    );
+  }
+
+  async listSafetyPlanShares(subjectUserId:string,safetyPlanReference?:string):Promise<SafetyPlanShareGrant[]>{
+    const r=safetyPlanReference
+      ? await getPool().query(
+          'SELECT * FROM clinical_ops_safety_plan_shares WHERE subject_user_id=$1 AND safety_plan_reference=$2 ORDER BY granted_at DESC',
+          [subjectUserId,safetyPlanReference]
+        )
+      : await getPool().query(
+          'SELECT * FROM clinical_ops_safety_plan_shares WHERE subject_user_id=$1 ORDER BY granted_at DESC',
+          [subjectUserId]
+        );
+    return r.rows.map((x:any)=>({...x,scopes:json(x.scopes,[])}));
   }
 
   private mapIncident(x:any):ClinicalIncident{
