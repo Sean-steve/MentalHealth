@@ -34,6 +34,32 @@ CREATE TABLE IF NOT EXISTS professional_profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+
+-- Legacy Sprint-1 compatibility: expand professional_profiles in place.
+ALTER TABLE professional_profiles
+  ADD COLUMN IF NOT EXISTS professional_type VARCHAR(60),
+  ADD COLUMN IF NOT EXISTS legal_name_reference VARCHAR(200),
+  ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'DRAFT',
+  ADD COLUMN IF NOT EXISTS verification_status VARCHAR(40) NOT NULL DEFAULT 'DRAFT',
+  ADD COLUMN IF NOT EXISTS jurisdictions TEXT[] NOT NULL DEFAULT '{"KE"}',
+  ADD COLUMN IF NOT EXISTS specialties TEXT[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS delivery_modes TEXT[] NOT NULL DEFAULT '{"TELEHEALTH"}',
+  ADD COLUMN IF NOT EXISTS organization_refs TEXT[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS profile_visibility VARCHAR(40) NOT NULL DEFAULT 'PUBLIC_DIRECTORY';
+UPDATE professional_profiles
+SET professional_type = COALESCE(professional_type, profession_type),
+    legal_name_reference = COALESCE(legal_name_reference, display_name),
+    verification_status = COALESCE(verification_status, verification_state::text),
+    jurisdictions = CASE WHEN cardinality(jurisdictions) = 0 THEN COALESCE(country_codes, ARRAY['KE']::text[]) ELSE jurisdictions END,
+    delivery_modes = CASE WHEN cardinality(delivery_modes) = 0 THEN COALESCE(consultation_modes, ARRAY['TELEHEALTH']::text[]) ELSE delivery_modes END
+WHERE professional_type IS NULL OR legal_name_reference IS NULL;
+ALTER TABLE professional_profiles
+  ALTER COLUMN professional_type SET NOT NULL,
+  ALTER COLUMN legal_name_reference SET NOT NULL,
+  ALTER COLUMN profession_type DROP NOT NULL,
+  ALTER COLUMN consultation_modes SET DEFAULT '{}',
+  ALTER COLUMN country_codes SET DEFAULT '{}';
+
 CREATE INDEX IF NOT EXISTS idx_professional_profiles_user ON professional_profiles(user_id);
 CREATE INDEX IF NOT EXISTS idx_professional_profiles_type ON professional_profiles(professional_type);
 CREATE INDEX IF NOT EXISTS idx_professional_profiles_status ON professional_profiles(status, verification_status);
@@ -57,6 +83,36 @@ CREATE TABLE IF NOT EXISTS professional_credentials (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+
+-- Legacy Sprint-1 compatibility: expand professional_credentials in place.
+ALTER TABLE professional_credentials
+  ADD COLUMN IF NOT EXISTS credential_type VARCHAR(60),
+  ADD COLUMN IF NOT EXISTS title VARCHAR(200),
+  ADD COLUMN IF NOT EXISTS issue_date DATE,
+  ADD COLUMN IF NOT EXISTS expiry_date DATE,
+  ADD COLUMN IF NOT EXISTS credential_number_reference VARCHAR(120),
+  ADD COLUMN IF NOT EXISTS jurisdiction VARCHAR(40) NOT NULL DEFAULT 'KE',
+  ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'PENDING',
+  ADD COLUMN IF NOT EXISTS evidence_id UUID,
+  ADD COLUMN IF NOT EXISTS evidence_hash VARCHAR(128),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+UPDATE professional_credentials
+SET credential_type = COALESCE(credential_type, claim_type, 'LEGACY_CREDENTIAL'),
+    title = COALESCE(title, claim_type, 'Legacy credential'),
+    issue_date = COALESCE(issue_date, valid_from, created_at::date),
+    expiry_date = COALESCE(expiry_date, valid_until),
+    credential_number_reference = COALESCE(credential_number_reference, 'legacy:' || id::text),
+    status = COALESCE(status, verification_status)
+WHERE credential_type IS NULL OR title IS NULL OR issue_date IS NULL OR credential_number_reference IS NULL;
+ALTER TABLE professional_credentials
+  ALTER COLUMN credential_type SET NOT NULL,
+  ALTER COLUMN title SET NOT NULL,
+  ALTER COLUMN issuer SET DEFAULT 'UNKNOWN_LEGACY_ISSUER',
+  ALTER COLUMN issuer SET NOT NULL,
+  ALTER COLUMN issue_date SET NOT NULL,
+  ALTER COLUMN credential_number_reference SET NOT NULL,
+  ALTER COLUMN claim_type DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_professional_credentials_prof ON professional_credentials(professional_id, status);
 CREATE INDEX IF NOT EXISTS idx_professional_credentials_expiry ON professional_credentials(expiry_date);
@@ -140,6 +196,11 @@ CREATE TABLE IF NOT EXISTS professional_scopes (
 CREATE INDEX IF NOT EXISTS idx_professional_scopes_prof ON professional_scopes(professional_id, status);
 
 -- 7. Governed Specialties Registry
+
+-- Sprint-1 used professional_specialties as a join table. Preserve it, then
+-- create the canonical governed specialty registry under the canonical name.
+ALTER TABLE professional_specialties RENAME TO professional_specialties_legacy_sprint1;
+
 CREATE TABLE IF NOT EXISTS professional_specialties (
   id UUID PRIMARY KEY,
   code VARCHAR(80) UNIQUE NOT NULL,
@@ -173,6 +234,21 @@ CREATE TABLE IF NOT EXISTS providers (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+
+-- Migrate Sprint-1 specialty catalogue and assignments into the Sprint-19 model.
+INSERT INTO professional_specialties (id, code, name, description, domain, is_active, created_at)
+SELECT s.id, s.code, s.name, NULL, 'LEGACY_IMPORTED', s.active, s.created_at
+FROM specialties s
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO professional_specialty_assignments (id, professional_id, specialty_code, verification_status, created_at)
+SELECT gen_random_uuid(), l.professional_id, s.code,
+       CASE WHEN l.active THEN 'VERIFIED_LEGACY' ELSE 'INACTIVE_LEGACY' END,
+       NOW()
+FROM professional_specialties_legacy_sprint1 l
+JOIN specialties s ON s.id = l.specialty_id
+ON CONFLICT (professional_id, specialty_code) DO NOTHING;
 
 CREATE INDEX IF NOT EXISTS idx_providers_profile ON providers(professional_profile_id);
 CREATE INDEX IF NOT EXISTS idx_providers_status ON providers(status, verification_status, discoverability_status);
