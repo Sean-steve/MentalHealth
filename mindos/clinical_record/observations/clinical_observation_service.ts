@@ -10,6 +10,7 @@ import { ClinicalObservation } from '../domain/entities.js';
 import { ClinicalProvenance, ClinicalTimelineSourceType, TimelineVisibilityScope } from '../domain/types.js';
 import { ClinicalTimelineService } from '../timeline/clinical_timeline_service.js';
 import { DomainInvariantError } from '../../platform/errors/index.js';
+import { RelationshipAccessEvaluator, DataDomain, ActionPermission } from '../../care_relationships/index.js';
 
 export interface RecordObservationParams {
   subject_user_id: string;
@@ -36,6 +37,17 @@ export class ClinicalObservationService {
     if (!ClinicalObservationService.repository) {
       throw new DomainInvariantError('ClinicalRecordRepository not initialized.');
     }
+
+    if (!params.care_relationship_id) {
+      throw new DomainInvariantError('Professional clinical observation requires care_relationship_id.');
+    }
+    await RelationshipAccessEvaluator.assertAccess({
+      relationshipId: params.care_relationship_id,
+      professionalId: params.recorded_by,
+      dataDomain: DataDomain.CLINICAL_NOTES,
+      action: ActionPermission.WRITE,
+      purpose: 'CLINICAL_DOCUMENTATION'
+    });
 
     const observationId = generateUUIDv7();
     const recorded_at = new Date().toISOString();

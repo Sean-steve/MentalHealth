@@ -36,6 +36,7 @@ import { OutcomeSeriesService } from '../series/outcome_series_service.js';
 import { OutcomeTrendEngine } from '../trends/trend_engine.js';
 import { OutcomeAlertService } from '../alerts/outcome_alert_service.js';
 import { SafetyKernelOutcomeAdapter } from '../adapters/safety_kernel_outcome_adapter.js';
+import { RelationshipAccessEvaluator, DataDomain, ActionPermission } from '../../care_relationships/index.js';
 
 export interface RecordMeasurementParams {
   subject_user_id: string;
@@ -76,6 +77,19 @@ export class OutcomeMeasurementService {
     // AI & Provenance Guards (Sections 24, 25, 26, 131, 132, 133)
     if (params.actor_role) {
       OutcomeInvariants.assertProvenanceIntegrity(params.provenance, params.actor_role);
+    }
+
+    if (params.actor_role === 'PROFESSIONAL') {
+      if (!params.recorded_by || !params.care_relationship_id) {
+        throw new DomainInvariantError('Professional outcome recording requires recorded_by and care_relationship_id.');
+      }
+      await RelationshipAccessEvaluator.assertAccess({
+        relationshipId: params.care_relationship_id,
+        professionalId: params.recorded_by,
+        dataDomain: DataDomain.CLINICAL_NOTES,
+        action: ActionPermission.WRITE,
+        purpose: 'CLINICAL_DOCUMENTATION'
+      });
     }
 
     // Validate value & unit (Sections 19, 20, 134, 135)
@@ -194,7 +208,6 @@ export class OutcomeMeasurementService {
             subject_user_id: params.subject_user_id,
             measure_code: params.measure_code,
             trend_state: trend.trend_state,
-            change_amount: trend.change_amount,
             is_clinically_significant: trend.is_clinically_significant
           }
         );
