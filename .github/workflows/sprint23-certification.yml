@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sprint23-certification-main-v4
+  group: sprint23-certification-main-v5
   cancel-in-progress: true
 
 jobs:
