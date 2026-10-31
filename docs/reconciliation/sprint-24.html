@@ -1,0 +1,48 @@
+<!doctype html><meta charset="utf-8"><title>MindOS Sprint 24 Certification</title>
+<style>body{max-width:980px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #5fe0ad;color:#5fe0ad;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.done{color:#5fe0ad}.muted{color:#9db8ae}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card{padding:15px;border:1px solid #21433b;border-radius:14px;background:#0d1c19}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style>
+<a href="../tracker.html">← Engineering tracker</a>
+<h1>Sprint 24 — Clinical Operations & Human Escalation</h1>
+<span class="tag">CERTIFIED COMPLETE</span>
+<p class="muted">Certified implementation commit: <code>bc350282608f0e8b3419093927810a7ce600dbba</code><br>Certification workflow run: <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/41184283585">41184283585</a></p>
+
+<h2>Implemented</h2>
+<div class="grid">
+<div class="card"><strong>Staffing Truth</strong><br><span class="muted">Human review exists only when a configured, currently staffed capability covers the relevant queue.</span></div>
+<div class="card"><strong>Safety Kernel Bridge</strong><br><span class="muted">Authoritative Safety transitions create L2/L3 Clinical Operations cases only through the staffing gate.</span></div>
+<div class="card"><strong>Reviewer Queue & Case</strong><br><span class="muted">Governed escalation state machine, qualified assignment and minimum-necessary case projection.</span></div>
+<div class="card"><strong>Privacy Boundary</strong><br><span class="muted">Reviewer projections exclude full journal, AI and clinical histories and do not expose raw free-text by default.</span></div>
+<div class="card"><strong>Follow-up</strong><br><span class="muted">Automated, human and professional follow-up are distinct; missed response does not manufacture a higher RiskState.</span></div>
+<div class="card"><strong>Safety-plan Sharing</strong><br><span class="muted">Explicit owner-controlled grants and revocation; trusted-contact designation alone grants no plan access.</span></div>
+<div class="card"><strong>Clinical Incidents</strong><br><span class="muted">Containment → investigation → corrective action → validation → closure with evidence requirements.</span></div>
+<div class="card"><strong>Operations Metrics</strong><br><span class="muted">Staffing, escalation, follow-up and incident metrics without fabricated clinical false-positive/false-negative rates.</span></div>
+<div class="card"><strong>PostgreSQL Persistence</strong><br><span class="muted">Capabilities, escalations, follow-ups, incidents and safety-plan share grants persist through migration 022.</span></div>
+<div class="card"><strong>Runtime/API</strong><br><span class="muted">Sprint 24 runtime enforcement and Clinical Operations endpoints are wired into the platform server.</span></div>
+</div>
+
+<h2>Clinical-safety invariants</h2>
+<ul>
+<li class="done">No staffed capability → no human-review promise or case.</li>
+<li class="done">A newer PAUSED/UNSTAFFED configuration overrides older staffed configuration.</li>
+<li class="done">Legacy Safety escalation cannot bypass Sprint-24 staffing truth once runtime enforcement is active.</li>
+<li class="done">Missed follow-up does not directly mutate authoritative RiskState.</li>
+<li class="done">Trusted-contact designation does not imply safety-plan permission.</li>
+<li class="done">Reviewer case projection is minimum-necessary and excludes full private histories.</li>
+<li class="done">Material incidents cannot close without corrective-action validation evidence.</li>
+<li class="done">Clinical-quality false-positive/false-negative metrics are not emitted without governed methodology.</li>
+</ul>
+
+<h2>Certification evidence</h2>
+<ul>
+<li class="done">22 / 22 canonical PostgreSQL migrations — PASS</li>
+<li class="done">Full Sprint 1–24 TypeScript typecheck — PASS</li>
+<li class="done">455 / 455 full regression tests — PASS</li>
+<li class="done">10 / 10 dedicated Sprint-24 acceptance tests — PASS</li>
+<li class="done">Sprint-24 PostgreSQL runtime smoke — PASS</li>
+<li class="done">Security secret scan — 0 detected secrets/private keys</li>
+<li class="done">Production frontend/server bundle — PASS</li>
+</ul>
+
+<h2>Certification repair</h2>
+<p>The full regression test driver was separated from native PostgreSQL certification. Native PostgreSQL is now scoped to migration and runtime-smoke gates, while deterministic regression uses the canonical test driver. Sprint-24 acceptance tests also explicitly close database resources.</p>
+
+<p><strong>Decision:</strong> Sprint 24 is implemented, integrated and certified. No Sprint-24 completion blocker remains.</p>
