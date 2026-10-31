@@ -135,6 +135,53 @@ CREATE TABLE IF NOT EXISTS appointments (
   version INTEGER NOT NULL DEFAULT 1
 );
 
+
+-- Legacy Sprint-1 compatibility: expand appointments in place.
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS subject_user_id UUID,
+  ADD COLUMN IF NOT EXISTS provider_id UUID,
+  ADD COLUMN IF NOT EXISTS service_offering_id UUID,
+  ADD COLUMN IF NOT EXISTS referral_id UUID,
+  ADD COLUMN IF NOT EXISTS care_navigation_session_id UUID,
+  ADD COLUMN IF NOT EXISTS care_relationship_id UUID,
+  ADD COLUMN IF NOT EXISTS appointment_type VARCHAR(60) NOT NULL DEFAULT 'CARE_SESSION',
+  ADD COLUMN IF NOT EXISTS start_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS end_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS timezone_context VARCHAR(60) NOT NULL DEFAULT 'Africa/Nairobi',
+  ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(40) NOT NULL DEFAULT 'TELEHEALTH',
+  ADD COLUMN IF NOT EXISTS location_reference VARCHAR(200),
+  ADD COLUMN IF NOT EXISTS virtual_session_reference VARCHAR(200),
+  ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'CONFIRMED',
+  ADD COLUMN IF NOT EXISTS booking_source VARCHAR(60) NOT NULL DEFAULT 'USER_SELF_SERVICE',
+  ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+
+UPDATE appointments
+SET subject_user_id = COALESCE(subject_user_id, user_id),
+    provider_id = COALESCE(provider_id, professional_id),
+    start_at = COALESCE(start_at, starts_at),
+    end_at = COALESCE(end_at, ends_at),
+    timezone_context = COALESCE(timezone_context, timezone_snapshot),
+    status = COALESCE(status, state::text)
+WHERE subject_user_id IS NULL
+   OR provider_id IS NULL
+   OR start_at IS NULL
+   OR end_at IS NULL;
+
+ALTER TABLE appointments
+  ALTER COLUMN subject_user_id SET NOT NULL,
+  ALTER COLUMN provider_id SET NOT NULL,
+  ALTER COLUMN start_at SET NOT NULL,
+  ALTER COLUMN end_at SET NOT NULL,
+  ALTER COLUMN user_id DROP NOT NULL,
+  ALTER COLUMN service_id DROP NOT NULL,
+  ALTER COLUMN starts_at DROP NOT NULL,
+  ALTER COLUMN ends_at DROP NOT NULL,
+  ALTER COLUMN timezone_snapshot DROP NOT NULL,
+  ALTER COLUMN idempotency_key DROP NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_id, start_at);
 CREATE INDEX IF NOT EXISTS idx_appointments_subject ON appointments(subject_user_id, start_at);
 CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status);
