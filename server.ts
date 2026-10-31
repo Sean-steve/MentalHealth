@@ -27,6 +27,7 @@ import { aiRouter } from './mindos/ai/routes.js';
 import { careNavigationRouter, referralRouter } from './mindos/care_navigation/index.js';
 import { sprint22Router, configureSprint22Runtime } from './mindos/sprint22/index.js';
 import { sprint23Router, configureSprint23Runtime } from './mindos/sprint23/index.js';
+import { sprint24Router, configureSprint24Runtime } from './mindos/sprint24/index.js';
 
 async function startServer() {
   const app = express();
@@ -45,6 +46,12 @@ async function startServer() {
     process.env.NODE_ENV === 'production';
   const sprint23Runtime = await configureSprint23Runtime({ usePostgres: sprint23UsePostgres });
   logger.info('MindOS Sprint 23 runtime configured', { ...sprint23Runtime });
+
+  const sprint24UsePostgres =
+    process.env.MINDOS_SPRINT24_STORAGE_MODE === 'postgres' ||
+    process.env.NODE_ENV === 'production';
+  const sprint24Runtime = await configureSprint24Runtime({ usePostgres: sprint24UsePostgres });
+  logger.info('MindOS Sprint 24 runtime configured', { ...sprint24Runtime });
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const requestId =
@@ -206,6 +213,9 @@ async function startServer() {
 
   // Sprint 23: Longitudinal Clinical Record & Outcomes
   app.use('/api/v1', sprint23Router);
+
+  // Sprint 24: Clinical Operations & Human Escalation
+  app.use('/api/v1', sprint24Router);
 
   app.get('/api/v1/content/articles', (req: Request, res: Response) => {
     const lang = (req.query.lang as string) || 'en';

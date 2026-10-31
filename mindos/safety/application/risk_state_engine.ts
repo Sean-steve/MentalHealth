@@ -24,6 +24,7 @@ import { EventPublisher } from '../../platform/events/index.js';
 import { CanonicalEventTypes, EventPriority } from '../../platform/events/registry/event_registry.js';
 import { SafetyMetrics } from '../infrastructure/metrics.js';
 import { AuditService } from '../../platform/audit/index.js';
+import { ClinicalOperationsSafetyKernelBridge } from '../../clinical_ops/application/safety_kernel_bridge.js';
 
 export interface EvaluateRiskStateResult {
   riskState: RiskStateEntity;
@@ -176,6 +177,19 @@ export class RiskStateEngine {
         });
       } catch (err) {
         // Non-blocking event publish
+      }
+
+      try {
+        await ClinicalOperationsSafetyKernelBridge.handleRiskTransition({
+          subject_user_id:userId,
+          risk_event_id:newRiskState.id,
+          risk_state:finalState,
+          jurisdiction:String((activeSignals[0] as any)?.jurisdiction || process.env.DEFAULT_COUNTRY_CODE || 'KE'),
+          reason_codes:newRiskState.reason_codes,
+          policy_version:newRiskState.policy_version
+        });
+      } catch {
+        // Clinical Operations must never block the authoritative Safety Kernel response path.
       }
     }
 
