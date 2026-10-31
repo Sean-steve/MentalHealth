@@ -45,11 +45,16 @@
     {
       "number": "25",
       "title": "Analytics & Operational Intelligence",
-      "status": "PARTIAL",
-      "note": "IMPLEMENTATION CANDIDATE on sprint-25-analytics-intelligence. Governed analytics event contracts, privacy-minimizing ingestion, versioned metric registry, evidence-level controls, cohort suppression, Product/Safety/Business/Outcome dashboards, experiment safety rules, migration 023, API/runtime wiring, acceptance tests and PostgreSQL smoke are implemented. Full Sprint 1–25 certification remains."
+      "status": "IMPLEMENTED",
+      "note": "CERTIFICATION CANDIDATE. Sprint 25 Analytics & Operational Intelligence passed the initial full certification run 41185289582: 23/23 canonical PostgreSQL migrations, full TypeScript, 468/468 Sprint 1–25 regression tests, 13/13 dedicated Sprint-25 acceptance tests, PostgreSQL analytics runtime smoke, secret scan with 0 findings, and production build. Final PR-head certification remains the merge gate."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 25 initial certification passed",
+      "detail": "Run 41185289582 passed 23/23 migrations, full TypeScript, 468/468 full regression tests, 13/13 Sprint-25 acceptance tests, PostgreSQL runtime smoke, clean secret scan and production build. Final metadata head will be certified before merge."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 25 implementation candidate created",
@@ -191,6 +196,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 24 remains certified on main. Sprint 25 analytics implementation is on its dedicated branch pending full certification."
+    "note": "Sprint 25 implementation is complete on PR #3 and has passed initial certification; final PR-head certification remains before merge."
   }
 }
