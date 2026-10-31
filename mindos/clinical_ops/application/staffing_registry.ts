@@ -15,6 +15,10 @@ export class ClinicalOperationsStaffingRegistry {
     if (input.staffing_state === 'STAFFED' && input.qualified_role_codes.length === 0) {
       throw new DomainInvariantError('A staffed clinical-operations capability requires at least one qualified reviewer role.');
     }
+    if (input.coverage_started_at && input.coverage_ends_at &&
+        Date.parse(input.coverage_ends_at) <= Date.parse(input.coverage_started_at)) {
+      throw new DomainInvariantError('coverage_ends_at must be after coverage_started_at.');
+    }
     const value: ClinicalOperationsCapability = {
       ...input,
       id: generateUUIDv7(),
@@ -25,12 +29,14 @@ export class ClinicalOperationsStaffingRegistry {
   }
 
   static async findActiveCapability(jurisdiction: string, queueKey: string, at = new Date()): Promise<ClinicalOperationsCapability | undefined> {
-    const values = await ClinicalOperationsRepository.listCapabilities(jurisdiction);
-    return values
-      .filter(x => x.queue_key === queueKey && x.staffing_state === 'STAFFED')
-      .filter(x => !x.coverage_started_at || Date.parse(x.coverage_started_at) <= at.getTime())
-      .filter(x => !x.coverage_ends_at || Date.parse(x.coverage_ends_at) > at.getTime())
-      .sort((a,b) => Date.parse(b.configured_at) - Date.parse(a.configured_at))[0];
+    const values = (await ClinicalOperationsRepository.listCapabilities(jurisdiction))
+      .filter(x => x.queue_key === queueKey)
+      .sort((a,b) => Date.parse(b.configured_at) - Date.parse(a.configured_at));
+    const latest = values[0];
+    if (!latest || latest.staffing_state !== 'STAFFED') return undefined;
+    if (latest.coverage_started_at && Date.parse(latest.coverage_started_at) > at.getTime()) return undefined;
+    if (latest.coverage_ends_at && Date.parse(latest.coverage_ends_at) <= at.getTime()) return undefined;
+    return latest;
   }
 
   static async isHumanReviewActuallyAvailable(jurisdiction: string, queueKey: string, at = new Date()): Promise<boolean> {
