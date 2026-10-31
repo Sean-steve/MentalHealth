@@ -29,6 +29,7 @@ import { sprint22Router, configureSprint22Runtime } from './mindos/sprint22/inde
 import { sprint23Router, configureSprint23Runtime } from './mindos/sprint23/index.js';
 import { sprint24Router, configureSprint24Runtime } from './mindos/sprint24/index.js';
 import { sprint25Router, configureSprint25Runtime } from './mindos/sprint25/index.js';
+import { sprint26Router, configureSprint26Runtime } from './mindos/sprint26/index.js';
 
 async function startServer() {
   const app = express();
@@ -59,6 +60,12 @@ async function startServer() {
     process.env.NODE_ENV === 'production';
   const sprint25Runtime = await configureSprint25Runtime({ usePostgres: sprint25UsePostgres });
   logger.info('MindOS Sprint 25 runtime configured', { ...sprint25Runtime });
+
+  const sprint26UsePostgres =
+    process.env.MINDOS_SPRINT26_STORAGE_MODE === 'postgres' ||
+    process.env.NODE_ENV === 'production';
+  const sprint26Runtime = configureSprint26Runtime({ usePostgres: sprint26UsePostgres });
+  logger.info('MindOS Sprint 26 runtime configured', { ...sprint26Runtime });
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const requestId =
@@ -226,6 +233,9 @@ async function startServer() {
 
   // Sprint 25: Analytics & Operational Intelligence
   app.use('/api/v1', sprint25Router);
+
+  // Sprint 26: Platform Hardening
+  app.use('/api/v1', sprint26Router);
 
   app.get('/api/v1/content/articles', (req: Request, res: Response) => {
     const lang = (req.query.lang as string) || 'en';
