@@ -16,6 +16,7 @@ export class PostLaunchReviewService{
     if(p.build_sha!==input.build_sha)throw new DomainInvariantError('Post-launch review build SHA must match the launched build.');
     const start=Date.parse(input.window_started_at),end=Date.parse(input.window_ended_at);
     if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end>Date.now())throw new DomainInvariantError('Post-launch review requires a completed, valid observation window.');
+    if(!p.limited_launch_starts_at||start<Date.parse(p.limited_launch_starts_at))throw new DomainInvariantError('Post-launch observation window cannot begin before limited-launch activation.');
     if(!input.monitoring_snapshot_refs.length||!input.evidence_refs.length)throw new DomainInvariantError('Post-launch review requires monitoring and evidence references.');
     const snapshots=await LaunchRepository.listMonitoringSnapshots(p.id);
     const validSnapshotIds=new Set(snapshots.filter(x=>x.build_sha===p.build_sha&&Date.parse(x.captured_at)>=start&&Date.parse(x.captured_at)<=end).map(x=>x.id));
