@@ -45,8 +45,7 @@ export class CarePlanOutcomeAdapter {
           actorId: review.reviewer_id || 'system',
           taskType: ClinicalTaskType.FOLLOW_UP_SCHEDULING,
           title: `Outcome Review Follow-up: ${review.decision}`,
-          description: `Clinician completed outcome review with decision "${review.decision}". Recommended actions: ${review.recommended_actions.map((a) => a.description).join('; ')}`,
-          dueDate: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+          description: `Clinician completed outcome review with decision "${review.decision}". Recommended actions: ${review.recommended_actions.map((a) => a.description).join('; ')}`
         });
       } catch {
         // Log or handle task service unavailable
@@ -61,8 +60,7 @@ export class CarePlanOutcomeAdapter {
           actorId: review.reviewer_id || 'system',
           taskType: ClinicalTaskType.QUESTIONNAIRE,
           title: 'Repeat Outcome Assessment',
-          description: 'Clinician requested a repeat outcome measurement to confirm stability/trajectory.',
-          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          description: 'Clinician requested a repeat outcome measurement to confirm stability/trajectory.'
         });
       } catch {
         // Fallback
