@@ -28,7 +28,9 @@
     "stop": "echo 'All services stopped'",
     "clean": "rm -rf dist server.js",
     "sprint22:maintain": "tsx scripts/run_sprint22_maintenance.ts",
-    "test:sprint22": "tsx --test tests/canonical_care_plans_tasks_messaging_sprint22.test.ts"
+    "test:sprint22": "tsx --test tests/canonical_care_plans_tasks_messaging_sprint22.test.ts",
+    "test:sprint23": "tsx --test tests/canonical_longitudinal_outcomes_sprint23.test.ts",
+    "sprint23:postgres-smoke": "tsx scripts/verify_sprint23_postgres.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
