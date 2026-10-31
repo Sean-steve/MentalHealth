@@ -37,6 +37,7 @@ export const PROHIBITED_DIAGNOSTIC_ASSERTIONS = [
 
 export const PROHIBITED_PRESCRIPTION_PATTERNS = [
   /\b(take|takes|taking|increase|decrease|prescribe|prescribed|prescribing|dose of)\s+\d+\s*(mg|milligrams|ml)\b/i,
+  /\b(increase|decrease|take|start)\s+(your\s+)?(sertraline|fluoxetine|lexapro|xanax|prozac|zoloft|escitalopram|clonazepam|lithium)\s+(dose\s+)?(to\s+)?\d+\s*(mg|milligrams|ml)\b/i,
   /\b\d+\s*(mg|milligrams|ml)\s+(of\s+)?(sertraline|fluoxetine|lexapro|xanax|prozac|zoloft|escitalopram|clonazepam|lithium)\b/i,
   /\b(start taking|prescribe)\s+(sertraline|fluoxetine|lexapro|xanax|prozac|zoloft|escitalopram|clonazepam|lithium)\b/i,
   /\bstop taking your (medication|antidepressants|antipsychotics)\b/i
