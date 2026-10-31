@@ -27,6 +27,7 @@ import { aiRouter } from './mindos/ai/routes.js';
 import { careNavigationRouter, referralRouter } from './mindos/care_navigation/index.js';
 import { sprint22Router, configureSprint22Runtime } from './mindos/sprint22/index.js';
 import { sprint23Router, configureSprint23Runtime } from './mindos/sprint23/index.js';
+import { sprint24Router } from './mindos/sprint24/index.js';
 
 async function startServer() {
   const app = express();
@@ -206,6 +207,9 @@ async function startServer() {
 
   // Sprint 23: Longitudinal Clinical Record & Outcomes
   app.use('/api/v1', sprint23Router);
+
+  // Sprint 24: Clinical Operations & Human Escalation — foundation in progress
+  app.use('/api/v1', sprint24Router);
 
   app.get('/api/v1/content/articles', (req: Request, res: Response) => {
     const lang = (req.query.lang as string) || 'en';
