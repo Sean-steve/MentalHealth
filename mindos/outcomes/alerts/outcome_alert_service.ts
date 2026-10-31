@@ -42,6 +42,16 @@ export class OutcomeAlertService {
       throw new DomainInvariantError('OutcomeRepository not initialized.');
     }
 
+    if (params.measurement_id) {
+      const existingAlerts = await OutcomeAlertService.repository.findAlertsByUser(params.subject_user_id);
+      const existing = existingAlerts.find(a =>
+        a.measurement_id === params.measurement_id &&
+        a.alert_type === params.alert_type &&
+        (a.status === OutcomeAlertState.OPEN || a.status === OutcomeAlertState.ACKNOWLEDGED)
+      );
+      if (existing) return existing;
+    }
+
     const alertId = generateUUIDv7();
     const nowDate = new Date();
     const now = nowDate.toISOString();

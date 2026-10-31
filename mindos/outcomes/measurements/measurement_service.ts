@@ -213,24 +213,59 @@ export class OutcomeMeasurementService {
         );
 
         if (trend.trend_state === OutcomeTrendState.WORSENING) {
-          // Raise Outcome Alert
-          await OutcomeAlertService.raiseAlert({
-            subject_user_id: params.subject_user_id,
-            care_relationship_id: params.care_relationship_id,
-            alert_type: OutcomeAlertType.DETERIORATION,
-            severity: trend.deterioration_severity === 'URGENT_REVIEW' ? 'HIGH' : 'MEDIUM',
-            measure_code: params.measure_code,
-            measurement_id: measurementId
-          });
-
-          // If Safety threshold crossed, emit CandidateSafetySignal via SafetyKernelOutcomeAdapter (Sections 60, 61, 145)
+          // Safety has precedence over the internal OutcomeAlert path. A failure
+          // to create an alert must never prevent an approved Safety signal.
           if (trend.deterioration_severity === 'SAFETY_SIGNAL') {
-            await SafetyKernelOutcomeAdapter.emitSafetySignal({
+            try {
+              await SafetyKernelOutcomeAdapter.emitSafetySignal({
+                subject_user_id: params.subject_user_id,
+                measure_code: params.measure_code,
+                trend,
+                measurement_id: measurementId
+              });
+            } catch {
+              EventBus.enqueue(
+                'outcome.review_required',
+                'outcomes',
+                measurementId,
+                DataClassification.HEALTH_CRITICAL,
+                {
+                  subject_user_id: params.subject_user_id,
+                  measurement_id: measurementId,
+                  measure_code: params.measure_code,
+                  reason_code: 'SAFETY_BRIDGE_DELIVERY_FAILED'
+                }
+              );
+            }
+          }
+
+          try {
+            await OutcomeAlertService.raiseAlert({
               subject_user_id: params.subject_user_id,
+              care_relationship_id: params.care_relationship_id,
+              alert_type: OutcomeAlertType.DETERIORATION,
+              severity:
+                trend.deterioration_severity === 'SAFETY_SIGNAL'
+                  ? 'CRITICAL'
+                  : trend.deterioration_severity === 'URGENT_REVIEW'
+                    ? 'HIGH'
+                    : 'MEDIUM',
               measure_code: params.measure_code,
-              trend,
               measurement_id: measurementId
             });
+          } catch {
+            EventBus.enqueue(
+              'outcome.review_required',
+              'outcomes',
+              measurementId,
+              DataClassification.CLINICAL_RECORD,
+              {
+                subject_user_id: params.subject_user_id,
+                measurement_id: measurementId,
+                measure_code: params.measure_code,
+                reason_code: 'OUTCOME_ALERT_DELIVERY_FAILED'
+              }
+            );
           }
         }
       }

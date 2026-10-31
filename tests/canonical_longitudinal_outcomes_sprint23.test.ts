@@ -64,6 +64,7 @@ const approvedRule = (overrides: Record<string, unknown> = {}) => ({
   mcid: 5,
   critical_worsening_threshold: 8,
   critical_safety_threshold: 15,
+  safety_signal_code: 'SIG_SEVERE_DISTRESS_OVERWHELM',
   clinical_artifact_id: 'clinical-artifact:phq9-change',
   clinical_artifact_version: '1.0.0',
   approval_state: 'APPROVED' as const,
