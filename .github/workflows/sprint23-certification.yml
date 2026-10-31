@@ -1,4 +1,5 @@
 name: Certify MindOS Sprint 23
+# Sprint 23 native PostgreSQL certification
 
 on:
   push:
