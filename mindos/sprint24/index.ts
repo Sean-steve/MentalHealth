@@ -208,7 +208,7 @@ sprint24Router.get('/sprint-24/status', (_req: Request, res: Response) => {
   res.json({
     sprint: 24,
     title: 'Clinical Operations & Human Escalation',
-    status: 'IMPLEMENTED_PENDING_CERTIFICATION',
+    status: 'IMPLEMENTED',
     runtime:getSprint24RuntimeStatus(),
     implemented: [
       'postgres_adapters',
@@ -223,7 +223,7 @@ sprint24Router.get('/sprint-24/status', (_req: Request, res: Response) => {
       'clinical_incident_lifecycle',
       'operations_metrics'
     ],
-    pending: ['full_sprint24_certification']
+    pending: []
   });
 });
 
