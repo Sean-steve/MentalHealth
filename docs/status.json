@@ -40,10 +40,15 @@
       "number": "24",
       "title": "Clinical Operations & Human Escalation",
       "status": "PARTIAL",
-      "note": "IN PROGRESS on branch sprint-24-clinical-operations. Staffing-truth registry, canonical escalation state machine, qualified reviewer assignment guard, distinct follow-up workflow, R-OPS-002 no-response invariant, clinical incident lifecycle, migration 022 and initial acceptance tests are implemented. PostgreSQL adapters, Safety Kernel event bridge, minimum-necessary reviewer projections, safety-plan sharing, operations metrics and full certification remain."
+      "note": "IMPLEMENTED PENDING CERTIFICATION on sprint-24-clinical-operations. PostgreSQL adapters, staffing-truth enforcement, Safety Kernel bridge, minimum-necessary reviewer projection, explicit safety-plan sharing/revocation, follow-up workflows, clinical incident lifecycle, operations metrics, migration 022, API/runtime wiring and Sprint-24 acceptance/PostgreSQL-smoke coverage are implemented. PR #2 full Sprint 1–24 certification is queued; main remains unchanged until the gate executes successfully."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 24 implementation candidate completed",
+      "detail": "All planned Sprint-24 implementation work is on PR #2. Full certification is configured as the merge gate; the GitHub Actions job is currently queued and has not produced a pass/fail result."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 24 implementation started",
@@ -165,6 +170,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "The Pages prototype remains live; Sprint 24 engineering work is in progress on its dedicated branch and is not yet certified."
+    "note": "The Pages prototype remains live from main. Sprint 24 is implemented on PR #2 but is intentionally not merged or marked complete until the full certification workflow passes."
   }
 }
