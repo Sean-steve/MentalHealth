@@ -58,10 +58,15 @@
       "number": "27",
       "title": "Validation & Release Assurance",
       "status": "IMPLEMENTED",
-      "note": "CERTIFICATION CANDIDATE. Sprint 27 Validation & Release Assurance passed run 41188559479: 25/25 PostgreSQL migrations, full TypeScript, 519/519 Sprint 1–27 regression tests, 18/18 release-assurance acceptance tests, 7/7 security/red-team, 6/6 clinical, 6/6 privacy/Kenya-regulatory, 14/14 accessibility baseline, PostgreSQL release-assurance smoke (10 gates/10 evidence/5 test-only attestations), PostgreSQL DR restore (RPO 1s/RTO 2s), secret scan 0, dependency scan 0 Critical/High, production build, measured performance budgets, and 23-component SBOM. This certifies the Sprint-27 implementation only; production activation remains blocked until real exact-build human governance attestations and external regulatory evidence are supplied."
+      "note": "CERTIFIED COMPLETE as a technical release-assurance implementation on PR head 8b88031aa89fa2e29cb908ee9caa0d61414f9024 and merged to main as 183ab74a37d9d6b4750e4a2e67916f1a1f7da2b0. Final certification run 41188715852 passed 25/25 PostgreSQL migrations, full TypeScript, 519/519 regression tests, 18/18 release-assurance acceptance tests, 7/7 security/red-team, 6/6 clinical, 6/6 privacy/Kenya-regulatory, 14/14 accessibility baseline, DR restore, PostgreSQL release-assurance persistence, secret/dependency scans, production build, performance budgets and 23-component SBOM. Production activation remains fail-closed until real exact-build clinical, AI-safety, DPO, Kenya regulatory, Risk-A security and Release Authority attestations/external evidence exist."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 27 technically certified and merged to main",
+      "detail": "Final PR head 8b88031aa89fa2e29cb908ee9caa0d61414f9024 passed workflow 41188715852 and merged as 183ab74a37d9d6b4750e4a2e67916f1a1f7da2b0. The release-assurance mechanism is certified; real production authorization remains blocked pending real human/external evidence."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 27 technical validation certification passed",
@@ -238,6 +243,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 27 release-assurance implementation is technically certified on PR #5; final PR-head certification remains before merge. Production launch remains blocked pending real human governance approvals/evidence."
+    "note": "Sprint 27 Validation & Release Assurance is technically certified and merged to main. Production launch is intentionally blocked until real exact-build governance attestations and applicable external regulatory evidence are supplied."
   }
 }
