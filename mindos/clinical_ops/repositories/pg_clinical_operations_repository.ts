@@ -47,7 +47,7 @@ export class PgClinicalOperationsRepository implements IClinicalOperationsReposi
         review_started_at,action_required_at,follow_up_started_at,resolved_at,cancelled_at,cancellation_reason,
         resolution_summary_reference,created_at,updated_at,policy_version)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
-       ON CONFLICT(id) DO UPDATE SET state=EXCLUDED.state,reason_codes=EXCLUDED.reason_codes,
+       ON CONFLICT(risk_event_id,queue_key) DO UPDATE SET state=EXCLUDED.state,reason_codes=EXCLUDED.reason_codes,
        assigned_reviewer_id=EXCLUDED.assigned_reviewer_id,assigned_reviewer_role=EXCLUDED.assigned_reviewer_role,
        triaged_at=EXCLUDED.triaged_at,assigned_at=EXCLUDED.assigned_at,review_started_at=EXCLUDED.review_started_at,
        action_required_at=EXCLUDED.action_required_at,follow_up_started_at=EXCLUDED.follow_up_started_at,
