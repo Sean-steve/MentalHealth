@@ -41,9 +41,25 @@
       "title": "Clinical Operations & Human Escalation",
       "status": "IMPLEMENTED",
       "note": "CERTIFIED COMPLETE on PR head 213075285758283fc46bded114e09c083d627728 and merged to main as f995ef636e249baed511c32664df0d83e6d27e93. Final certification run 41184448860 passed 22/22 canonical PostgreSQL migrations, full TypeScript, 455/455 Sprint 1–24 regression tests, 10/10 dedicated Sprint-24 acceptance tests, Sprint-24 PostgreSQL runtime smoke, secret scan with 0 findings, and production build."
+    },
+    {
+      "number": "25",
+      "title": "Analytics & Operational Intelligence",
+      "status": "IMPLEMENTED",
+      "note": "CERTIFICATION CANDIDATE. Sprint 25 Analytics & Operational Intelligence passed the initial full certification run 41185289582: 23/23 canonical PostgreSQL migrations, full TypeScript, 468/468 Sprint 1–25 regression tests, 13/13 dedicated Sprint-25 acceptance tests, PostgreSQL analytics runtime smoke, secret scan with 0 findings, and production build. Final PR-head certification remains the merge gate."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 25 initial certification passed",
+      "detail": "Run 41185289582 passed 23/23 migrations, full TypeScript, 468/468 full regression tests, 13/13 Sprint-25 acceptance tests, PostgreSQL runtime smoke, clean secret scan and production build. Final metadata head will be certified before merge."
+    },
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 25 implementation candidate created",
+      "detail": "Analytics reconciliation completed. The previous in-memory analytics list has been extended with governed event contracts, versioned metrics, cohort suppression, evidence semantics, dashboards and PostgreSQL persistence on sprint-25-analytics-intelligence."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 24 merged to main",
@@ -180,6 +196,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 24 is certified complete and merged to main. GitHub Pages deployment remains driven from main."
+    "note": "Sprint 25 implementation is complete on PR #3 and has passed initial certification; final PR-head certification remains before merge."
   }
 }
