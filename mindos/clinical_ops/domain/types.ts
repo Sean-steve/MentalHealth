@@ -82,3 +82,19 @@ export interface ClinicalIncident {
   created_by: string;
   updated_at: string;
 }
+
+export type SafetyPlanShareGranteeType = 'PROFESSIONAL' | 'TRUSTED_CONTACT';
+
+export interface SafetyPlanShareGrant {
+  id: string;
+  safety_plan_reference: string;
+  subject_user_id: string;
+  grantee_type: SafetyPlanShareGranteeType;
+  grantee_id: string;
+  scopes: string[];
+  status: 'ACTIVE' | 'REVOKED';
+  granted_by: string;
+  granted_at: string;
+  revoked_at?: string;
+  revocation_reason?: string;
+}
