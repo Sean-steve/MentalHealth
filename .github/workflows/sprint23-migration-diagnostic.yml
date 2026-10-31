@@ -1,0 +1,68 @@
+name: Diagnose Sprint 23 migrations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sprint23-migration-diagnostic.yml'
+      - 'mindos/platform/database/migrations/**'
+      - 'mindos/platform/database/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: mindos_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mindos_test"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      MINDOS_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mindos_test
+      MINDOS_DATABASE_DRIVER: postgres
+      DB_SSL: "false"
+      DB_TIMEOUT_MS: 3000
+      JWT_SECRET: sprint23-diagnostic-jwt-secret-32-characters-minimum
+      SESSION_SECRET: sprint23-diagnostic-session-secret-32-characters-minimum
+      AUDIT_INTEGRITY_SALT: sprint23-diagnostic-audit-salt
+      APP_URL: http://localhost:3000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      DEFAULT_COUNTRY_CODE: KE
+      REDIS_CACHE_URL: redis://localhost:6379/0
+      REDIS_QUEUE_URL: redis://localhost:6379/1
+      AI_PROVIDER: mock_sandbox
+      GEMINI_API_KEY: TEST_ONLY_NOT_REAL
+      PAYMENTS_PROVIDER: mock
+      NOTIFICATIONS_PROVIDER: mock_console
+      SAFETY_POLICY_VERSION: 2.0.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Run migrations with hard timeout
+        shell: bash
+        run: |
+          set -o pipefail
+          timeout --signal=TERM 75s bun run db:migrate 2>&1 | tee /tmp/migrate.log
+          rc=${PIPESTATUS[0]}
+          echo "migration_exit_code=${rc}"
+          if [ "${rc}" -ne 0 ]; then
+            echo "---- last migration output ----"
+            tail -n 120 /tmp/migrate.log
+            exit "${rc}"
+          fi
