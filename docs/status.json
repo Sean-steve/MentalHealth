@@ -63,11 +63,16 @@
     {
       "number": "28",
       "title": "Controlled Beta & Kenya Launch Readiness",
-      "status": "PARTIAL",
-      "note": "IMPLEMENTATION CANDIDATE on sprint-28-controlled-beta-kenya-launch. Exact-build release candidate lock, hashed beta cohort enrollment, hard cohort ceilings, consent/evidence enrollment, launch evidence manifest, operational monitoring, Kenya launch gate, emergency hold/resume, limited-launch progression and post-launch review are implemented. Migration 026 and PostgreSQL lifecycle smoke are included. Real Kenya launch remains blocked until genuine exact-build governance attestations and any human-determined required external regulatory evidence exist."
+      "status": "IMPLEMENTED",
+      "note": "CERTIFICATION CANDIDATE. Sprint 28 Controlled Beta & Kenya Launch Readiness passed run 41195738269: 26/26 PostgreSQL migrations, full TypeScript, 530/530 Sprint 1–28 regression tests, 11/11 dedicated Sprint-28 acceptance tests, Sprint-27 validation regressions, 14/14 accessibility baseline, PostgreSQL DR restore (26 migrations; CI RPO 1s/RTO 2s), release-assurance PostgreSQL smoke, controlled-launch PostgreSQL lifecycle (3 monitoring snapshots, 2 TEST-ONLY authorization decisions, 1 post-launch review, raw participant identity persisted=false), secret scan 0, dependency scan 0 Critical/High, production build, performance budgets and 23-component SBOM. This certifies launch-control mechanics only; no real controlled beta or Kenya launch is authorized or executed."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 28 technical launch-readiness certification passed",
+      "detail": "Run 41195738269 passed the complete controlled-beta/launch technical stack. PostgreSQL lifecycle proved exact-build beta and limited-launch mechanics using TEST-ONLY approvals; raw participant identity was not persisted. Real Kenya beta/launch remains blocked until genuine governance and applicable external evidence are recorded."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 28 controlled-launch candidate created",
@@ -254,6 +259,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 27 remains technically certified on main. Sprint 28 Controlled Beta & Kenya Launch Readiness is on its dedicated branch pending certification; no real Kenya launch has been authorized."
+    "note": "Sprint 28 Controlled Beta & Kenya Launch Readiness is technically certified on PR #6; final PR-head certification remains before merge. No real beta cohort or Kenya launch has been authorized or executed."
   }
 }
