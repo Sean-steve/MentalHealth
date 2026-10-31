@@ -243,7 +243,7 @@ FROM specialties s
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO professional_specialty_assignments (id, professional_id, specialty_code, verification_status, created_at)
-SELECT gen_random_uuid(), l.professional_id, s.code,
+SELECT uuid_generate_v4(), l.professional_id, s.code,
        CASE WHEN l.active THEN 'VERIFIED_LEGACY' ELSE 'INACTIVE_LEGACY' END,
        NOW()
 FROM professional_specialties_legacy_sprint1 l
