@@ -1,8 +1,9 @@
-import { beforeEach, describe, it } from 'node:test';
+import { after, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { AuthorizationError, DomainInvariantError } from '../mindos/platform/errors/index.js';
 import { EscalationState, RiskState } from '../mindos/platform/shared/state_machines.js';
+import { DatabaseManager } from '../mindos/platform/database/index.js';
 import { resetSafetyRepository } from '../mindos/safety/index.js';
 import {
   ClinicalIncidentService,
@@ -21,6 +22,11 @@ import {
 } from '../mindos/sprint24/runtime.js';
 
 describe('MindOS Sprint 24 — Clinical Operations & Human Escalation', () => {
+  after(async () => {
+    resetSprint24RuntimeForTesting();
+    await DatabaseManager.shutdown();
+  });
+
   beforeEach(() => {
     resetSprint24RuntimeForTesting();
     resetClinicalOperationsForTesting();
