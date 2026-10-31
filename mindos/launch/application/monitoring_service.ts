@@ -9,7 +9,7 @@ import { LaunchRepository } from '../repositories/index.js';
 export class LaunchMonitoringService{
   static async capture(programId:string,capturedBy:string,environment:'production'|'staging'='production'):Promise<LaunchMonitoringSnapshot>{
     const p=await LaunchRepository.getProgram(programId);if(!p)throw new NotFoundError('Launch program not found.');
-    if(!['BETA_READY','BETA_ACTIVE','BETA_PAUSED','LIMITED_LAUNCH_REVIEW','LIMITED_LAUNCH_AUTHORIZED','LIMITED_LAUNCH_ACTIVE','LAUNCH_PAUSED'].includes(p.state))throw new DomainInvariantError('Operational launch monitoring requires a launch-ready or active program.');
+    if(!['RELEASE_CANDIDATE_LOCKED','BETA_READY','BETA_ACTIVE','BETA_PAUSED','LIMITED_LAUNCH_REVIEW','LIMITED_LAUNCH_AUTHORIZED','LIMITED_LAUNCH_ACTIVE','LAUNCH_PAUSED'].includes(p.state))throw new DomainInvariantError('Operational launch monitoring requires a launch-ready or active program.');
     const [hardening,incidents,pkg]=await Promise.all([
       HardeningReadinessService.snapshot('PRIMARY_POSTGRES'),
       ClinicalOperationsRepository.listIncidents(),
