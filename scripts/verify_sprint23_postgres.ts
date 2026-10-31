@@ -1,5 +1,5 @@
 import { configureSprint23Runtime } from '../mindos/sprint23/index.js';
-import { getPool } from '../mindos/platform/database/index.js';
+import { getPool, DatabaseManager } from '../mindos/platform/database/index.js';
 
 const status = await configureSprint23Runtime({ usePostgres: true });
 if (status.persistence !== 'POSTGRES') {
@@ -51,3 +51,4 @@ if (Number(alertPolicies.rows[0]?.count || 0) !== 0) {
 }
 
 console.log('SPRINT 23 POSTGRES SMOKE PASSED', status);
+await DatabaseManager.shutdown();
