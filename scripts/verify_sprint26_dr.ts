@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, rmSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool } from 'pg';
@@ -43,10 +43,17 @@ try{
   await admin.query(`DROP DATABASE IF EXISTS ${restoreDb}`);
   await admin.query(`CREATE DATABASE ${restoreDb}`);
 
-  execFileSync('pg_dump',['--format=custom','--no-owner','--no-acl','--file',dumpPath,sourceUrl],{stdio:'inherit'});
+  const dumpBytes=execFileSync('docker',[
+    'run','--rm','--network','host','postgres:16',
+    'pg_dump','--format=custom','--no-owner','--no-acl',sourceUrl
+  ],{maxBuffer:100*1024*1024});
+  writeFileSync(dumpPath,dumpBytes);
 
   const restoreStartedAt=new Date().toISOString();
-  execFileSync('pg_restore',['--no-owner','--no-acl','--dbname',restoreUrl.toString(),dumpPath],{stdio:'inherit'});
+  execFileSync('docker',[
+    'run','--rm','--network','host','-v',`${tmpdir()}:/backup:ro`,'postgres:16',
+    'pg_restore','--no-owner','--no-acl','--dbname',restoreUrl.toString(),`/backup/${dumpPath.split('/').pop()}`
+  ],{stdio:'inherit'});
   const restoreCompletedAt=new Date().toISOString();
   const rtoSeconds=Math.max(0,Math.ceil((Date.parse(restoreCompletedAt)-Date.parse(restoreStartedAt))/1000));
 
