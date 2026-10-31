@@ -57,11 +57,16 @@
     {
       "number": "27",
       "title": "Validation & Release Assurance",
-      "status": "PARTIAL",
-      "note": "IMPLEMENTATION CANDIDATE on sprint-27-validation-release-assurance. Risk-class validation depth, exact-build evidence, human attestations, automated QA/red-team/clinical/privacy/regulatory/accessibility/performance gates, production release-assurance enforcement, migration 025, API/runtime wiring and PostgreSQL persistence smoke are implemented. Regulatory default records no longer fabricate DHA/ODPC/KMPDC registration success. Full Sprint 1–27 certification remains."
+      "status": "IMPLEMENTED",
+      "note": "CERTIFICATION CANDIDATE. Sprint 27 Validation & Release Assurance passed run 41188559479: 25/25 PostgreSQL migrations, full TypeScript, 519/519 Sprint 1–27 regression tests, 18/18 release-assurance acceptance tests, 7/7 security/red-team, 6/6 clinical, 6/6 privacy/Kenya-regulatory, 14/14 accessibility baseline, PostgreSQL release-assurance smoke (10 gates/10 evidence/5 test-only attestations), PostgreSQL DR restore (RPO 1s/RTO 2s), secret scan 0, dependency scan 0 Critical/High, production build, measured performance budgets, and 23-component SBOM. This certifies the Sprint-27 implementation only; production activation remains blocked until real exact-build human governance attestations and external regulatory evidence are supplied."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 27 technical validation certification passed",
+      "detail": "Run 41188559479 passed the complete technical validation stack. CI test-only reviewers prove persistence and gate behavior but are not real clinical/privacy/regulatory/security approvals. Production activation remains fail-closed pending real exact-build attestations."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 27 validation candidate created",
@@ -233,6 +238,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 26 remains certified on main. Sprint 27 Validation & Release Assurance is on its dedicated branch pending full certification."
+    "note": "Sprint 27 release-assurance implementation is technically certified on PR #5; final PR-head certification remains before merge. Production launch remains blocked pending real human governance approvals/evidence."
   }
 }
