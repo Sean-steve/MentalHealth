@@ -25,6 +25,7 @@ import { CanonicalEventTypes, EventPriority } from '../../platform/events/regist
 import { SafetyMetrics } from '../infrastructure/metrics.js';
 import { AuditService } from '../../platform/audit/index.js';
 import { SafetyReviewerAuth } from '../review/reviewer_auth.js';
+import { ClinicalOperationsStaffingRegistry } from '../../clinical_ops/application/staffing_registry.js';
 
 export class SafetyEscalationService {
   constructor(private repo: ISafetyRepository) {}
@@ -38,6 +39,16 @@ export class SafetyEscalationService {
   ): Promise<SafetyEscalationEntity | null> {
     if (!policyResult.requiresHumanReview || !policyResult.escalationType) {
       return null;
+    }
+
+    if (ClinicalOperationsStaffingRegistry.isEnforcementEnabled()) {
+      const queueKey = riskState.level === 'URGENT' ? 'URGENT_SAFETY' : 'CLINICAL_REVIEW';
+      const jurisdiction = String((riskState.source_summary as any)?.jurisdiction || process.env.DEFAULT_COUNTRY_CODE || 'KE');
+      const staffed = await ClinicalOperationsStaffingRegistry.isHumanReviewActuallyAvailable(jurisdiction, queueKey);
+      if (!staffed) {
+        // Sprint 24 R-OPS-001: Safety actions/resources continue, but no human-review object is created.
+        return null;
+      }
     }
 
     // Check if user already has an active escalation of this type
