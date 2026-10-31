@@ -72,7 +72,7 @@ sprint25Router.get('/sprint-25/status',(_req,res)=>{
   res.json({
     sprint:25,
     title:'Analytics & Operational Intelligence',
-    status:'IN_PROGRESS',
+    status:'IMPLEMENTED',
     runtime:getSprint25RuntimeStatus(),
     implemented:[
       'privacy_minimizing_event_ingestion',
@@ -83,7 +83,7 @@ sprint25Router.get('/sprint-25/status',(_req,res)=>{
       'product_safety_business_outcome_dashboards',
       'experiment_safety_policy'
     ],
-    pending:['postgres_runtime_smoke','full_sprint25_certification']
+    pending:[]
   });
 });
 
