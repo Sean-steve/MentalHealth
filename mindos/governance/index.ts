@@ -42,6 +42,7 @@ import { GovernanceDecisionEngine } from './decision_engine.js';
 import { GovernanceRepository } from './persistence.js';
 import { ReleaseGateService } from './release_gates.js';
 import { FeatureFlagService } from '../platform/features/index.js';
+import { ReleaseAssuranceService } from '../validation/index.js';
 
 // Re-export all sub-modules for consumers
 export * from './types.js';
@@ -431,6 +432,22 @@ export class GovernanceOrchestrator {
     releaseAuthorityId: string;
     evidenceRefs?: string[];
   }): Promise<ReleaseAuthorizationEntity> {
+    const strictReleaseAssurance =
+      process.env.NODE_ENV === 'production' ||
+      String(process.env.STRICT_RELEASE_ASSURANCE || '').toLowerCase() === 'true';
+    if (strictReleaseAssurance) {
+      const assurance = await ReleaseAssuranceService.productionAuthorizationStatus(
+        params.releaseId,
+        process.env.RELEASE_BUILD_SHA || undefined
+      );
+      if (!assurance.authorized) {
+        throw new GovernanceBlockedError(
+          `RELEASE_ASSURANCE_REQUIRED: ${assurance.reasons.join(',')}`,
+          { errorCode: 'GOV_RELEASE_ASSURANCE_REQUIRED', details: { releaseId: params.releaseId, reasons: assurance.reasons } }
+        );
+      }
+    }
+
     const allApprovers = [
       params.clinicalApproverId,
       params.dpiaApproverId,
