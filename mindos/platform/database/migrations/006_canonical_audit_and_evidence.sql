@@ -74,27 +74,45 @@ CREATE INDEX IF NOT EXISTS idx_security_events_account_reference ON security_eve
 CREATE INDEX IF NOT EXISTS idx_security_events_correlation ON security_events(correlation_id);
 
 -- 3. Governance Evidence Vault Table (Tamper-Resistant Metadata & Verification Hashing)
-CREATE TABLE IF NOT EXISTS governance_evidence (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  evidence_type VARCHAR(60) NOT NULL,
-  title VARCHAR(200) NOT NULL,
-  description TEXT NOT NULL,
-  domain VARCHAR(60) NOT NULL,
-  related_resource_type VARCHAR(80) NOT NULL,
-  related_resource_id VARCHAR(120) NOT NULL,
-  version VARCHAR(40) NOT NULL DEFAULT '1.0.0',
-  status VARCHAR(40) NOT NULL DEFAULT 'ACTIVE',
-  source VARCHAR(80) NOT NULL DEFAULT 'INTERNAL_REVIEW',
-  created_by VARCHAR(80) NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  classification VARCHAR(40) NOT NULL DEFAULT 'SENSITIVE',
-  integrity_reference VARCHAR(64) NOT NULL,
-  storage_reference VARCHAR(255),
-  supersedes_id UUID,
-  approved_by VARCHAR(80),
-  approved_at TIMESTAMPTZ,
-  metadata_json TEXT NOT NULL DEFAULT '{}'
-);
+-- governance_evidence is introduced in migration 001. Sprint 7 expands that
+-- canonical record additively instead of redefining it with CREATE IF NOT EXISTS.
+ALTER TABLE governance_evidence
+  ADD COLUMN IF NOT EXISTS title VARCHAR(200),
+  ADD COLUMN IF NOT EXISTS description TEXT,
+  ADD COLUMN IF NOT EXISTS domain VARCHAR(60),
+  ADD COLUMN IF NOT EXISTS related_resource_type VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS related_resource_id VARCHAR(120),
+  ADD COLUMN IF NOT EXISTS version VARCHAR(40) NOT NULL DEFAULT '1.0.0',
+  ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'ACTIVE',
+  ADD COLUMN IF NOT EXISTS source VARCHAR(80) NOT NULL DEFAULT 'INTERNAL_REVIEW',
+  ADD COLUMN IF NOT EXISTS integrity_reference VARCHAR(64),
+  ADD COLUMN IF NOT EXISTS storage_reference VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS supersedes_id UUID,
+  ADD COLUMN IF NOT EXISTS approved_by VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS metadata_json TEXT NOT NULL DEFAULT '{}';
+
+UPDATE governance_evidence
+SET
+  title = COALESCE(title, evidence_type),
+  description = COALESCE(description, 'Legacy governance evidence record'),
+  domain = COALESCE(domain, 'GOVERNANCE'),
+  related_resource_type = COALESCE(related_resource_type, 'LEGACY_EVIDENCE'),
+  related_resource_id = COALESCE(related_resource_id, id::text),
+  integrity_reference = COALESCE(integrity_reference, content_hash),
+  storage_reference = COALESCE(storage_reference, object_storage_key)
+WHERE
+  title IS NULL OR description IS NULL OR domain IS NULL OR
+  related_resource_type IS NULL OR related_resource_id IS NULL OR
+  integrity_reference IS NULL;
+
+ALTER TABLE governance_evidence
+  ALTER COLUMN title SET NOT NULL,
+  ALTER COLUMN description SET NOT NULL,
+  ALTER COLUMN domain SET NOT NULL,
+  ALTER COLUMN related_resource_type SET NOT NULL,
+  ALTER COLUMN related_resource_id SET NOT NULL,
+  ALTER COLUMN integrity_reference SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_governance_evidence_type ON governance_evidence(evidence_type);
 CREATE INDEX IF NOT EXISTS idx_governance_evidence_resource ON governance_evidence(related_resource_type, related_resource_id);
@@ -149,6 +167,30 @@ CREATE TABLE IF NOT EXISTS audit_policy_registry (
 DROP TABLE IF EXISTS audit_policy_registry;
 DROP TABLE IF EXISTS evidence_attachments;
 DROP TABLE IF EXISTS evidence_links;
-DROP TABLE IF EXISTS governance_evidence;
-DROP TABLE IF EXISTS security_events;
+ALTER TABLE governance_evidence
+  DROP COLUMN IF EXISTS metadata_json,
+  DROP COLUMN IF EXISTS approved_at,
+  DROP COLUMN IF EXISTS approved_by,
+  DROP COLUMN IF EXISTS supersedes_id,
+  DROP COLUMN IF EXISTS storage_reference,
+  DROP COLUMN IF EXISTS integrity_reference,
+  DROP COLUMN IF EXISTS source,
+  DROP COLUMN IF EXISTS status,
+  DROP COLUMN IF EXISTS version,
+  DROP COLUMN IF EXISTS related_resource_id,
+  DROP COLUMN IF EXISTS related_resource_type,
+  DROP COLUMN IF EXISTS domain,
+  DROP COLUMN IF EXISTS description,
+  DROP COLUMN IF EXISTS title;
+
+ALTER TABLE security_events
+  DROP COLUMN IF EXISTS created_at,
+  DROP COLUMN IF EXISTS metadata_json,
+  DROP COLUMN IF EXISTS status,
+  DROP COLUMN IF EXISTS signal,
+  DROP COLUMN IF EXISTS source,
+  DROP COLUMN IF EXISTS account_reference,
+  DROP COLUMN IF EXISTS actor_reference,
+  DROP COLUMN IF EXISTS category;
+
 DROP TABLE IF EXISTS audit_records;
