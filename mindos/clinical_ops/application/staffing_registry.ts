@@ -4,6 +4,10 @@ import { ClinicalOperationsRepository } from '../repositories/index.js';
 import { ClinicalOperationsCapability } from '../domain/types.js';
 
 export class ClinicalOperationsStaffingRegistry {
+  private static enforcementEnabled = false;
+
+  static setEnforcementEnabled(enabled:boolean):void{this.enforcementEnabled=enabled;}
+  static isEnforcementEnabled():boolean{return this.enforcementEnabled;}
   static async configure(input: Omit<ClinicalOperationsCapability, 'id' | 'configured_at'>): Promise<ClinicalOperationsCapability> {
     if (!input.jurisdiction || !input.queue_key || !input.configured_by || !input.policy_version) {
       throw new DomainInvariantError('jurisdiction, queue_key, configured_by and policy_version are required.');
