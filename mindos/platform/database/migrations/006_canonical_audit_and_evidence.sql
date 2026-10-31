@@ -44,25 +44,33 @@ CREATE INDEX IF NOT EXISTS idx_audit_records_correlation ON audit_records(correl
 CREATE INDEX IF NOT EXISTS idx_audit_records_classification ON audit_records(resource_classification);
 
 -- 2. Security Events Table (Operational Security Logging Separation)
-CREATE TABLE IF NOT EXISTS security_events (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  category VARCHAR(60) NOT NULL,
-  severity VARCHAR(40) NOT NULL,
-  actor_reference VARCHAR(100),
-  account_reference VARCHAR(100),
-  source VARCHAR(80) NOT NULL DEFAULT 'SECURITY_MONITOR',
-  occurred_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  correlation_id VARCHAR(80) NOT NULL,
-  signal VARCHAR(100) NOT NULL,
-  status VARCHAR(40) NOT NULL DEFAULT 'OPEN',
-  metadata_json TEXT NOT NULL DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+-- security_events is first introduced by migration 003 for identity/account
+-- security logging. Sprint 7 expands that same canonical table additively.
+ALTER TABLE security_events
+  ADD COLUMN IF NOT EXISTS category VARCHAR(60),
+  ADD COLUMN IF NOT EXISTS actor_reference VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS account_reference VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS source VARCHAR(80) NOT NULL DEFAULT 'SECURITY_MONITOR',
+  ADD COLUMN IF NOT EXISTS signal VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'OPEN',
+  ADD COLUMN IF NOT EXISTS metadata_json TEXT NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+UPDATE security_events
+SET
+  category = COALESCE(category, event_type, 'ACCOUNT_SECURITY'),
+  signal = COALESCE(signal, event_type, 'UNKNOWN_SECURITY_EVENT'),
+  account_reference = COALESCE(account_reference, account_id::text)
+WHERE category IS NULL OR signal IS NULL OR account_reference IS NULL;
+
+ALTER TABLE security_events
+  ALTER COLUMN category SET NOT NULL,
+  ALTER COLUMN signal SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_security_events_occurred_at ON security_events(occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_security_events_severity ON security_events(severity);
 CREATE INDEX IF NOT EXISTS idx_security_events_category ON security_events(category);
-CREATE INDEX IF NOT EXISTS idx_security_events_account ON security_events(account_reference);
+CREATE INDEX IF NOT EXISTS idx_security_events_account_reference ON security_events(account_reference);
 CREATE INDEX IF NOT EXISTS idx_security_events_correlation ON security_events(correlation_id);
 
 -- 3. Governance Evidence Vault Table (Tamper-Resistant Metadata & Verification Hashing)
