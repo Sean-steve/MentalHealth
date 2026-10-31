@@ -12,6 +12,7 @@ import { ConfigurationManager } from '../configuration/index.js';
 import { logger } from '../observability/logger.js';
 import { PostgresErrorMapper, ConcurrencyError } from './errors.js';
 import { DatabaseObservability } from './observability.js';
+import { Pool as NativePgPool, type PoolClient as NativePgPoolClient } from 'pg';
 
 export interface DatabaseClient {
   query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]>;
@@ -31,6 +32,117 @@ export interface PoolConfig {
   idleTimeoutMs: number;
   statementTimeoutMs: number;
   ssl: boolean;
+}
+
+
+class NativePostgresTransactionClient implements DatabaseClient {
+  private statementTimeoutMs: number;
+
+  constructor(
+    private readonly client: NativePgPoolClient,
+    statementTimeoutMs: number
+  ) {
+    this.statementTimeoutMs = statementTimeoutMs;
+  }
+
+  public async query<T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> {
+    const start = Date.now();
+    try {
+      const result = await this.client.query(sql, params as any[]);
+      DatabaseObservability.recordQuery(sql, Date.now() - start, params);
+      return result.rows as T[];
+    } catch (err) {
+      const mapped = PostgresErrorMapper.mapError(err, sql);
+      DatabaseObservability.recordQuery(sql, Date.now() - start, params, mapped);
+      throw mapped;
+    }
+  }
+
+  public async transaction<T>(
+    fn: (client: DatabaseClient) => Promise<T>,
+    _isolationLevel: 'READ_COMMITTED' | 'REPEATABLE_READ' | 'SERIALIZABLE' = 'READ_COMMITTED'
+  ): Promise<T> {
+    return fn(this);
+  }
+
+  public isInTransaction(): boolean { return true; }
+  public getStatementTimeoutMs(): number { return this.statementTimeoutMs; }
+  public setStatementTimeoutMs(timeoutMs: number): void { this.statementTimeoutMs = timeoutMs; }
+}
+
+export class NativePostgresDriver implements DatabaseClient {
+  private readonly pool: NativePgPool;
+  private statementTimeoutMs: number;
+
+  constructor() {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) {
+      throw new Error('DATABASE_URL is required when MINDOS_DATABASE_DRIVER=postgres.');
+    }
+    this.statementTimeoutMs = Number(process.env.DB_TIMEOUT_MS || 5000);
+    this.pool = new NativePgPool({
+      connectionString: databaseUrl,
+      min: Number(process.env.DB_POOL_MIN || 1),
+      max: Number(process.env.DB_POOL_MAX || 10),
+      connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS || 5000),
+      idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
+      statement_timeout: this.statementTimeoutMs,
+      ssl: String(process.env.DB_SSL || 'false').toLowerCase() === 'true'
+        ? { rejectUnauthorized: false }
+        : false
+    });
+  }
+
+  public async query<T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> {
+    const start = Date.now();
+    try {
+      const result = await this.pool.query(sql, params as any[]);
+      DatabaseObservability.recordQuery(sql, Date.now() - start, params);
+      return result.rows as T[];
+    } catch (err) {
+      const mapped = PostgresErrorMapper.mapError(err, sql);
+      DatabaseObservability.recordQuery(sql, Date.now() - start, params, mapped);
+      throw mapped;
+    }
+  }
+
+  public async transaction<T>(
+    fn: (client: DatabaseClient) => Promise<T>,
+    isolationLevel: 'READ_COMMITTED' | 'REPEATABLE_READ' | 'SERIALIZABLE' = 'READ_COMMITTED'
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    const txStart = Date.now();
+    DatabaseObservability.recordTxStart();
+    try {
+      await client.query('BEGIN');
+      if (isolationLevel === 'SERIALIZABLE') {
+        await client.query('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+      } else if (isolationLevel === 'REPEATABLE_READ') {
+        await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+      } else {
+        await client.query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+      }
+      const txClient = new NativePostgresTransactionClient(client, this.statementTimeoutMs);
+      const result = await fn(txClient);
+      await client.query('COMMIT');
+      DatabaseObservability.recordTxCommit(Date.now() - txStart);
+      return result;
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch {}
+      DatabaseObservability.recordTxRollback(Date.now() - txStart);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  public isInTransaction(): boolean { return false; }
+  public getStatementTimeoutMs(): number { return this.statementTimeoutMs; }
+  public setStatementTimeoutMs(timeoutMs: number): void { this.statementTimeoutMs = timeoutMs; }
+
+  public async close(): Promise<void> {
+    await this.pool.end();
+  }
 }
 
 /**
@@ -651,18 +763,19 @@ export class CanonicalPostgresDriver implements DatabaseClient {
   }
 }
 
-let canonicalSharedDriver: CanonicalPostgresDriver | null = null;
+let sharedDriver: DatabaseClient | null = null;
 
-function getOrCreateDriver(): CanonicalPostgresDriver {
-  if (!canonicalSharedDriver) {
-    canonicalSharedDriver = new CanonicalPostgresDriver();
+function getOrCreateDriver(): DatabaseClient {
+  if (!sharedDriver) {
+    const nativePostgres = String(process.env.MINDOS_DATABASE_DRIVER || '').toLowerCase() === 'postgres';
+    sharedDriver = nativePostgres ? new NativePostgresDriver() : new CanonicalPostgresDriver();
     logger.info('Database driver initialized', {
-      driver: 'canonical_postgres_driver',
-      ssl: false,
+      driver: nativePostgres ? 'native_postgres_driver' : 'canonical_postgres_driver',
+      ssl: nativePostgres ? String(process.env.DB_SSL || 'false') : false,
       timestamp_tz: 'UTC'
     });
   }
-  return canonicalSharedDriver;
+  return sharedDriver;
 }
 
 /**
@@ -706,10 +819,10 @@ export class DatabaseConnectionPool {
   }
 
   public static resetForTesting(): void {
-    if (canonicalSharedDriver) {
-      canonicalSharedDriver.reset();
+    if (sharedDriver instanceof CanonicalPostgresDriver) {
+      sharedDriver.reset();
     }
-    canonicalSharedDriver = null;
+    sharedDriver = null;
     DatabaseObservability.resetForTesting();
   }
 }
@@ -731,10 +844,10 @@ export class DatabaseManager {
   }
 
   public static resetForTesting(): void {
-    if (canonicalSharedDriver) {
-      canonicalSharedDriver.reset();
+    if (sharedDriver instanceof CanonicalPostgresDriver) {
+      sharedDriver.reset();
     }
-    canonicalSharedDriver = null;
+    sharedDriver = null;
     DatabaseObservability.resetForTesting();
   }
 }

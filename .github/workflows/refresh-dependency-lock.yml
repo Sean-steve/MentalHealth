@@ -1,0 +1,32 @@
+name: Refresh dependency lock
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - '.github/workflows/refresh-dependency-lock.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Refresh Bun lockfile
+        run: bun install
+      - name: Commit lockfile if changed
+        run: |
+          if git diff --quiet -- bun.lock; then
+            echo "bun.lock already current"
+            exit 0
+          fi
+          git config user.name "mindos-ci"
+          git config user.email "mindos-ci@users.noreply.github.com"
+          git add bun.lock
+          git commit -m "chore: lock native PostgreSQL driver dependency"
+          git push
