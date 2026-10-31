@@ -21,3 +21,6 @@ Clinical-safety invariants:
 - approved Safety thresholds route through the authoritative Safety Kernel
 - completed review snapshots are immutable
 - clinical timeline/projections minimize sensitive values
+
+
+Certification retry marker: schema reconciliation through migration 019.
