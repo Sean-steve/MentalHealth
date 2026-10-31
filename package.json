@@ -37,6 +37,8 @@
     "test:sprint27:red-team": "tsx --test tests/canonical_security_red_team_sprint27.test.ts",
     "test:sprint27:clinical": "tsx --test tests/canonical_clinical_validation_sprint27.test.ts",
     "test:sprint27:privacy-regulatory": "tsx --test tests/canonical_privacy_regulatory_validation_sprint27.test.ts",
+    "test:sprint28": "tsx --test tests/canonical_controlled_beta_launch_sprint28.test.ts",
+    "sprint28:postgres-smoke": "tsx scripts/verify_sprint28_postgres.ts",
     "sprint27:a11y": "tsx scripts/validate_sprint27_accessibility.ts",
     "sprint27:performance": "tsx scripts/validate_sprint27_performance.ts",
     "sprint27:postgres-smoke": "tsx scripts/verify_sprint27_postgres.ts",
