@@ -2,7 +2,8 @@ import {
   ClinicalIncident,
   ClinicalOperationsCapability,
   ClinicalOperationsEscalation,
-  ClinicalOperationsFollowUp
+  ClinicalOperationsFollowUp,
+  SafetyPlanShareGrant
 } from '../domain/types.js';
 import { IClinicalOperationsRepository } from './interfaces.js';
 
@@ -11,6 +12,7 @@ export class InMemoryClinicalOperationsRepository implements IClinicalOperations
   private escalations = new Map<string, ClinicalOperationsEscalation>();
   private followUps = new Map<string, ClinicalOperationsFollowUp>();
   private incidents = new Map<string, ClinicalIncident>();
+  private safetyPlanShares = new Map<string, SafetyPlanShareGrant>();
 
   async saveCapability(value: ClinicalOperationsCapability): Promise<void> {
     this.capabilities.set(value.id, structuredClone(value));
@@ -48,10 +50,20 @@ export class InMemoryClinicalOperationsRepository implements IClinicalOperations
   async listIncidents(): Promise<ClinicalIncident[]> {
     return [...this.incidents.values()].map(x => structuredClone(x));
   }
+  async saveSafetyPlanShare(value: SafetyPlanShareGrant): Promise<void> {
+    this.safetyPlanShares.set(value.id, structuredClone(value));
+  }
+  async listSafetyPlanShares(subjectUserId: string, safetyPlanReference?: string): Promise<SafetyPlanShareGrant[]> {
+    return [...this.safetyPlanShares.values()]
+      .filter(x => x.subject_user_id === subjectUserId)
+      .filter(x => !safetyPlanReference || x.safety_plan_reference === safetyPlanReference)
+      .map(x => structuredClone(x));
+  }
   reset(): void {
     this.capabilities.clear();
     this.escalations.clear();
     this.followUps.clear();
     this.incidents.clear();
+    this.safetyPlanShares.clear();
   }
 }
