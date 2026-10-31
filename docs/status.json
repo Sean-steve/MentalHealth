@@ -46,10 +46,15 @@
       "number": "25",
       "title": "Analytics & Operational Intelligence",
       "status": "IMPLEMENTED",
-      "note": "CERTIFICATION CANDIDATE. Sprint 25 Analytics & Operational Intelligence passed the initial full certification run 41185289582: 23/23 canonical PostgreSQL migrations, full TypeScript, 468/468 Sprint 1–25 regression tests, 13/13 dedicated Sprint-25 acceptance tests, PostgreSQL analytics runtime smoke, secret scan with 0 findings, and production build. Final PR-head certification remains the merge gate."
+      "note": "CERTIFIED COMPLETE on PR head 767a077f7c0501507c3387ab146340454c892ab6 and merged to main as e185fbfee01379f177ed797391d6890ec4798cc8. Final certification run 41185412553 passed 23/23 canonical PostgreSQL migrations, full TypeScript, 468/468 Sprint 1–25 regression tests, 13/13 dedicated Sprint-25 acceptance tests, Sprint-25 PostgreSQL analytics runtime smoke, secret scan with 0 findings, and production build."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 25 certified and merged to main",
+      "detail": "Final PR head 767a077f7c0501507c3387ab146340454c892ab6 passed workflow 41185412553 and merged as e185fbfee01379f177ed797391d6890ec4798cc8."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 25 initial certification passed",
@@ -196,6 +201,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 25 implementation is complete on PR #3 and has passed initial certification; final PR-head certification remains before merge."
+    "note": "Sprint 25 Analytics & Operational Intelligence is certified complete and merged to main. GitHub Pages deployment remains driven from main."
   }
 }
