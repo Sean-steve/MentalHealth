@@ -137,7 +137,7 @@ export class OutcomeReviewService {
     const authDecision = await RelationshipAccessEvaluator.evaluateProfessionalAccess({
       subjectUserId: review.subject_user_id,
       professionalId: params.reviewer_id,
-      purpose: 'MEASUREMENT_BASED_CARE_REVIEW',
+      purpose: 'CARE_DELIVERY',
       action: 'WRITE',
       dataDomain: 'CLINICAL_NOTES'
     });
