@@ -47,9 +47,20 @@
       "title": "Analytics & Operational Intelligence",
       "status": "IMPLEMENTED",
       "note": "CERTIFIED COMPLETE on PR head 767a077f7c0501507c3387ab146340454c892ab6 and merged to main as e185fbfee01379f177ed797391d6890ec4798cc8. Final certification run 41185412553 passed 23/23 canonical PostgreSQL migrations, full TypeScript, 468/468 Sprint 1–25 regression tests, 13/13 dedicated Sprint-25 acceptance tests, Sprint-25 PostgreSQL analytics runtime smoke, secret scan with 0 findings, and production build."
+    },
+    {
+      "number": "26",
+      "title": "Platform Hardening",
+      "status": "PARTIAL",
+      "note": "IMPLEMENTATION CANDIDATE on sprint-26-platform-hardening. Privacy lifecycle dependency tracking, derived-store completion receipts, structured-log hardening, reliability priority/degradation policy, explicit RPO/RTO targets, tested restore evidence, hardening observability/readiness, migration 024, API/runtime wiring, acceptance tests and a real PostgreSQL backup/restore drill are implemented. Full Sprint 1–26 certification remains."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 26 platform-hardening candidate created",
+      "detail": "Security/privacy lifecycle, observability, reliability and DR hardening are implemented on sprint-26-platform-hardening. Certification includes real PostgreSQL dump/restore verification, vulnerability scanning and SBOM generation."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 25 certified and merged to main",
@@ -201,6 +212,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 25 Analytics & Operational Intelligence is certified complete and merged to main. GitHub Pages deployment remains driven from main."
+    "note": "Sprint 25 remains certified on main. Sprint 26 Platform Hardening is on its dedicated branch pending full certification."
   }
 }
