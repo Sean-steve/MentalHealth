@@ -2,9 +2,9 @@
 <style>body{max-width:980px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #5fe0ad;color:#5fe0ad;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.warn{display:inline-block;border:1px solid #e7bb69;color:#ffd58a;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.done{color:#5fe0ad}.muted{color:#9db8ae}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card{padding:15px;border:1px solid #21433b;border-radius:14px;background:#0d1c19}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style>
 <a href="../tracker.html">← Engineering tracker</a>
 <h1>Sprint 28 — Controlled Beta & Kenya Launch Readiness</h1>
-<span class="tag">IMPLEMENTED — FINAL HEAD CERTIFICATION PENDING</span>
+<span class="tag">TECHNICALLY CERTIFIED COMPLETE</span>
 <p><span class="warn">NO REAL BETA OR KENYA LAUNCH HAS BEEN AUTHORIZED OR EXECUTED</span></p>
-<p class="muted">Successful technical certification run: <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/41195738269">41195738269</a></p>
+<p class="muted">Certified PR head: <code>f9118ada5eec9984a23e82707d328cc3f29a000e</code><br>Merged to main: <code>4706da10a91818352065be24fa08cbf8ac0b9340</code><br>Final certification run: <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/41195925840">41195925840</a></p>
 
 <h2>Implemented launch-control sequence</h2>
 <div class="grid">
@@ -53,4 +53,4 @@
 <li>Normalized PostgreSQL <code>TIMESTAMPTZ</code> values to ISO domain strings so millisecond ordering is preserved across persistence.</li>
 </ul>
 
-<p><strong>Merge rule:</strong> the exact final PR head must repeat the full Sprint-28 technical certification successfully before merge to <code>main</code>.</p>
+<p><strong>Decision:</strong> Sprint 28 launch-control implementation is technically certified and merged to <code>main</code>. This does not authorize or assert a real controlled beta or Kenya production launch.</p>
