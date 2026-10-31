@@ -43,3 +43,16 @@ export class AnalyticsService {
     AnalyticsService.events = [];
   }
 }
+
+
+export * from './domain/types.js';
+export * from './repositories/index.js';
+export * from './governance/event_contract_registry.js';
+export * from './governance/privacy_transformer.js';
+export * from './governance/experiment_policy.js';
+export * from './metrics/canonical_metric_catalog.js';
+export * from './metrics/metric_registry.js';
+export * from './metrics/aggregation_service.js';
+export * from './application/ingestion_service.js';
+export * from './application/event_bridge.js';
+export * from './application/dashboard_service.js';
