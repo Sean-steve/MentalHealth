@@ -39,11 +39,16 @@
     {
       "number": "24",
       "title": "Clinical Operations & Human Escalation",
-      "status": "PLANNED",
-      "note": "Canonical sprint prompt exists; implementation has not started in the audited prototype."
+      "status": "PARTIAL",
+      "note": "IN PROGRESS on branch sprint-24-clinical-operations. Staffing-truth registry, canonical escalation state machine, qualified reviewer assignment guard, distinct follow-up workflow, R-OPS-002 no-response invariant, clinical incident lifecycle, migration 022 and initial acceptance tests are implemented. PostgreSQL adapters, Safety Kernel event bridge, minimum-necessary reviewer projections, safety-plan sharing, operations metrics and full certification remain."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 24 implementation started",
+      "detail": "Clinical Operations foundation added on sprint-24-clinical-operations: staffing truth is explicit, human review is not created without active staffed capability, escalation/incident transitions are governed, and missed follow-up does not mutate RiskState."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Legacy schema compatibility and DB lifecycle repaired",
@@ -160,6 +165,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "The Pages prototype is live and the engineering tracker now reflects certified Sprint 23 implementation."
+    "note": "The Pages prototype remains live; Sprint 24 engineering work is in progress on its dedicated branch and is not yet certified."
   }
 }
