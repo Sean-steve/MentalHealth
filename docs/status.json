@@ -40,10 +40,15 @@
       "number": "24",
       "title": "Clinical Operations & Human Escalation",
       "status": "IMPLEMENTED",
-      "note": "CERTIFIED COMPLETE on commit bc350282608f0e8b3419093927810a7ce600dbba. 22/22 canonical PostgreSQL migrations applied; full TypeScript passed; 455/455 Sprint 1–24 regression tests passed; 10/10 dedicated Sprint-24 acceptance tests passed; Sprint-24 PostgreSQL runtime smoke passed; secret scan found 0 secrets/private keys; production build passed. Clinical Operations staffing truth, Safety Kernel bridge, reviewer case projection, follow-up workflows, explicit safety-plan sharing, incidents and governed operations metrics are implemented."
+      "note": "CERTIFIED COMPLETE on PR head 213075285758283fc46bded114e09c083d627728 and merged to main as f995ef636e249baed511c32664df0d83e6d27e93. Final certification run 41184448860 passed 22/22 canonical PostgreSQL migrations, full TypeScript, 455/455 Sprint 1–24 regression tests, 10/10 dedicated Sprint-24 acceptance tests, Sprint-24 PostgreSQL runtime smoke, secret scan with 0 findings, and production build."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 24 merged to main",
+      "detail": "Certified PR head 213075285758283fc46bded114e09c083d627728 passed final workflow 41184448860 and was merged as f995ef636e249baed511c32664df0d83e6d27e93."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 24 certified COMPLETE",
@@ -175,6 +180,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "The Pages prototype remains live. Sprint 24 is certified complete and ready to merge into main."
+    "note": "Sprint 24 is certified complete and merged to main. GitHub Pages deployment remains driven from main."
   }
 }
