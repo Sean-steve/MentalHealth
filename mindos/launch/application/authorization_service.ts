@@ -53,10 +53,14 @@ export class LaunchAuthorizationService{
     if(input.decision_type==='LIMITED_KENYA_LAUNCH'&&p.state!=='BETA_ACTIVE')throw new DomainInvariantError('Limited Kenya launch authorization requires an active controlled beta.');
     if(input.decision_type==='LIMITED_KENYA_LAUNCH'){
       const participants=await LaunchRepository.listParticipants(p.id);
-      if(!participants.some(x=>x.state==='ENROLLED'))throw new DomainInvariantError('Limited Kenya launch requires evidence that the controlled beta actually enrolled participants.');
+      const enrolled=participants.filter(x=>x.state==='ENROLLED'&&x.enrolled_at);
+      if(!enrolled.length)throw new DomainInvariantError('Limited Kenya launch requires evidence that the controlled beta actually enrolled participants.');
+      const firstEnrollment=Math.min(...enrolled.map(x=>Date.parse(x.enrolled_at!)));
+      const betaStart=p.beta_starts_at?Date.parse(p.beta_starts_at):NaN;
+      const observationFloor=Math.max(betaStart,firstEnrollment);
       const snapshots=await LaunchRepository.listMonitoringSnapshots(p.id);
-      if(!p.beta_starts_at||!snapshots.some(x=>x.build_sha===p.build_sha&&x.status==='GREEN'&&Date.parse(x.captured_at)>=Date.parse(p.beta_starts_at))){
-        throw new DomainInvariantError('Limited Kenya launch requires a GREEN operational monitoring snapshot captured during the active beta window.');
+      if(!Number.isFinite(observationFloor)||!snapshots.some(x=>x.build_sha===p.build_sha&&x.status==='GREEN'&&Date.parse(x.captured_at)>observationFloor)){
+        throw new DomainInvariantError('Limited Kenya launch requires a GREEN operational monitoring snapshot captured after beta activation and participant enrollment.');
       }
     }
     const evaluation=await this.evaluate(p.id);
