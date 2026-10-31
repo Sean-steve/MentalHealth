@@ -2,8 +2,8 @@
 <style>body{max-width:980px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #5fe0ad;color:#5fe0ad;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.done{color:#5fe0ad}.muted{color:#9db8ae}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card{padding:15px;border:1px solid #21433b;border-radius:14px;background:#0d1c19}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style>
 <a href="../tracker.html">← Engineering tracker</a>
 <h1>Sprint 26 — Platform Hardening</h1>
-<span class="tag">IMPLEMENTED — FINAL HEAD CERTIFICATION PENDING</span>
-<p class="muted">Successful hardening certification run: <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/41186710473">41186710473</a></p>
+<span class="tag">CERTIFIED COMPLETE</span>
+<p class="muted">Certified PR head: <code>a4516f9f4c46db66d8477d0236d2e567b59b884d</code><br>Merged to main: <code>0d29aa95ab6c90b8e22b4bf9c58850bc510011cc</code><br>Final certification run: <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/41186835609">41186835609</a></p>
 
 <h2>Implemented</h2>
 <div class="grid">
@@ -48,4 +48,4 @@
 <h2>Certification repair discovered by DR</h2>
 <p>The restore drill exposed that migration history had previously existed only in process memory even though the <code>schema_migrations</code> table existed. Sprint 26 repaired the migration engine so native PostgreSQL records every applied migration transactionally, making restored migration state verifiable.</p>
 
-<p><strong>Merge rule:</strong> the exact final PR head must repeat the full hardening gate successfully before Sprint 26 is merged to <code>main</code>.</p>
+<p><strong>Decision:</strong> Sprint 26 is implemented, hardened, certified and merged to <code>main</code>. No Sprint-26 completion blocker remains.</p>
