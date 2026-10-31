@@ -51,7 +51,6 @@ ALTER TABLE assessment_definitions
 UPDATE assessment_definitions
 SET assessment_type = COALESCE(assessment_type, assessment_kind, 'SCREENING')
 WHERE assessment_type IS NULL;
-ALTER TABLE assessment_definitions ALTER COLUMN assessment_type SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_assessment_defs_code ON assessment_definitions(code);
 CREATE INDEX IF NOT EXISTS idx_assessment_defs_status ON assessment_definitions(status);
