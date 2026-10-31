@@ -25,11 +25,14 @@ export class Logger {
   private write(level: LogLevel, message: string, context?: Record<string, unknown>): LogEntry {
     const correlation = CorrelationManager.get();
     const cleanContext = context ? (redactSensitiveData(context) as Record<string, unknown>) : undefined;
+    const cleanMessage = String(redactSensitiveData(message))
+      .replace(/[\r\n\t]+/g, ' ')
+      .slice(0, 1000);
 
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
-      message,
+      message: cleanMessage,
       correlation_id: correlation.correlationId,
       request_id: correlation.requestId,
       ...(correlation.causationId ? { causation_id: correlation.causationId } : {}),
