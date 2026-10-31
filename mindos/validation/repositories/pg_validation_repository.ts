@@ -20,9 +20,9 @@ export class PgValidationRepository implements IValidationRepository{
   }
   async saveEvidence(v:ValidationEvidence){
     await getPool().query(`INSERT INTO validation_evidence
-      (id,release_id,gate,status,evidence_type,evidence_hash,source,tool_version,summary_json,critical_findings,high_findings,executed_at,expires_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13)`,
-      [v.id,v.release_id,v.gate,v.status,v.evidence_type,v.evidence_hash,v.source,v.tool_version||null,JSON.stringify(v.summary),v.critical_findings,v.high_findings,v.executed_at,v.expires_at||null]);
+      (id,release_id,build_sha,gate,status,evidence_type,evidence_hash,source,tool_version,summary_json,critical_findings,high_findings,executed_at,expires_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14)`,
+      [v.id,v.release_id,v.build_sha,v.gate,v.status,v.evidence_type,v.evidence_hash,v.source,v.tool_version||null,JSON.stringify(v.summary),v.critical_findings,v.high_findings,v.executed_at,v.expires_at||null]);
   }
   async listEvidence(releaseId:string){
     const r=await getPool().query('SELECT * FROM validation_evidence WHERE release_id=$1 ORDER BY executed_at DESC',[releaseId]);
@@ -30,9 +30,9 @@ export class PgValidationRepository implements IValidationRepository{
   }
   async saveAttestation(v:ValidationAttestation){
     await getPool().query(`INSERT INTO validation_attestations
-      (id,release_id,gate,reviewer_id,reviewer_role,decision,conditions,evidence_refs,attested_at,expires_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10)`,
-      [v.id,v.release_id,v.gate,v.reviewer_id,v.reviewer_role,v.decision,JSON.stringify(v.conditions),JSON.stringify(v.evidence_refs),v.attested_at,v.expires_at||null]);
+      (id,release_id,build_sha,gate,reviewer_id,reviewer_role,decision,conditions,evidence_refs,attested_at,expires_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11)`,
+      [v.id,v.release_id,v.build_sha,v.gate,v.reviewer_id,v.reviewer_role,v.decision,JSON.stringify(v.conditions),JSON.stringify(v.evidence_refs),v.attested_at,v.expires_at||null]);
   }
   async listAttestations(releaseId:string){
     const r=await getPool().query('SELECT * FROM validation_attestations WHERE release_id=$1 ORDER BY attested_at DESC',[releaseId]);
