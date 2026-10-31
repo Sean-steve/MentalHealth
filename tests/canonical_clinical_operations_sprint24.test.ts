@@ -40,6 +40,30 @@ describe('MindOS Sprint 24 — Clinical Operations & Human Escalation', () => {
     assert.equal(result, null);
   });
 
+  it('treats a newer PAUSED staffing configuration as authoritative over an older staffed record', async () => {
+    await ClinicalOperationsStaffingRegistry.configure({
+      jurisdiction: 'KE',
+      queue_key: 'CLINICAL_REVIEW',
+      staffing_state: 'STAFFED',
+      qualified_role_codes: ['SAFETY_REVIEWER'],
+      configured_by: 'clinical-admin',
+      policy_version: 'ops-1'
+    });
+    await new Promise(resolve => setTimeout(resolve, 2));
+    await ClinicalOperationsStaffingRegistry.configure({
+      jurisdiction: 'KE',
+      queue_key: 'CLINICAL_REVIEW',
+      staffing_state: 'PAUSED',
+      qualified_role_codes: [],
+      configured_by: 'clinical-admin',
+      policy_version: 'ops-2'
+    });
+    assert.equal(
+      await ClinicalOperationsStaffingRegistry.isHumanReviewActuallyAvailable('KE','CLINICAL_REVIEW'),
+      false
+    );
+  });
+
   it('creates human review only when the required queue is genuinely staffed', async () => {
     await ClinicalOperationsStaffingRegistry.configure({
       jurisdiction: 'KE',
