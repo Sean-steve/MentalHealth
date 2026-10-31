@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS clinical_ops_escalations (
   resolution_summary_reference VARCHAR(240),
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
-  policy_version VARCHAR(80) NOT NULL
+  policy_version VARCHAR(80) NOT NULL,
+  UNIQUE(risk_event_id, queue_key)
 );
 CREATE INDEX IF NOT EXISTS idx_clinical_ops_escalation_queue
   ON clinical_ops_escalations(jurisdiction, queue_key, state, created_at);
@@ -83,7 +84,24 @@ CREATE TABLE IF NOT EXISTS clinical_ops_incidents (
   updated_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS clinical_ops_safety_plan_shares (
+  id UUID PRIMARY KEY,
+  safety_plan_reference VARCHAR(240) NOT NULL,
+  subject_user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  grantee_type VARCHAR(40) NOT NULL CHECK(grantee_type IN ('PROFESSIONAL','TRUSTED_CONTACT')),
+  grantee_id VARCHAR(160) NOT NULL,
+  scopes JSONB NOT NULL DEFAULT '[]',
+  status VARCHAR(24) NOT NULL CHECK(status IN ('ACTIVE','REVOKED')),
+  granted_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  granted_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  revocation_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_clinical_ops_safety_plan_shares_subject
+  ON clinical_ops_safety_plan_shares(subject_user_id, safety_plan_reference, status);
+
 -- DOWN --
+DROP TABLE IF EXISTS clinical_ops_safety_plan_shares CASCADE;
 DROP TABLE IF EXISTS clinical_ops_incidents CASCADE;
 DROP TABLE IF EXISTS clinical_ops_follow_ups CASCADE;
 DROP TABLE IF EXISTS clinical_ops_escalations CASCADE;
