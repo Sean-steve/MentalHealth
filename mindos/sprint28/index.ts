@@ -66,10 +66,10 @@ sprint28Router.get('/launch/programs/:id',async(req,res,next)=>{
 });
 sprint28Router.get('/sprint-28/status',(_req,res)=>{
  res.json({
-   sprint:28,title:'Controlled Beta & Kenya Launch Readiness',status:'IN_PROGRESS',runtime:getSprint28RuntimeStatus(),
+   sprint:28,title:'Controlled Beta & Kenya Launch Readiness',status:'IMPLEMENTED',runtime:getSprint28RuntimeStatus(),
    production_launch_status:'BLOCKED_UNTIL_REAL_EXACT_BUILD_GOVERNANCE_AND_REQUIRED_EXTERNAL_EVIDENCE',
    implemented:['release_candidate_lock','hashed_beta_cohort','cohort_capacity','consent_evidence_enrollment','launch_evidence_manifest','operational_monitoring','kenya_launch_gate','emergency_hold','post_launch_review'],
-   pending:['full_sprint28_certification']
+   pending:[]
  });
 });
 
