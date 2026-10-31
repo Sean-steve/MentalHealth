@@ -51,11 +51,16 @@
     {
       "number": "26",
       "title": "Platform Hardening",
-      "status": "PARTIAL",
-      "note": "IMPLEMENTATION CANDIDATE on sprint-26-platform-hardening. Privacy lifecycle dependency tracking, derived-store completion receipts, structured-log hardening, reliability priority/degradation policy, explicit RPO/RTO targets, tested restore evidence, hardening observability/readiness, migration 024, API/runtime wiring, acceptance tests and a real PostgreSQL backup/restore drill are implemented. Full Sprint 1–26 certification remains."
+      "status": "IMPLEMENTED",
+      "note": "CERTIFICATION CANDIDATE. Sprint 26 Platform Hardening passed full certification run 41186710473: 24/24 PostgreSQL migrations, full TypeScript, 482/482 Sprint 1–26 regression tests, 14/14 dedicated Sprint-26 acceptance tests, real PostgreSQL backup/restore drill with persisted migration history (RPO 1s / RTO 2s in CI), secret scan 0 findings, dependency scan 0 Critical/High, production build, and 23-component SBOM. Final PR-head certification remains the merge gate."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 26 hardening certification passed",
+      "detail": "Run 41186710473 passed 24/24 migrations, full TypeScript, 482/482 regression tests, 14/14 Sprint-26 acceptance tests, real PostgreSQL restore drill, clean secret/dependency scans, production build and SBOM generation. Migration history is now persisted in PostgreSQL."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 26 platform-hardening candidate created",
@@ -212,6 +217,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 25 remains certified on main. Sprint 26 Platform Hardening is on its dedicated branch pending full certification."
+    "note": "Sprint 26 Platform Hardening is implemented on PR #4 and has passed full certification; final PR-head certification remains before merge."
   }
 }
