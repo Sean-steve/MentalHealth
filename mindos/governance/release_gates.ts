@@ -18,6 +18,7 @@ import { EventBus } from '../platform/events/index.js';
 import { ValidationError, GovernanceBlockedError } from '../platform/errors/index.js';
 import { FeatureFlagService } from '../platform/features/index.js';
 import { logger } from '../platform/observability/logger.js';
+import { ReleaseAssuranceService } from '../validation/index.js';
 
 export class ReleaseGateService {
   /**
@@ -28,7 +29,28 @@ export class ReleaseGateService {
     releaseId: string;
     environment: string;
     featureKey?: string;
+    buildSha?: string;
   }): Promise<ReleaseGateEvaluationResult> {
+    const strictReleaseAssurance =
+      params.environment === 'production' &&
+      (process.env.NODE_ENV === 'production' ||
+       String(process.env.STRICT_RELEASE_ASSURANCE || '').toLowerCase() === 'true');
+    if (strictReleaseAssurance) {
+      const assurance = await ReleaseAssuranceService.productionAuthorizationStatus(params.releaseId, params.buildSha);
+      if (!assurance.authorized) {
+        return {
+          release_id: params.releaseId,
+          environment: params.environment,
+          verdict: 'DENIED',
+          can_activate: false,
+          blocking_reasons: assurance.reasons.map(x => `Release assurance: ${x}`),
+          domain_evaluations: {} as any,
+          separation_of_duties_valid: false,
+          unresolved_incidents_count: 0,
+          evaluated_at: new Date().toISOString()
+        };
+      }
+    }
     const auth = await GovernanceRepository.findReleaseAuthorization(params.releaseId);
 
     // If an authorization exists, inspect its current status
