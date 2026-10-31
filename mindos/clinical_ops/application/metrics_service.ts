@@ -18,7 +18,17 @@ export class ClinicalOperationsMetricsService {
       ClinicalOperationsRepository.listCapabilities()
     ]);
 
-    const staffedKeys=new Set(capabilities.filter(x=>x.staffing_state==='STAFFED').map(x=>`${x.jurisdiction}:${x.queue_key}`));
+    const latestByQueue=new Map<string,(typeof capabilities)[number]>();
+    for(const capability of [...capabilities].sort((a,b)=>Date.parse(b.configured_at)-Date.parse(a.configured_at))){
+      const key=`${capability.jurisdiction}:${capability.queue_key}`;
+      if(!latestByQueue.has(key))latestByQueue.set(key,capability);
+    }
+    const now=Date.now();
+    const staffedKeys=new Set([...latestByQueue.entries()]
+      .filter(([,x])=>x.staffing_state==='STAFFED')
+      .filter(([,x])=>!x.coverage_started_at||Date.parse(x.coverage_started_at)<=now)
+      .filter(([,x])=>!x.coverage_ends_at||Date.parse(x.coverage_ends_at)>now)
+      .map(([key])=>key));
     const staffedEscalations=escalations.filter(x=>staffedKeys.has(`${x.jurisdiction}:${x.queue_key}`));
     const assignmentTimes=staffedEscalations.map(x=>mins(x.created_at,x.assigned_at)).filter((x):x is number=>x!==null);
     const reviewStartTimes=staffedEscalations.map(x=>mins(x.assigned_at,x.review_started_at)).filter((x):x is number=>x!==null);
@@ -27,8 +37,8 @@ export class ClinicalOperationsMetricsService {
     return {
       staffing:{
         configured_capabilities:capabilities.length,
-        actively_marked_staffed:capabilities.filter(x=>x.staffing_state==='STAFFED').length,
-        unstaffed_or_paused:capabilities.filter(x=>x.staffing_state!=='STAFFED').length
+        actively_staffed_queues:staffedKeys.size,
+        configured_queue_states:latestByQueue.size
       },
       escalations:{
         total:escalations.length,
