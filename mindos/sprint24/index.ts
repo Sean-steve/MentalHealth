@@ -1,13 +1,17 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { AuthorizationError } from '../platform/errors/index.js';
 import { EscalationState, RiskState } from '../platform/shared/state_machines.js';
 import {
   ClinicalIncidentService,
   ClinicalOperationsEscalationService,
   ClinicalOperationsFollowUpService,
+  ClinicalOperationsMetricsService,
   ClinicalOperationsRepository,
-  ClinicalOperationsStaffingRegistry
+  ClinicalOperationsReviewerProjectionService,
+  ClinicalOperationsStaffingRegistry,
+  SafetyPlanSharingService
 } from '../clinical_ops/index.js';
+import { getSprint24RuntimeStatus } from './runtime.js';
 
 export const sprint24Router = Router();
 
@@ -20,6 +24,15 @@ function internalActor(req: Request): { actor_id: string; actor_role: string } {
     throw new AuthorizationError('Clinical Operations access requires an authorized internal clinical/safety role.', { errorCode: 'AUTHZ_002' });
   }
   return { actor_id, actor_role };
+}
+
+function userActor(req:Request):string{
+  const actorId=String(req.headers['x-actor-id']||'');
+  const actorType=String(req.headers['x-actor-type']||'').toUpperCase();
+  if(!actorId||actorType!=='USER'){
+    throw new AuthorizationError('Safety-plan sharing is a user-controlled operation.',{errorCode:'AUTHZ_002'});
+  }
+  return actorId;
 }
 
 sprint24Router.get('/clinical-ops/capabilities', async (req,res,next) => {
@@ -57,6 +70,13 @@ sprint24Router.get('/clinical-ops/escalations', async (req,res,next) => {
     internalActor(req);
     const escalations = await ClinicalOperationsEscalationService.list();
     res.json({ total: escalations.length, escalations });
+  } catch (e) { next(e); }
+});
+
+sprint24Router.get('/clinical-ops/escalations/:id/case', async (req,res,next) => {
+  try {
+    internalActor(req);
+    res.json(await ClinicalOperationsReviewerProjectionService.getCase(req.params.id));
   } catch (e) { next(e); }
 });
 
@@ -149,26 +169,62 @@ sprint24Router.post('/clinical-ops/incidents/:id/transition', async (req,res,nex
   } catch (e) { next(e); }
 });
 
+sprint24Router.get('/clinical-ops/metrics', async (req,res,next) => {
+  try {
+    internalActor(req);
+    res.json(await ClinicalOperationsMetricsService.snapshot());
+  } catch (e) { next(e); }
+});
+
+sprint24Router.post('/clinical-ops/safety-plan-shares', async (req,res,next) => {
+  try {
+    const actorId=userActor(req);
+    const grant=await SafetyPlanSharingService.grant({
+      safety_plan_reference:req.body.safety_plan_reference,
+      subject_user_id:req.body.subject_user_id,
+      actor_user_id:actorId,
+      grantee_type:req.body.grantee_type,
+      grantee_id:req.body.grantee_id,
+      scopes:req.body.scopes
+    });
+    res.status(201).json({grant});
+  } catch (e) { next(e); }
+});
+
+sprint24Router.post('/clinical-ops/safety-plan-shares/:id/revoke', async (req,res,next) => {
+  try {
+    const actorId=userActor(req);
+    const grant=await SafetyPlanSharingService.revoke({
+      grant_id:req.params.id,
+      subject_user_id:req.body.subject_user_id,
+      actor_user_id:actorId,
+      reason:req.body.reason
+    });
+    res.json({grant});
+  } catch (e) { next(e); }
+});
+
 sprint24Router.get('/sprint-24/status', (_req: Request, res: Response) => {
   res.json({
     sprint: 24,
     title: 'Clinical Operations & Human Escalation',
-    status: 'IN_PROGRESS',
+    status: 'IMPLEMENTED_PENDING_CERTIFICATION',
+    runtime:getSprint24RuntimeStatus(),
     implemented: [
+      'postgres_adapters',
       'staffing_truth_registry',
+      'safety_kernel_event_bridge',
       'governed_escalation_state_machine',
       'minimum_human_assignment_guard',
+      'minimum_necessary_reviewer_projection',
       'follow_up_workflow_separation',
       'no_response_does_not_increase_risk',
-      'clinical_incident_lifecycle'
+      'safety_plan_sharing',
+      'clinical_incident_lifecycle',
+      'operations_metrics'
     ],
-    pending: [
-      'postgres_adapters',
-      'safety_kernel_event_bridge',
-      'minimum_necessary_reviewer_projection',
-      'safety_plan_sharing_reconciliation',
-      'operations_metrics',
-      'full_sprint24_certification'
-    ]
+    pending: ['full_sprint24_certification']
   });
 });
+
+export * from './runtime.js';
