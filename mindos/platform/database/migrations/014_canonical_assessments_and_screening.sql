@@ -35,6 +35,24 @@ CREATE TABLE IF NOT EXISTS assessment_definitions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+
+-- Legacy Sprint-1 compatibility: expand the original assessment_definitions table
+-- in place instead of assuming CREATE TABLE IF NOT EXISTS upgrades its shape.
+ALTER TABLE assessment_definitions
+  ADD COLUMN IF NOT EXISTS description TEXT,
+  ADD COLUMN IF NOT EXISTS assessment_type VARCHAR(60),
+  ADD COLUMN IF NOT EXISTS owner_domain VARCHAR(80) NOT NULL DEFAULT 'clinical',
+  ADD COLUMN IF NOT EXISTS owner VARCHAR(80) NOT NULL DEFAULT 'CLINICAL_COMMITTEE',
+  ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'ACTIVE',
+  ADD COLUMN IF NOT EXISTS default_language VARCHAR(10) NOT NULL DEFAULT 'en',
+  ADD COLUMN IF NOT EXISTS retake_policy_id UUID,
+  ADD COLUMN IF NOT EXISTS eligibility_policy_id UUID,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+UPDATE assessment_definitions
+SET assessment_type = COALESCE(assessment_type, assessment_kind, 'SCREENING')
+WHERE assessment_type IS NULL;
+ALTER TABLE assessment_definitions ALTER COLUMN assessment_type SET NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_assessment_defs_code ON assessment_definitions(code);
 CREATE INDEX IF NOT EXISTS idx_assessment_defs_status ON assessment_definitions(status);
 
@@ -58,6 +76,48 @@ CREATE TABLE IF NOT EXISTS assessment_versions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_assessment_version UNIQUE (assessment_definition_id, version)
 );
+
+
+-- Expand/backfill the legacy Sprint-1 assessment_versions shape.
+ALTER TABLE assessment_versions
+  ADD COLUMN IF NOT EXISTS assessment_definition_id UUID,
+  ADD COLUMN IF NOT EXISTS clinical_artifact_version INT NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS title VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS instructions TEXT,
+  ADD COLUMN IF NOT EXISTS population JSONB NOT NULL DEFAULT '{"min_age": 18, "max_age": 120}',
+  ADD COLUMN IF NOT EXISTS jurisdictions JSONB NOT NULL DEFAULT '["KE"]',
+  ADD COLUMN IF NOT EXISTS estimated_duration_minutes INT NOT NULL DEFAULT 5,
+  ADD COLUMN IF NOT EXISTS scoring_model_version VARCHAR(40) NOT NULL DEFAULT '1.0.0',
+  ADD COLUMN IF NOT EXISTS interpretation_model_version VARCHAR(40) NOT NULL DEFAULT '1.0.0',
+  ADD COLUMN IF NOT EXISTS effective_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS supersedes_id UUID,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+UPDATE assessment_versions
+SET assessment_definition_id = COALESCE(assessment_definition_id, assessment_id),
+    title = COALESCE(title, 'Legacy assessment version ' || version::text)
+WHERE assessment_definition_id IS NULL OR title IS NULL;
+ALTER TABLE assessment_versions
+  ALTER COLUMN assessment_definition_id SET NOT NULL,
+  ALTER COLUMN title SET NOT NULL,
+  ALTER COLUMN assessment_id DROP NOT NULL,
+  ALTER COLUMN question_schema DROP NOT NULL,
+  ALTER COLUMN scoring_schema DROP NOT NULL,
+  ALTER COLUMN interpretation_schema DROP NOT NULL,
+  ALTER COLUMN limitations DROP NOT NULL;
+DO $
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_assessment_versions_definition_canonical') THEN
+    ALTER TABLE assessment_versions
+      ADD CONSTRAINT fk_assessment_versions_definition_canonical
+      FOREIGN KEY (assessment_definition_id) REFERENCES assessment_definitions(id) ON DELETE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_assessment_versions_supersedes_canonical') THEN
+    ALTER TABLE assessment_versions
+      ADD CONSTRAINT fk_assessment_versions_supersedes_canonical
+      FOREIGN KEY (supersedes_id) REFERENCES assessment_versions(id);
+  END IF;
+END $;
 
 CREATE INDEX IF NOT EXISTS idx_assessment_versions_def ON assessment_versions(assessment_definition_id);
 CREATE INDEX IF NOT EXISTS idx_assessment_versions_status ON assessment_versions(status);
@@ -167,6 +227,51 @@ CREATE TABLE IF NOT EXISTS assessment_sessions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+
+-- Expand/backfill the legacy Sprint-1 assessment_sessions shape.
+ALTER TABLE assessment_sessions
+  ADD COLUMN IF NOT EXISTS assessment_definition_id UUID,
+  ADD COLUMN IF NOT EXISTS subject_user_id UUID,
+  ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'CREATED',
+  ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS abandoned_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS current_section VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS current_question VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS progress NUMERIC(5,2) NOT NULL DEFAULT 0.0,
+  ADD COLUMN IF NOT EXISTS eligibility_snapshot JSONB NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS consent_snapshot_reference VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS session_version INT NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+UPDATE assessment_sessions s
+SET subject_user_id = COALESCE(s.subject_user_id, s.user_id),
+    assessment_definition_id = COALESCE(s.assessment_definition_id, v.assessment_definition_id),
+    status = COALESCE(s.status, s.state::text),
+    expires_at = COALESCE(s.expires_at, s.started_at + INTERVAL '24 hours')
+FROM assessment_versions v
+WHERE s.assessment_version_id = v.id
+  AND (s.subject_user_id IS NULL OR s.assessment_definition_id IS NULL OR s.expires_at IS NULL);
+ALTER TABLE assessment_sessions
+  ALTER COLUMN subject_user_id SET NOT NULL,
+  ALTER COLUMN assessment_definition_id SET NOT NULL,
+  ALTER COLUMN expires_at SET NOT NULL,
+  ALTER COLUMN user_id DROP NOT NULL;
+DO $
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_assessment_sessions_definition_canonical') THEN
+    ALTER TABLE assessment_sessions
+      ADD CONSTRAINT fk_assessment_sessions_definition_canonical
+      FOREIGN KEY (assessment_definition_id) REFERENCES assessment_definitions(id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_assessment_sessions_subject_canonical') THEN
+    ALTER TABLE assessment_sessions
+      ADD CONSTRAINT fk_assessment_sessions_subject_canonical
+      FOREIGN KEY (subject_user_id) REFERENCES users(id) ON DELETE CASCADE;
+  END IF;
+END $;
+
 CREATE INDEX IF NOT EXISTS idx_assessment_sessions_subject ON assessment_sessions(subject_user_id);
 CREATE INDEX IF NOT EXISTS idx_assessment_sessions_status ON assessment_sessions(status);
 CREATE INDEX IF NOT EXISTS idx_assessment_sessions_version ON assessment_sessions(assessment_version_id);
@@ -183,6 +288,29 @@ CREATE TABLE IF NOT EXISTS assessment_responses (
   validation_status VARCHAR(40) NOT NULL DEFAULT 'VALID',
   CONSTRAINT uq_session_question UNIQUE (session_id, question_id)
 );
+
+
+-- Expand the legacy Sprint-1 response shape. Legacy-only required columns are
+-- relaxed so new canonical writers do not have to fabricate obsolete values.
+ALTER TABLE assessment_responses
+  ADD COLUMN IF NOT EXISTS question_id UUID,
+  ADD COLUMN IF NOT EXISTS response_value JSONB,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS validation_status VARCHAR(40) NOT NULL DEFAULT 'VALID';
+UPDATE assessment_responses
+SET response_value = COALESCE(response_value, answer_json)
+WHERE response_value IS NULL;
+ALTER TABLE assessment_responses
+  ALTER COLUMN item_key DROP NOT NULL,
+  ALTER COLUMN answer_json DROP NOT NULL;
+DO $
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_assessment_responses_question_canonical') THEN
+    ALTER TABLE assessment_responses
+      ADD CONSTRAINT fk_assessment_responses_question_canonical
+      FOREIGN KEY (question_id) REFERENCES assessment_questions(id);
+  END IF;
+END $;
 
 CREATE INDEX IF NOT EXISTS idx_assessment_responses_session ON assessment_responses(session_id);
 
@@ -267,6 +395,35 @@ CREATE TABLE IF NOT EXISTS assessment_results (
   invalidated_at TIMESTAMPTZ,
   generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+
+-- Expand/backfill the legacy Sprint-1 assessment_results shape.
+ALTER TABLE assessment_results
+  ADD COLUMN IF NOT EXISTS assessment_definition_id UUID,
+  ADD COLUMN IF NOT EXISTS assessment_version_id UUID,
+  ADD COLUMN IF NOT EXISTS score_id UUID,
+  ADD COLUMN IF NOT EXISTS interpretation_model_version VARCHAR(40),
+  ADD COLUMN IF NOT EXISTS result_code VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS summary_text TEXT,
+  ADD COLUMN IF NOT EXISTS limitations TEXT,
+  ADD COLUMN IF NOT EXISTS clinical_artifact_reference VARCHAR(120),
+  ADD COLUMN IF NOT EXISTS valid_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS valid_until TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'VALID',
+  ADD COLUMN IF NOT EXISTS invalidated_by UUID,
+  ADD COLUMN IF NOT EXISTS generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+UPDATE assessment_results r
+SET assessment_definition_id = COALESCE(r.assessment_definition_id, s.assessment_definition_id),
+    assessment_version_id = COALESCE(r.assessment_version_id, s.assessment_version_id),
+    interpretation_model_version = COALESCE(r.interpretation_model_version, r.interpretation_version),
+    result_code = COALESCE(r.result_code, r.result_band, 'LEGACY_RESULT'),
+    summary_text = COALESCE(r.summary_text, 'Legacy assessment result'),
+    limitations = COALESCE(r.limitations, 'Legacy result imported before canonical Sprint-15 schema.')
+FROM assessment_sessions s
+WHERE r.session_id = s.id;
+ALTER TABLE assessment_results
+  ALTER COLUMN raw_score_json DROP NOT NULL,
+  ALTER COLUMN interpretation_version DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_assessment_results_session ON assessment_results(session_id);
 CREATE INDEX IF NOT EXISTS idx_assessment_results_def ON assessment_results(assessment_definition_id);
