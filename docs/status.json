@@ -41,9 +41,20 @@
       "title": "Clinical Operations & Human Escalation",
       "status": "IMPLEMENTED",
       "note": "CERTIFIED COMPLETE on PR head 213075285758283fc46bded114e09c083d627728 and merged to main as f995ef636e249baed511c32664df0d83e6d27e93. Final certification run 41184448860 passed 22/22 canonical PostgreSQL migrations, full TypeScript, 455/455 Sprint 1–24 regression tests, 10/10 dedicated Sprint-24 acceptance tests, Sprint-24 PostgreSQL runtime smoke, secret scan with 0 findings, and production build."
+    },
+    {
+      "number": "25",
+      "title": "Analytics & Operational Intelligence",
+      "status": "PARTIAL",
+      "note": "IMPLEMENTATION CANDIDATE on sprint-25-analytics-intelligence. Governed analytics event contracts, privacy-minimizing ingestion, versioned metric registry, evidence-level controls, cohort suppression, Product/Safety/Business/Outcome dashboards, experiment safety rules, migration 023, API/runtime wiring, acceptance tests and PostgreSQL smoke are implemented. Full Sprint 1–25 certification remains."
     }
   ],
   "timeline": [
+    {
+      "date": "31 Oct 2026",
+      "title": "Sprint 25 implementation candidate created",
+      "detail": "Analytics reconciliation completed. The previous in-memory analytics list has been extended with governed event contracts, versioned metrics, cohort suppression, evidence semantics, dashboards and PostgreSQL persistence on sprint-25-analytics-intelligence."
+    },
     {
       "date": "31 Oct 2026",
       "title": "Sprint 24 merged to main",
@@ -180,6 +191,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Sprint 24 is certified complete and merged to main. GitHub Pages deployment remains driven from main."
+    "note": "Sprint 24 remains certified on main. Sprint 25 analytics implementation is on its dedicated branch pending full certification."
   }
 }
