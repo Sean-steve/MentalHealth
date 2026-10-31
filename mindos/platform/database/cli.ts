@@ -124,7 +124,12 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error('Database CLI Fatal Error:', err.message || err);
-  process.exit(1);
-});
+main()
+  .then(async () => {
+    await DatabaseManager.shutdown();
+  })
+  .catch(async err => {
+    console.error('Database CLI Fatal Error:', err.message || err);
+    try { await DatabaseManager.shutdown(); } catch {}
+    process.exitCode = 1;
+  });
