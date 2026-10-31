@@ -1,20 +1,18 @@
 /**
- * MindOS Safety Kernel Outcome Adapter
- * Authority: Master Architecture Index Section 7 & 14, Volumes I, III, XV & Appendices B / C / Q
- * Sprint 23 Bounded Context
- * 
- * Rules:
- * - Emits CandidateSafetySignal to Safety Kernel when canonical clinical deterioration thresholds are breached.
- * - Invariant (Sections 40, 61, 145, 188): NEVER directly mutates RiskState.
- *   The path MUST be: OutcomeMeasurement -> approved Safety rule -> SafetySignal -> Safety Kernel.
+ * Governed bridge from an approved outcome Safety threshold to the authoritative
+ * SafetySignalService and RiskStateEngine. Outcomes never mutate RiskState.
  */
-
-import { SafetyKernel } from '../../safety/index.js';
-import { EventBus } from '../../platform/events/index.js';
 import { AuditService } from '../../platform/audit/index.js';
-import { DataClassification } from '../../platform/shared/data_classification.js';
+import { DomainInvariantError } from '../../platform/errors/index.js';
+import {
+  SafetySignalService,
+  RiskStateEngine,
+  getSafetyRepository,
+  SignalSourceType,
+  SignalProvenance
+} from '../../safety/index.js';
 import { OutcomeTrend } from '../domain/entities.js';
-import { generateUUIDv7 } from '../../platform/database/uuid.js';
+import { ClinicalChangeRuleRegistry } from '../trends/clinical_change_rules.js';
 
 export class SafetyKernelOutcomeAdapter {
   public static async emitSafetySignal(params: {
@@ -22,59 +20,52 @@ export class SafetyKernelOutcomeAdapter {
     measure_code: string;
     trend: OutcomeTrend;
     measurement_id: string;
-  }): Promise<void> {
-    const signalId = generateUUIDv7();
+  }): Promise<{ safety_signal_id: string; risk_state_id: string }> {
+    const rule = ClinicalChangeRuleRegistry.getApprovedRule(params.measure_code);
+    if (!rule || !rule.safety_signal_code) {
+      throw new DomainInvariantError(
+        'Outcome Safety escalation requires an approved clinical-change rule with safety_signal_code.'
+      );
+    }
 
-    // Audit the bridge evaluation
+    const repo = getSafetyRepository();
+    const signalService = new SafetySignalService(repo);
+    const ingested = await signalService.ingestSignal({
+      subject_user_id: params.subject_user_id,
+      signal_code: rule.safety_signal_code,
+      source_type: SignalSourceType.SYSTEM_OBSERVATION,
+      source_reference: 'outcome-measurement:' + params.measurement_id,
+      provenance: SignalProvenance.SYSTEM_OBSERVED,
+      evidence_reference: 'outcome-measurement:' + params.measurement_id,
+      jurisdiction: 'KE'
+    });
+
+    const risk = await new RiskStateEngine(repo).evaluateUserState(params.subject_user_id);
+
     AuditService.record({
       actor_type: 'SYSTEM',
       actor_id: 'outcome_safety_bridge',
-      action: 'SAFETY.OUTCOME_SIGNAL_EMITTED',
+      action: 'SAFETY.OUTCOME_SIGNAL_FORWARDED',
       resource_type: 'safety_signal',
-      resource_id: signalId,
-      purpose: 'Clinical Outcome Safety Escalation',
-      authorization_basis: { measureCode: params.measure_code },
+      resource_id: ingested.signal.id,
+      purpose: 'SAFETY_MONITORING',
+      authorization_basis: {
+        clinicalArtifactId: rule.clinical_artifact_id,
+        clinicalArtifactVersion: rule.clinical_artifact_version
+      },
       result: 'ALLOWED',
       metadata: {
         subjectUserId: params.subject_user_id,
         measurementId: params.measurement_id,
-        trendState: params.trend.trend_state,
-        deteriorationSeverity: params.trend.deterioration_severity
+        measureCode: params.measure_code,
+        signalCode: rule.safety_signal_code,
+        riskStateId: risk.riskState.id
       }
     });
 
-    // Enqueue event
-    EventBus.enqueue(
-      'safety.signal_emitted',
-      'safety',
-      signalId,
-      DataClassification.HEALTH_CRITICAL,
-      {
-        signal_id: signalId,
-        subject_user_id: params.subject_user_id,
-        source: 'OUTCOME_MEASUREMENT',
-        source_id: params.measurement_id,
-        measure_code: params.measure_code,
-        severity: 'HIGH'
-      }
-    );
-
-    // Call SafetyKernel if available without directly setting RiskState
-    try {
-      if (typeof (SafetyKernel as any).evaluateSignal === 'function') {
-        await (SafetyKernel as any).evaluateSignal({
-          userId: params.subject_user_id,
-          signalType: 'CLINICAL_OUTCOME_DETERIORATION',
-          payload: {
-            measureCode: params.measure_code,
-            measurementReference: params.measurement_id,
-            trendState: params.trend.trend_state,
-            deteriorationSeverity: params.trend.deterioration_severity
-          }
-        });
-      }
-    } catch {
-      // Conservative fail-closed handled via SafetySignal event and Alerting
-    }
+    return {
+      safety_signal_id: ingested.signal.id,
+      risk_state_id: risk.riskState.id
+    };
   }
 }

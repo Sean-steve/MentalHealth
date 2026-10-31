@@ -51,6 +51,7 @@ export interface ClinicalChangeRule {
   reliable_change_threshold?: number;
   critical_worsening_threshold?: number;
   critical_safety_threshold?: number;
+  safety_signal_code?: string;
   target_min?: number;
   target_max?: number;
   clinical_artifact_id: string;

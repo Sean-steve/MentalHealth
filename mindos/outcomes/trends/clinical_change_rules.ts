@@ -29,6 +29,9 @@ export class ClinicalChangeRuleRegistry {
     if (rule.target_min !== undefined && rule.target_max !== undefined && rule.target_min > rule.target_max) {
       throw new DomainInvariantError('Clinical-change target_min cannot exceed target_max.');
     }
+    if (rule.critical_safety_threshold !== undefined && !rule.safety_signal_code) {
+      throw new DomainInvariantError('Clinical-change rule with a Safety threshold must name a canonical safety_signal_code.');
+    }
     this.rules.set(this.key(rule.measure_code, rule.version), { ...rule });
   }
 

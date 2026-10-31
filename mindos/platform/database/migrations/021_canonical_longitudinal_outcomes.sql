@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS outcome_clinical_change_rules (
   reliable_change_threshold NUMERIC,
   critical_worsening_threshold NUMERIC,
   critical_safety_threshold NUMERIC,
+  safety_signal_code VARCHAR(160),
   target_min NUMERIC,
   target_max NUMERIC,
   clinical_artifact_id VARCHAR(180) NOT NULL,

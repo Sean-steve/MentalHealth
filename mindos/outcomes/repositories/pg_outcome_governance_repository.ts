@@ -80,6 +80,7 @@ export class PgOutcomeGovernanceRepository {
       reliable_change_threshold:x.reliable_change_threshold===null?undefined:Number(x.reliable_change_threshold),
       critical_worsening_threshold:x.critical_worsening_threshold===null?undefined:Number(x.critical_worsening_threshold),
       critical_safety_threshold:x.critical_safety_threshold===null?undefined:Number(x.critical_safety_threshold),
+      safety_signal_code:x.safety_signal_code||undefined,
       target_min:x.target_min===null?undefined:Number(x.target_min),
       target_max:x.target_max===null?undefined:Number(x.target_max),
       clinical_artifact_id:x.clinical_artifact_id,clinical_artifact_version:x.clinical_artifact_version,
@@ -91,16 +92,16 @@ export class PgOutcomeGovernanceRepository {
     await getPool().query(
       `INSERT INTO outcome_clinical_change_rules
        (id,measure_code,version,mcid,reliable_change_threshold,critical_worsening_threshold,critical_safety_threshold,
-        target_min,target_max,clinical_artifact_id,clinical_artifact_version,approval_state,approved_by,approved_at,
+        safety_signal_code,target_min,target_max,clinical_artifact_id,clinical_artifact_version,approval_state,approved_by,approved_at,
         effective_from,effective_until)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        ON CONFLICT(measure_code,version) DO UPDATE SET
        approval_state=EXCLUDED.approval_state,approved_by=EXCLUDED.approved_by,approved_at=EXCLUDED.approved_at,
        effective_from=EXCLUDED.effective_from,effective_until=EXCLUDED.effective_until`,
       [rule.id,rule.measure_code,rule.version,rule.mcid??null,rule.reliable_change_threshold??null,
-       rule.critical_worsening_threshold??null,rule.critical_safety_threshold??null,rule.target_min??null,
-       rule.target_max??null,rule.clinical_artifact_id,rule.clinical_artifact_version,rule.approval_state,
-       rule.approved_by,rule.approved_at,rule.effective_from,rule.effective_until||null]
+       rule.critical_worsening_threshold??null,rule.critical_safety_threshold??null,rule.safety_signal_code||null,
+       rule.target_min??null,rule.target_max??null,rule.clinical_artifact_id,rule.clinical_artifact_version,
+       rule.approval_state,rule.approved_by,rule.approved_at,rule.effective_from,rule.effective_until||null]
     );
   }
 }
