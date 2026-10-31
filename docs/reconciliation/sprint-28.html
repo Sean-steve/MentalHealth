@@ -1,0 +1,56 @@
+<!doctype html><meta charset="utf-8"><title>MindOS Sprint 28 Certification</title>
+<style>body{max-width:980px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #5fe0ad;color:#5fe0ad;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.warn{display:inline-block;border:1px solid #e7bb69;color:#ffd58a;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.done{color:#5fe0ad}.muted{color:#9db8ae}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card{padding:15px;border:1px solid #21433b;border-radius:14px;background:#0d1c19}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style>
+<a href="../tracker.html">← Engineering tracker</a>
+<h1>Sprint 28 — Controlled Beta & Kenya Launch Readiness</h1>
+<span class="tag">IMPLEMENTED — FINAL HEAD CERTIFICATION PENDING</span>
+<p><span class="warn">NO REAL BETA OR KENYA LAUNCH HAS BEEN AUTHORIZED OR EXECUTED</span></p>
+<p class="muted">Successful technical certification run: <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/41195738269">41195738269</a></p>
+
+<h2>Implemented launch-control sequence</h2>
+<div class="grid">
+<div class="card"><strong>Exact-build release candidate</strong><br><span class="muted">A launch program can lock only to a Sprint-27-certified release/build SHA. Changed code cannot reuse launch approval from another build.</span></div>
+<div class="card"><strong>Bounded Kenya beta cohort</strong><br><span class="muted">Enrollment is Kenya-only, invitation-based, consent/evidence-backed and capped. Cohort expansion cannot bypass the configured authorization ceiling.</span></div>
+<div class="card"><strong>Privacy-minimized cohort membership</strong><br><span class="muted">Raw participant identity is hashed before launch persistence. The PostgreSQL lifecycle smoke proves raw subject identifiers are not stored in the cohort record.</span></div>
+<div class="card"><strong>Launch evidence package</strong><br><span class="muted">The exact build gets a hashed manifest spanning release validation, security, clinical, privacy, regulatory, accessibility, performance, DR, incident, rollback and in-scope operations evidence.</span></div>
+<div class="card"><strong>Operational monitoring</strong><br><span class="muted">Pre-beta and active-rollout snapshots consume database/DR/privacy lifecycle readiness, incident state, verified crisis-resource validity, and incident/rollback evidence.</span></div>
+<div class="card"><strong>Observed-beta rule</strong><br><span class="muted">Limited launch cannot follow a paper beta: at least one participant must be enrolled and a GREEN snapshot must be captured strictly after activation and enrollment.</span></div>
+<div class="card"><strong>Kenya launch gate</strong><br><span class="muted">Only a separate Release Authority may authorize beta or limited launch. Required external authority evidence is derived from human regulatory applicability review and remains fail-closed when missing/expired.</span></div>
+<div class="card"><strong>Emergency hold and resume</strong><br><span class="muted">Incident, safety, security or release authorities can pause active rollout immediately. Resumption is Release-Authority-only and re-runs launch readiness.</span></div>
+<div class="card"><strong>Post-launch review</strong><br><span class="muted">Review is bound to the launched build and actual observation window, with monitoring/evidence references and explicit CONTINUE/HOLD/ROLLBACK/EXPAND-REQUIRES-NEW-AUTHORIZATION outcomes.</span></div>
+<div class="card"><strong>No CI legal authority</strong><br><span class="muted">CI test reviewers exercise the state machine and persistence only. They never become real clinical, DPO, AI-safety, security, regulatory or release approvals.</span></div>
+</div>
+
+<h2>Technical certification evidence</h2>
+<ul>
+<li class="done">26 / 26 canonical PostgreSQL migrations — PASS</li>
+<li class="done">Full Sprint 1–28 TypeScript — PASS</li>
+<li class="done">530 / 530 full regression tests — PASS</li>
+<li class="done">11 / 11 dedicated Sprint-28 acceptance tests — PASS</li>
+<li class="done">Sprint-27 release assurance — 18 / 18 PASS</li>
+<li class="done">Security / red-team — 7 / 7 PASS</li>
+<li class="done">Clinical validation — 6 / 6 PASS</li>
+<li class="done">DPIA / Kenya regulatory validation — 6 / 6 PASS</li>
+<li class="done">Accessibility baseline — 14 / 14 PASS</li>
+<li class="done">PostgreSQL DR restore — PASS: 26 migrations; CI RPO 1s / RTO 2s</li>
+<li class="done">Release-assurance PostgreSQL persistence — PASS: 10 gates / 10 evidence / 5 TEST-ONLY attestations</li>
+<li class="done">Controlled-launch PostgreSQL lifecycle — PASS: 3 monitoring snapshots / 2 TEST-ONLY authorization decisions / 1 post-launch review</li>
+<li class="done">Raw beta participant identity persisted — FALSE</li>
+<li class="done">Secret scan — 0 detected secrets/private keys</li>
+<li class="done">Dependency vulnerability gate — 0 Critical / 0 High</li>
+<li class="done">Production build — PASS</li>
+<li class="done">Performance — PASS: client JS 593,207 B; server CJS 2,005,314 B; CSS 40,518 B; runtime total 2,639,977 B</li>
+<li class="done">SBOM — 23 components</li>
+</ul>
+
+<h2>Real launch boundary</h2>
+<p>Sprint 28 certifies the <strong>software controls for a controlled beta and limited Kenya launch</strong>. It does not create an actual beta cohort, government registration, clinical approval, Data Protection Officer approval, AI-safety approval, security approval or production Release Authority decision.</p>
+<p>A real rollout remains blocked until the exact production build has genuine Sprint-27 governance attestations, an attributable Kenya regulatory applicability determination, all external authority evidence that determination says is required, a current GREEN operational launch snapshot, an approved bounded cohort, and a real Release Authority decision.</p>
+
+<h2>Defects closed during certification</h2>
+<ul>
+<li>Prevented a pre-beta snapshot from masquerading as observed-beta evidence by requiring monitoring strictly after participant enrollment and beta activation.</li>
+<li>Allowed legitimate pre-beta readiness monitoring while the release candidate is locked but not yet beta-authorized.</li>
+<li>Normalized PostgreSQL <code>TIMESTAMPTZ</code> values to ISO domain strings so millisecond ordering is preserved across persistence.</li>
+</ul>
+
+<p><strong>Merge rule:</strong> the exact final PR head must repeat the full Sprint-28 technical certification successfully before merge to <code>main</code>.</p>
