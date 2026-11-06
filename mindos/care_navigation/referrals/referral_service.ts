@@ -141,7 +141,7 @@ export class ReferralService {
 
     // 3. Create Tamper-Evident Minimum Necessary Handoff Package
     const pseudonym = `PT-${params.userId.substring(0, 8).toUpperCase()}`;
-    const handoffPkg = HandoffService.createHandoffPackage({
+    const handoffPkg = await HandoffService.createHandoffPackageDurable({
       referral,
       payloadData: {
         patient_pseudonym: pseudonym,
@@ -242,7 +242,7 @@ export class ReferralService {
     // 2. Automatic Privacy Revocation on Cancellation or Decline
     if (params.targetState === ReferralState.CANCELLED || params.targetState === ReferralState.DECLINED) {
       try {
-        HandoffService.revokeHandoffPackage({
+        await HandoffService.revokeHandoffPackageDurable({
           packageIdOrReferralId: referral.id,
           actorId,
           reason: `Referral transitioned to ${params.targetState}`
