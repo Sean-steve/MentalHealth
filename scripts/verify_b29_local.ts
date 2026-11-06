@@ -106,7 +106,7 @@ assert.equal(await ProfessionalService.isVerifiedAsync(professionalId),true);
 
 await ProviderMatcher.registerProviderProfileDurable({
   id:`match-${professionalId}`,professional_id:professionalId,title:'Test-Only Counsellor',
-  full_name:'B29 Test-Only Counsellor',verification_state:ProfessionalVerificationState.VERIFIED,
+  full_name:'B29 Test-Only Counsellor',verification_state:ProfessionalVerificationState.VERIFIED as any,
   regulatory_body:'B29_TEST_ONLY_AUTHORITY',license_number:`B29-${runRef}`,license_expires_at:expires,
   specialties:['TEST_ONLY_GENERAL_COUNSELLING'],supported_care_levels:[CareLevel.LEVEL_2],
   modalities:[ServiceModality.TELEHEALTH],jurisdictions:['KE'],languages:['en'],capacity_status:'AVAILABLE',
