@@ -9,7 +9,7 @@ import { createServer as createViteServer } from 'vite';
 import { HealthService } from './mindos/platform/observability/health.js';
 import { CorrelationManager } from './mindos/platform/shared/correlation.js';
 import { logger } from './mindos/platform/observability/logger.js';
-import { MindOSError } from './mindos/platform/errors/index.js';
+import { MindOSError, ValidationError } from './mindos/platform/errors/index.js';
 import { SafetyKernel, createSafetyRouter, getSafetyRepository, ResourceRegistryService, CrisisResponseOrchestrator, SignalSourceType, SignalProvenance } from './mindos/safety/index.js';
 import { IdentityService } from './mindos/identity/index.js';
 import { ContentService } from './mindos/content/index.js';
@@ -36,6 +36,7 @@ import { b29Router, configureB29Runtime } from './mindos/b29/index.js';
 
 async function startServer() {
   const app = express();
+  const canonicalIdentityService = new IdentityService();
   const PORT = ConfigurationManager.get().port;
   const fullPersistence =
     process.env.MINDOS_B29_STORAGE_MODE === 'postgres' ||
@@ -325,9 +326,31 @@ async function startServer() {
     '/api/v1/identity/register',
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { email, countryCode } = req.body;
+        const { email, password, countryCode } = req.body;
+        if (fullPersistence) {
+          if (!password) {
+            throw new ValidationError('Password is required for durable account registration.');
+          }
+          const { account, verificationToken } = await canonicalIdentityService.register({
+            email,
+            password,
+            deviceLabel: req.headers['user-agent'] || 'Local Browser',
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+          return res.status(201).json({
+            user_id: account.id,
+            account_state: account.account_state,
+            created_at: account.created_at,
+            verification_required: true,
+            ...(process.env.NODE_ENV !== 'production'
+              ? { development_verification_token: verificationToken }
+              : {})
+          });
+        }
+
         const user = await IdentityService.registerUser(email, countryCode);
-        res.status(201).json({
+        return res.status(201).json({
           user_id: user.id,
           account_state: user.account_state,
           created_at: user.created_at
@@ -337,6 +360,31 @@ async function startServer() {
       }
     }
   );
+
+  app.post('/api/v1/identity/verify-email', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { token } = req.body;
+      res.json(await canonicalIdentityService.verifyEmail(token));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/v1/identity/login', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email, password } = req.body;
+      const result = await canonicalIdentityService.authenticate({
+        email,
+        password,
+        deviceLabel: req.headers['user-agent'] || 'Local Browser',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent']
+      });
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
 
   app.use('/api/v1', createConsentRouter());
   app.use('/api/v1/regulatory', regulatoryRouter);
