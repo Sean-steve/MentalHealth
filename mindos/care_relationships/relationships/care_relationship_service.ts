@@ -62,7 +62,7 @@ export class CareRelationshipService {
 
     // 2. Validate primary provider if specified
     if (params.primaryProviderId) {
-      const isVerified = ProfessionalService.isVerified(params.primaryProviderId);
+      const isVerified = await ProfessionalService.isVerifiedAsync(params.primaryProviderId);
       if (!isVerified) {
         throw new AuthorizationError(
           `Primary provider ${params.primaryProviderId} must be verified to establish a care relationship.`,
