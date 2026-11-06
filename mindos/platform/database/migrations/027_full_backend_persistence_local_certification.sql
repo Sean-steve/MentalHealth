@@ -126,6 +126,24 @@ CREATE INDEX IF NOT EXISTS idx_workspace_runtime_encounter
 CREATE INDEX IF NOT EXISTS idx_workspace_runtime_professional
   ON clinical_workspace_runtime_entities(entity_type,professional_id,status);
 
+
+CREATE TABLE IF NOT EXISTS b29_mutable_state (
+  domain VARCHAR(80) NOT NULL,
+  entity_type VARCHAR(80) NOT NULL,
+  entity_id VARCHAR(220) NOT NULL,
+  owner_id VARCHAR(220),
+  parent_id VARCHAR(220),
+  status VARCHAR(80),
+  payload_ciphertext TEXT NOT NULL,
+  integrity_hash CHAR(64) NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(domain,entity_type,entity_id)
+);
+CREATE INDEX IF NOT EXISTS idx_b29_mutable_owner
+  ON b29_mutable_state(domain,entity_type,owner_id,status);
+CREATE INDEX IF NOT EXISTS idx_b29_mutable_parent
+  ON b29_mutable_state(domain,entity_type,parent_id,status);
+
 CREATE TABLE IF NOT EXISTS local_certification_runs (
   id UUID PRIMARY KEY,
   build_sha VARCHAR(128) NOT NULL,
@@ -140,6 +158,7 @@ CREATE TABLE IF NOT EXISTS local_certification_runs (
 
 -- DOWN --
 DROP TABLE IF EXISTS local_certification_runs CASCADE;
+DROP TABLE IF EXISTS b29_mutable_state CASCADE;
 DROP TABLE IF EXISTS clinical_workspace_runtime_entities CASCADE;
 DROP TABLE IF EXISTS care_relationship_runtime_entities CASCADE;
 DROP TABLE IF EXISTS appointment_runtime_entities CASCADE;
