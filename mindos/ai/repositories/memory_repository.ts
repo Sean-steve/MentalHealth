@@ -5,12 +5,33 @@
 
 import { AIMemoryEntity } from '../domain/types.js';
 import { NotFoundError } from '../../platform/errors/index.js';
+import { B29MutableStateStore } from '../../b29/mutable_state_store.js';
 
 export class MemoryRepository {
   private static memories: Map<string, AIMemoryEntity> = new Map();
+  private static durablePersistenceEnabled = false;
+
+  public static async enableDurablePersistence(): Promise<void> {
+    this.durablePersistenceEnabled = true;
+    this.memories.clear();
+    for (const record of await B29MutableStateStore.list<AIMemoryEntity>('AI','MEMORY')) {
+      const memory = record.payload;
+      this.memories.set(memory.id,{...memory});
+    }
+  }
+
+  public static disableDurablePersistenceForTesting(): void {
+    this.durablePersistenceEnabled = false;
+  }
 
   public static async saveMemory(memory: AIMemoryEntity): Promise<void> {
     MemoryRepository.memories.set(memory.id, { ...memory });
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.put({
+        domain:'AI',entity_type:'MEMORY',entity_id:memory.id,owner_id:memory.user_id,
+        parent_id:memory.source_conversation_id,status:memory.status,payload:memory
+      });
+    }
   }
 
   public static async getMemory(id: string): Promise<AIMemoryEntity | null> {
@@ -36,6 +57,7 @@ export class MemoryRepository {
     mem.memory_text = text;
     mem.updated_at = new Date().toISOString();
     MemoryRepository.memories.set(id, mem);
+    await MemoryRepository.saveMemory(mem);
     return { ...mem };
   }
 
@@ -45,6 +67,7 @@ export class MemoryRepository {
     mem.status = 'DELETED';
     mem.updated_at = new Date().toISOString();
     MemoryRepository.memories.set(id, mem);
+    await MemoryRepository.saveMemory(mem);
   }
 
   public static async clearUserMemories(userId: string): Promise<number> {
@@ -53,6 +76,7 @@ export class MemoryRepository {
       if (mem.user_id === userId && mem.status === 'ACTIVE') {
         mem.status = 'DELETED';
         mem.updated_at = new Date().toISOString();
+        await MemoryRepository.saveMemory(mem);
         count++;
       }
     }
