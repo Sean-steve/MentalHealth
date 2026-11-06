@@ -163,7 +163,7 @@ export class AssessmentSessionService {
       updated_at: now
     };
 
-    AssessmentPersistenceStore.saveSession(session);
+    await AssessmentPersistenceStore.saveSessionDurable(session);
 
     // Event & Audit
     await AssessmentOutboxDispatcher.emitAssessmentStarted({
@@ -210,7 +210,7 @@ export class AssessmentSessionService {
     }
     if (new Date(session.expires_at).getTime() <= Date.now()) {
       session.status = AssessmentSessionState.EXPIRED;
-      AssessmentPersistenceStore.saveSession(session);
+      await AssessmentPersistenceStore.saveSessionDurable(session);
       throw new AssessmentSessionExpiredError(`Assessment session ${sessionId} has expired.`);
     }
 
@@ -255,7 +255,7 @@ export class AssessmentSessionService {
         validation_status: 'VALID'
       };
 
-      AssessmentPersistenceStore.saveResponse(responseRecord);
+      await AssessmentPersistenceStore.saveResponseDurable(responseRecord);
       responsesByCode[q.question_code] = item.value;
 
       // IMMEDIATE SAFETY SIGNAL CHECK (R-SAFE-001)
@@ -292,7 +292,7 @@ export class AssessmentSessionService {
     session.progress = progress;
     session.last_activity_at = new Date().toISOString();
     session.session_version += 1;
-    AssessmentPersistenceStore.saveSession(session);
+    await AssessmentPersistenceStore.saveSessionDurable(session);
 
     return {
       sessionId,
@@ -359,7 +359,7 @@ export class AssessmentSessionService {
     session.status = AssessmentSessionState.SUBMITTED;
     session.submitted_at = new Date().toISOString();
     session.progress = 100.0;
-    AssessmentPersistenceStore.saveSession(session);
+    await AssessmentPersistenceStore.saveSessionDurable(session);
 
     // Scoring Engine
     session.status = AssessmentSessionState.SCORING;
@@ -369,7 +369,7 @@ export class AssessmentSessionService {
       responses,
       scoringModel
     });
-    AssessmentPersistenceStore.saveScore(computedScore);
+    await AssessmentPersistenceStore.saveScoreDurable(computedScore);
 
     // Interpretation Engine
     const interpretation = AssessmentInterpretationService.interpret({
@@ -404,14 +404,14 @@ export class AssessmentSessionService {
       generated_at: now
     };
 
-    AssessmentPersistenceStore.saveResult(result);
+    await AssessmentPersistenceStore.saveResultDurable(result);
 
     // Finalize session
     session.status = AssessmentSessionState.COMPLETED;
     session.completed_at = now;
     session.updated_at = now;
     session.session_version += 1;
-    AssessmentPersistenceStore.saveSession(session);
+    await AssessmentPersistenceStore.saveSessionDurable(session);
 
     // Outbox & Audit
     await AssessmentOutboxDispatcher.emitAssessmentCompleted({
@@ -486,7 +486,7 @@ export class AssessmentSessionService {
     result.invalidated_by = actorId;
     result.invalidated_at = new Date().toISOString();
 
-    AssessmentPersistenceStore.saveResult(result);
+    await AssessmentPersistenceStore.saveResultDurable(result);
 
     await AssessmentOutboxDispatcher.emitResultInvalidated({
       resultId,
