@@ -26,6 +26,7 @@ export * from './domain/entities.js';
 export * from './domain/invariants.js';
 export * from './repositories/interfaces.js';
 export * from './repositories/in_memory_care_relationship_repository.js';
+export * from './repositories/pg_care_relationship_repository.js';
 export * from './relationships/care_relationship_service.js';
 export * from './memberships/care_team_service.js';
 export * from './access/relationship_access_evaluator.js';
