@@ -101,14 +101,14 @@ export class ContentApplicationService {
   }
 
   // --- User Bookmarks ---
-  public static bookmarkContent(userId: string, contentDefinitionId: string): void {
+  public static async bookmarkContent(userId: string, contentDefinitionId: string): Promise<void> {
     this.initialize();
-    ContentPersistenceStore.saveBookmark(userId, contentDefinitionId);
+    await ContentPersistenceStore.saveBookmarkDurable(userId, contentDefinitionId);
   }
 
-  public static removeBookmark(userId: string, contentDefinitionId: string): void {
+  public static async removeBookmark(userId: string, contentDefinitionId: string): Promise<void> {
     this.initialize();
-    ContentPersistenceStore.deleteBookmark(userId, contentDefinitionId);
+    await ContentPersistenceStore.deleteBookmarkDurable(userId, contentDefinitionId);
   }
 
   public static getUserBookmarks(userId: string): ContentSearchResult[] {
@@ -153,12 +153,12 @@ export class ContentApplicationService {
     return ContentPersistenceStore.listUserProgress(userId);
   }
 
-  public static recordReadingProgress(params: {
+  public static async recordReadingProgress(params: {
     userId: string;
     contentDefinitionId: string;
     percentage: number;
     lastPosition: number;
-  }): ContentProgress {
+  }): Promise<ContentProgress> {
     this.initialize();
     const def = ContentPersistenceStore.getDefinition(params.contentDefinitionId);
     const activeVersion = def ? ContentPersistenceStore.getActiveVersion(def.id) : undefined;
@@ -190,7 +190,7 @@ export class ContentApplicationService {
       updated_at: now
     };
 
-    ContentPersistenceStore.saveProgress(progress);
+    await ContentPersistenceStore.saveProgressDurable(progress);
     return progress;
   }
 
