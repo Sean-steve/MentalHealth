@@ -40,7 +40,7 @@ async function startServer() {
   const fullPersistence =
     process.env.MINDOS_B29_STORAGE_MODE === 'postgres' ||
     process.env.NODE_ENV === 'production';
-  const b29Runtime = configureB29Runtime({ usePostgres: fullPersistence });
+  const b29Runtime = await configureB29Runtime({ usePostgres: fullPersistence });
   logger.info('MindOS B29 full-persistence runtime configured', { ...b29Runtime });
 
   app.use(express.json());
