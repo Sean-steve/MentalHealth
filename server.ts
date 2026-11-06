@@ -10,7 +10,7 @@ import { HealthService } from './mindos/platform/observability/health.js';
 import { CorrelationManager } from './mindos/platform/shared/correlation.js';
 import { logger } from './mindos/platform/observability/logger.js';
 import { MindOSError } from './mindos/platform/errors/index.js';
-import { SafetyKernel, createSafetyRouter } from './mindos/safety/index.js';
+import { SafetyKernel, createSafetyRouter, getSafetyRepository, ResourceRegistryService, CrisisResponseOrchestrator, SignalSourceType, SignalProvenance } from './mindos/safety/index.js';
 import { IdentityService } from './mindos/identity/index.js';
 import { ContentService } from './mindos/content/index.js';
 import { AuditService } from './mindos/platform/audit/index.js';
@@ -135,6 +135,8 @@ async function startServer() {
 
   const formatCrisisResource = (r: any) => {
     const phones: string[] = [];
+    if (r.phone) phones.push(r.phone);
+    if (r.sms) phones.push(`SMS: ${r.sms}`);
     if (r.contact_json?.phone) phones.push(r.contact_json.phone);
     if (r.contact_json?.sms) phones.push(`SMS: ${r.contact_json.sms}`);
     if (r.contact_json?.whatsapp) phones.push(`WhatsApp: ${r.contact_json.whatsapp}`);
@@ -167,25 +169,65 @@ async function startServer() {
 
   app.use('/api/v1/safety', createSafetyRouter());
 
-  app.get('/api/v1/safety/crisis-resources', (req: Request, res: Response) => {
-    const country = (req.query.country as string) || 'KE';
-    const rawResources = SafetyKernel.getVerifiedCrisisResources(country);
-    const resources = rawResources.map(formatCrisisResource);
-    res.json({ country_code: country, total: resources.length, resources });
+  app.get('/api/v1/safety/crisis-resources', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const country = (req.query.country as string) || 'KE';
+      if (fullPersistence) {
+        const service = new ResourceRegistryService(getSafetyRepository());
+        const rawResources = await service.getVerifiedResources({ jurisdiction: country });
+        const resources = rawResources.map(formatCrisisResource);
+        return res.json({ country_code: country, total: resources.length, resources });
+      }
+      const rawResources = SafetyKernel.getVerifiedCrisisResources(country);
+      const resources = rawResources.map(formatCrisisResource);
+      return res.json({ country_code: country, total: resources.length, resources });
+    } catch (err) {
+      next(err);
+    }
   });
 
-  app.post('/api/v1/safety/evaluate-signal', (req: Request, res: Response) => {
-    const { userId, sourceDomain, riskCategory, signals } = req.body;
-    const result = SafetyKernel.evaluateRiskSignal({
-      userId: userId || 'anon-safety-check',
-      sourceDomain: sourceDomain || 'CLIENT_TRIGGER',
-      riskCategory: riskCategory || 'GENERAL_DISTRESS',
-      signals: signals || {}
-    });
-    res.json({
-      ...result,
-      urgentResources: result.urgentResources.map(formatCrisisResource)
-    });
+  app.post('/api/v1/safety/evaluate-signal', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { userId, sourceDomain, riskCategory, signals } = req.body;
+      if (fullPersistence) {
+        const codeMap: Record<string,string> = {
+          SUICIDE_SELF_HARM:'SUICIDAL_IDEATION',
+          MEDICAL_EMERGENCY:'MEDICAL_EMERGENCY',
+          ABUSE_COERCION:'ABUSE_OR_EXPLOITATION',
+          PSYCHOSIS_EMERGENCY:'PSYCHOSIS_SEVERE_DISORGANIZATION',
+          GENERAL_DISTRESS:'SEVERE_DISTRESS'
+        };
+        const orchestrator = new CrisisResponseOrchestrator(getSafetyRepository());
+        const packet = await orchestrator.handleSafetySignal({
+          subject_user_id:userId || 'anon-safety-check',
+          signal_code:codeMap[riskCategory] || String(riskCategory || 'SEVERE_DISTRESS'),
+          source_type:SignalSourceType.USER_SELF_REPORT,
+          source_reference:String(sourceDomain || 'CLIENT_TRIGGER'),
+          provenance:SignalProvenance.USER_REPORTED,
+          jurisdiction:'KE',
+          indicators:signals || {}
+        });
+        return res.json({
+          riskLevel:packet.riskLevel,
+          safetyMode:packet.safetyMode,
+          requiresSafetyOverride:packet.commercialSuppressionActive,
+          urgentResources:packet.crisisResources.map(formatCrisisResource),
+          stateChanged:packet.stateChanged
+        });
+      }
+      const result = SafetyKernel.evaluateRiskSignal({
+        userId: userId || 'anon-safety-check',
+        sourceDomain: sourceDomain || 'CLIENT_TRIGGER',
+        riskCategory: riskCategory || 'GENERAL_DISTRESS',
+        signals: signals || {}
+      });
+      return res.json({
+        ...result,
+        urgentResources: result.urgentResources.map(formatCrisisResource)
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   app.get('/api/v1/audit/ledger', (req: Request, res: Response) => {
