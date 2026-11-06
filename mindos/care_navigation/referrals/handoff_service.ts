@@ -24,10 +24,38 @@ import { DataClassification } from '../../platform/shared/data_classification.js
 import { AuditService } from '../../platform/audit/index.js';
 import { NotFoundError, AuthorizationError } from '../../platform/errors/index.js';
 import { validateStateTransition } from '../../platform/shared/state_machines.js';
+import { B29MutableStateStore } from '../../b29/mutable_state_store.js';
 
 export class HandoffService {
   private static packages: Map<string, ReferralHandoffPackageEntity> = new Map();
   private static referralToPackageMap: Map<string, string> = new Map();
+  private static durablePersistenceEnabled = false;
+
+  public static async enableDurablePersistence(): Promise<void> {
+    this.durablePersistenceEnabled=true;
+    this.packages.clear();
+    this.referralToPackageMap.clear();
+    for(const record of await B29MutableStateStore.list<ReferralHandoffPackageEntity>('CARE_NAVIGATION','HANDOFF')){
+      const pkg=record.payload;
+      this.packages.set(pkg.id,pkg);
+      this.referralToPackageMap.set(pkg.referral_id,pkg.id);
+    }
+  }
+
+  public static disableDurablePersistenceForTesting(): void {
+    this.durablePersistenceEnabled=false;
+  }
+
+  private static async persist(pkg:ReferralHandoffPackageEntity):Promise<void>{
+    this.packages.set(pkg.id,pkg);
+    this.referralToPackageMap.set(pkg.referral_id,pkg.id);
+    if(this.durablePersistenceEnabled){
+      await B29MutableStateStore.put({
+        domain:'CARE_NAVIGATION',entity_type:'HANDOFF',entity_id:pkg.id,
+        owner_id:pkg.user_id,parent_id:pkg.referral_id,status:String(pkg.state),payload:pkg
+      });
+    }
+  }
 
   /**
    * Generates a tamper-evident minimum-necessary handoff package
@@ -124,6 +152,12 @@ export class HandoffService {
     return entity;
   }
 
+  public static async createHandoffPackageDurable(params: Parameters<typeof HandoffService.createHandoffPackage>[0]): Promise<ReferralHandoffPackageEntity> {
+    const pkg=HandoffService.createHandoffPackage(params);
+    await HandoffService.persist(pkg);
+    return pkg;
+  }
+
   /**
    * Accesses a handoff package under authorized clinical context
    */
@@ -184,6 +218,12 @@ export class HandoffService {
     return pkg;
   }
 
+  public static async accessHandoffPackageDurable(params: Parameters<typeof HandoffService.accessHandoffPackage>[0]): Promise<ReferralHandoffPackageEntity> {
+    const pkg=HandoffService.accessHandoffPackage(params);
+    await HandoffService.persist(pkg);
+    return pkg;
+  }
+
   /**
    * Allows the user or system to revoke a handoff package immediately
    */
@@ -228,6 +268,12 @@ export class HandoffService {
       });
     }
 
+    return pkg;
+  }
+
+  public static async revokeHandoffPackageDurable(params: Parameters<typeof HandoffService.revokeHandoffPackage>[0]): Promise<ReferralHandoffPackageEntity> {
+    const pkg=HandoffService.revokeHandoffPackage(params);
+    await HandoffService.persist(pkg);
     return pkg;
   }
 
