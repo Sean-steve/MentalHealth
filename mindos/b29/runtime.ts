@@ -5,6 +5,8 @@ import { PgSafetyRepository,setSafetyRepository } from '../safety/index.js';
 import { AssessmentPersistenceStore } from '../assessments/infrastructure/persistence.js';
 import { ContentPersistenceStore } from '../content/infrastructure/persistence.js';
 import { ConsentService } from '../consent/index.js';
+import { ConversationRepository,MemoryRepository,FeedbackRepository,ToolExecutionRepository } from '../ai/repositories/index.js';
+import { NavigationSessionService,ReferralService,HandoffService } from '../care_navigation/index.js';
 import {
   AvailabilitySlotService,PgAvailabilityRepository
 } from '../availability/index.js';
@@ -33,6 +35,8 @@ export interface B29RuntimeStatus{
   consent_mutable_state:'ENCRYPTED_POSTGRES'|'IN_MEMORY';
   assessment_mutable_state:'ENCRYPTED_POSTGRES'|'IN_MEMORY';
   content_mutable_state:'ENCRYPTED_POSTGRES'|'IN_MEMORY';
+  ai_mutable_state:'ENCRYPTED_POSTGRES'|'IN_MEMORY';
+  care_navigation_mutable_state:'ENCRYPTED_POSTGRES'|'IN_MEMORY';
   synthetic_verified_professionals_seeded:boolean;
 }
 
@@ -40,6 +44,7 @@ let status:B29RuntimeStatus={
   configured:false,persistence:'LEGACY_IN_MEMORY',professionals:'IN_MEMORY',availability:'IN_MEMORY',
   appointments:'IN_MEMORY',care_relationships:'IN_MEMORY',clinical_workspace:'IN_MEMORY',safety:'IN_MEMORY',
   consent_mutable_state:'IN_MEMORY',assessment_mutable_state:'IN_MEMORY',content_mutable_state:'IN_MEMORY',
+  ai_mutable_state:'IN_MEMORY',care_navigation_mutable_state:'IN_MEMORY',
   synthetic_verified_professionals_seeded:true
 };
 
@@ -53,6 +58,13 @@ export async function configureB29Runtime(options:{usePostgres?:boolean}={}):Pro
     await ConsentService.getRepository().enableDurablePersistence();
     await AssessmentPersistenceStore.enableDurablePersistence();
     await ContentPersistenceStore.enableDurablePersistence();
+    await ConversationRepository.enableDurablePersistence();
+    await MemoryRepository.enableDurablePersistence();
+    await FeedbackRepository.enableDurablePersistence();
+    await ToolExecutionRepository.enableDurablePersistence();
+    await NavigationSessionService.enableDurablePersistence();
+    await ReferralService.enableDurablePersistence();
+    await HandoffService.enableDurablePersistence();
 
     const professionals=new PgProfessionalRepository();
     ProfessionalService.setRepository(professionals);
@@ -88,6 +100,7 @@ export async function configureB29Runtime(options:{usePostgres?:boolean}={}):Pro
       configured:true,persistence:'POSTGRES',professionals:'POSTGRES',availability:'POSTGRES',
       appointments:'POSTGRES',care_relationships:'POSTGRES',clinical_workspace:'ENCRYPTED_POSTGRES',safety:'POSTGRES',
       consent_mutable_state:'ENCRYPTED_POSTGRES',assessment_mutable_state:'ENCRYPTED_POSTGRES',content_mutable_state:'ENCRYPTED_POSTGRES',
+      ai_mutable_state:'ENCRYPTED_POSTGRES',care_navigation_mutable_state:'ENCRYPTED_POSTGRES',
       synthetic_verified_professionals_seeded:false
     };
   }else{
@@ -95,6 +108,7 @@ export async function configureB29Runtime(options:{usePostgres?:boolean}={}):Pro
       configured:true,persistence:'LEGACY_IN_MEMORY',professionals:'IN_MEMORY',availability:'IN_MEMORY',
       appointments:'IN_MEMORY',care_relationships:'IN_MEMORY',clinical_workspace:'IN_MEMORY',safety:'IN_MEMORY',
       consent_mutable_state:'IN_MEMORY',assessment_mutable_state:'IN_MEMORY',content_mutable_state:'IN_MEMORY',
+      ai_mutable_state:'IN_MEMORY',care_navigation_mutable_state:'IN_MEMORY',
       synthetic_verified_professionals_seeded:true
     };
   }
