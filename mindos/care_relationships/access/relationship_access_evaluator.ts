@@ -68,7 +68,7 @@ export class RelationshipAccessEvaluator {
     };
 
     // 1. Verify Professional Verification & State
-    const isVerified = ProfessionalService.isVerified(request.professionalId);
+    const isVerified = await ProfessionalService.isVerifiedAsync(request.professionalId);
     if (!isVerified) {
       AuditService.record({
         ...auditBase,
