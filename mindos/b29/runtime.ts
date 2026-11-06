@@ -36,8 +36,7 @@ let status:B29RuntimeStatus={
 
 export function configureB29Runtime(options:{usePostgres?:boolean}={}):B29RuntimeStatus{
   const usePostgres=options.usePostgres
-    ?? process.env.MINDOS_B29_STORAGE_MODE==='postgres'
-    ?? process.env.NODE_ENV==='production';
+    ?? (process.env.MINDOS_B29_STORAGE_MODE==='postgres' || process.env.NODE_ENV==='production');
 
   if(usePostgres){
     const professionals=new PgProfessionalRepository();
