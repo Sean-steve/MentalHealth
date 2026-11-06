@@ -21,9 +21,34 @@ import { AuditService } from '../../platform/audit/index.js';
 import { NotFoundError, DomainInvariantError } from '../../platform/errors/index.js';
 import { validateStateTransition } from '../../platform/shared/state_machines.js';
 import { SafetyKernel } from '../../safety/index.js';
+import { B29MutableStateStore } from '../../b29/mutable_state_store.js';
 
 export class NavigationSessionService {
   private static sessions: Map<string, NavigationSessionEntity> = new Map();
+  private static durablePersistenceEnabled = false;
+
+  public static async enableDurablePersistence(): Promise<void> {
+    this.durablePersistenceEnabled = true;
+    this.sessions.clear();
+    for(const record of await B29MutableStateStore.list<NavigationSessionEntity>('CARE_NAVIGATION','SESSION')){
+      const session=record.payload;
+      this.sessions.set(session.id,session);
+    }
+  }
+
+  public static disableDurablePersistenceForTesting(): void {
+    this.durablePersistenceEnabled=false;
+  }
+
+  private static async persist(session:NavigationSessionEntity):Promise<void>{
+    this.sessions.set(session.id,session);
+    if(this.durablePersistenceEnabled){
+      await B29MutableStateStore.put({
+        domain:'CARE_NAVIGATION',entity_type:'SESSION',entity_id:session.id,
+        owner_id:session.user_id,status:String(session.status),payload:session
+      });
+    }
+  }
 
   public static async startSession(params: {
     userId: string;
@@ -47,7 +72,7 @@ export class NavigationSessionService {
       updated_at: now
     };
 
-    NavigationSessionService.sessions.set(id, session);
+    await NavigationSessionService.persist(session);
 
     EventBus.enqueue(
       'care_navigation.session_started',
@@ -152,6 +177,8 @@ export class NavigationSessionService {
       }
     );
 
+    await NavigationSessionService.persist(session);
+
     if (isSafetyOverride) {
       EventBus.enqueue(
         'care_navigation.escalated_to_safety',
@@ -226,6 +253,8 @@ export class NavigationSessionService {
       session.status = NavigationSessionState.COMPLETED;
       session.completed_at = new Date().toISOString();
     }
+
+    await NavigationSessionService.persist(session);
 
     EventBus.enqueue(
       'care_navigation.pathway_selected',
