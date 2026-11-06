@@ -6,7 +6,7 @@ import { AssessmentPersistenceStore } from '../assessments/infrastructure/persis
 import { ContentPersistenceStore } from '../content/infrastructure/persistence.js';
 import { ConsentService } from '../consent/index.js';
 import { ConversationRepository,MemoryRepository,FeedbackRepository,ToolExecutionRepository } from '../ai/repositories/index.js';
-import { NavigationSessionService,ReferralService,HandoffService } from '../care_navigation/index.js';
+import { NavigationSessionService,ReferralService,HandoffService,ProviderMatcher } from '../care_navigation/index.js';
 import {
   AvailabilitySlotService,PgAvailabilityRepository
 } from '../availability/index.js';
@@ -65,6 +65,7 @@ export async function configureB29Runtime(options:{usePostgres?:boolean}={}):Pro
     await NavigationSessionService.enableDurablePersistence();
     await ReferralService.enableDurablePersistence();
     await HandoffService.enableDurablePersistence();
+    await ProviderMatcher.enableDurablePersistence();
 
     const professionals=new PgProfessionalRepository();
     ProfessionalService.setRepository(professionals);
