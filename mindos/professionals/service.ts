@@ -114,6 +114,9 @@ export class ProfessionalService {
   public static async isVerifiedAsync(professionalId: string): Promise<boolean> {
     ProfessionalService.initialize();
     const repo = ProfessionalService.repository;
+    if (repo instanceof InMemoryProfessionalRepository) {
+      return ProfessionalService.isVerified(professionalId);
+    }
     let profile = await repo.findProfileById(professionalId);
     let provider = await repo.findProviderById(professionalId);
     if (!profile && provider) profile = await repo.findProfileById(provider.professional_profile_id);
