@@ -52,7 +52,7 @@ export class CareTeamService {
     }
 
     // Professional eligibility invariant check
-    const isVerified = ProfessionalService.isVerified(params.professionalId);
+    const isVerified = await ProfessionalService.isVerifiedAsync(params.professionalId);
     if (!isVerified) {
       throw new AuthorizationError(
         `Professional ${params.professionalId} must be verified to join a care team.`,
