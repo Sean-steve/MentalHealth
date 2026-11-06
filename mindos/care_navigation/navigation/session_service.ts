@@ -20,7 +20,7 @@ import { DataClassification } from '../../platform/shared/data_classification.js
 import { AuditService } from '../../platform/audit/index.js';
 import { NotFoundError, DomainInvariantError } from '../../platform/errors/index.js';
 import { validateStateTransition } from '../../platform/shared/state_machines.js';
-import { SafetyKernel } from '../../safety/index.js';
+import { SafetyKernel, getSafetyRepository } from '../../safety/index.js';
 import { B29MutableStateStore } from '../../b29/mutable_state_store.js';
 
 export class NavigationSessionService {
@@ -57,7 +57,9 @@ export class NavigationSessionService {
   }): Promise<NavigationSessionEntity> {
     const id = generateUUIDv7();
     const now = new Date().toISOString();
-    const riskSnapshot = SafetyKernel.getUserRiskState(params.userId);
+    const fullPersistence=process.env.MINDOS_B29_STORAGE_MODE==='postgres'||process.env.NODE_ENV==='production';
+    const durableRisk=fullPersistence?await getSafetyRepository().getCurrentRiskState(params.userId):null;
+    const riskSnapshot = durableRisk?.level || SafetyKernel.getUserRiskState(params.userId);
 
     const session: NavigationSessionEntity = {
       id,
