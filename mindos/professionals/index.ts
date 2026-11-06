@@ -9,6 +9,7 @@ export * from './domain/entities.js';
 export * from './domain/invariants.js';
 export * from './repositories/interfaces.js';
 export * from './repositories/in_memory_professional_repository.js';
+export * from './repositories/pg_professional_repository.js';
 export * from './specialties/specialty_registry.js';
 export * from './scope/scope_service.js';
 export * from './verification/verification_service.js';
