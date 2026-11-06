@@ -39,8 +39,26 @@ export class ProfessionalService {
 
   public static initialize(): void {
     if (!ProfessionalService.initialized) {
-      ProfessionalService.seedCanonicalProfessionals();
+      // Synthetic directory fixtures belong only to the explicit in-memory prototype runtime.
+      // PostgreSQL/staging/production must never manufacture "verified" professionals.
+      if (ProfessionalService.repository instanceof InMemoryProfessionalRepository) {
+        ProfessionalService.seedCanonicalProfessionals();
+      }
       ProfessionalService.initialized = true;
+    }
+  }
+
+  public static setRepository(repo: IProfessionalRepository, options: { seedSyntheticFixtures?: boolean } = {}): void {
+    ProfessionalService.repository = repo;
+    ProfessionalService.verificationService = new ProfessionalVerificationService(repo);
+    ProfessionalService.registryService = new ProviderRegistryService(repo);
+    ProfessionalService.initialized = true;
+    if (options.seedSyntheticFixtures) {
+      if (!(repo instanceof InMemoryProfessionalRepository)) {
+        throw new Error('Synthetic professional fixtures may only be seeded into the in-memory development repository.');
+      }
+      ProfessionalService.initialized = false;
+      ProfessionalService.initialize();
     }
   }
 
@@ -91,6 +109,24 @@ export class ProfessionalService {
        profile.verification_status === 'APPROVED') &&
       profile.status === ProfessionalState.ACTIVE
     );
+  }
+
+  public static async isVerifiedAsync(professionalId: string): Promise<boolean> {
+    ProfessionalService.initialize();
+    const repo = ProfessionalService.repository;
+    if (repo instanceof InMemoryProfessionalRepository) {
+      return ProfessionalService.isVerified(professionalId);
+    }
+    let profile = await repo.findProfileById(professionalId);
+    let provider = await repo.findProviderById(professionalId);
+    if (!profile && provider) profile = await repo.findProfileById(provider.professional_profile_id);
+    if (!provider && profile) provider = await repo.findProviderByProfileId(profile.id);
+    if (!profile || !provider) return false;
+    if (profile.verification_status !== ProfessionalVerificationState.VERIFIED || profile.status !== ProfessionalState.ACTIVE) return false;
+    if (provider.verification_status !== ProfessionalVerificationState.VERIFIED || provider.status !== ProviderStatus.ACTIVE) return false;
+    const regs = await repo.listRegistrationsByProfessionalId(profile.id);
+    const now = Date.now();
+    return regs.some(r => r.status === 'ACTIVE' && Date.parse(r.expires_at) > now);
   }
 
   /**

@@ -65,16 +65,16 @@ contentRouter.get('/item/:idOrCode', (req: Request, res: Response) => {
  * POST /api/content/item/:id/bookmark
  * Toggle user bookmark on a content definition.
  */
-contentRouter.post('/item/:id/bookmark', (req: Request, res: Response) => {
+contentRouter.post('/item/:id/bookmark', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = getSubjectUserId(req);
     const { bookmarked } = req.body;
 
     if (bookmarked === false) {
-      ContentApplicationService.removeBookmark(userId, id);
+      await ContentApplicationService.removeBookmark(userId, id);
     } else {
-      ContentApplicationService.bookmarkContent(userId, id);
+      await ContentApplicationService.bookmarkContent(userId, id);
     }
 
     res.json({ success: true, bookmarked: bookmarked !== false });
@@ -88,13 +88,13 @@ contentRouter.post('/item/:id/bookmark', (req: Request, res: Response) => {
  * POST /api/content/item/:id/progress
  * Update user reading/interaction progress.
  */
-contentRouter.post('/item/:id/progress', (req: Request, res: Response) => {
+contentRouter.post('/item/:id/progress', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = getSubjectUserId(req);
     const { percentage, lastPosition } = req.body;
 
-    const progress = ContentApplicationService.recordReadingProgress({
+    const progress = await ContentApplicationService.recordReadingProgress({
       userId,
       contentDefinitionId: id,
       percentage: Number(percentage) || 0,

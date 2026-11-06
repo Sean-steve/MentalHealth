@@ -9,6 +9,7 @@ export * from './domain/types.js';
 export * from './lifecycle/state_machine.js';
 export * from './repositories/interfaces.js';
 export * from './repositories/in_memory_appointment_repository.js';
+export * from './repositories/pg_appointment_repository.js';
 export * from './booking/booking_service.js';
 export * from './rescheduling/reschedule_service.js';
 export * from './cancellation/cancellation_service.js';
@@ -64,7 +65,7 @@ export class AppointmentService {
     referralId?: string;
     idempotencyKey?: string;
   }): Promise<AppointmentEntity> {
-    if (!ProfessionalService.isVerified(params.professionalId)) {
+    if (!(await ProfessionalService.isVerifiedAsync(params.professionalId))) {
       throw new ValidationError('Appointments can only be scheduled with verified professionals.');
     }
 

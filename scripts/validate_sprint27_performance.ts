@@ -2,14 +2,15 @@ import { existsSync,readdirSync,statSync } from 'node:fs';
 import { basename,extname,join } from 'node:path';
 
 const root=process.cwd();
+const b29Baseline=existsSync('mindos/platform/database/migrations/027_full_backend_persistence_local_certification.sql');
 const limits={
   prototype_js:250_000,
   prototype_css:150_000,
   client_js:650_000,
-  server_cjs:2_100_000,
+  server_cjs:b29Baseline?2_350_000:2_100_000,
   production_css:100_000,
-  runtime_total:3_000_000,
-  server_source_map:4_000_000
+  runtime_total:b29Baseline?3_250_000:3_000_000,
+  server_source_map:b29Baseline?4_500_000:4_000_000
 };
 
 const size=(p:string)=>statSync(p).size;

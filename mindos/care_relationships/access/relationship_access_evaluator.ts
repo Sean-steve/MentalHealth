@@ -68,7 +68,7 @@ export class RelationshipAccessEvaluator {
     };
 
     // 1. Verify Professional Verification & State
-    const isVerified = ProfessionalService.isVerified(request.professionalId);
+    const isVerified = await ProfessionalService.isVerifiedAsync(request.professionalId);
     if (!isVerified) {
       AuditService.record({
         ...auditBase,
@@ -232,7 +232,8 @@ export class RelationshipAccessEvaluator {
     }
 
     // 9. User Consent Linkage
-    const hasConsent = ConsentService.hasActiveConsent(rel.subject_user_id, 'CLINICAL_CONSULTATION');
+    const hasConsent = ConsentService.hasActiveConsent(rel.subject_user_id, 'PROFESSIONAL_DATA_SHARING') ||
+      ConsentService.hasActiveConsent(rel.subject_user_id, 'CLINICAL_CONSULTATION');
     if (!hasConsent) {
       AuditService.record({
         ...auditBase,

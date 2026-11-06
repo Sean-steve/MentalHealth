@@ -6,7 +6,7 @@
  * with in-memory transaction cache support for high-throughput testing and fallback.
  */
 
-import { DatabaseManager } from '../../platform/database/connection.js';
+import { B29MutableStateStore } from '../../b29/mutable_state_store.js';
 import {
   AssessmentDefinition,
   AssessmentVersion,
@@ -26,6 +26,42 @@ import {
 } from '../domain/types.js';
 
 export class AssessmentPersistenceStore {
+  private static durablePersistenceEnabled = false;
+
+  public static async enableDurablePersistence(): Promise<void> {
+    this.durablePersistenceEnabled = true;
+    await this.hydrateMutableState();
+  }
+
+  public static disableDurablePersistenceForTesting(): void {
+    this.durablePersistenceEnabled = false;
+  }
+
+  public static async hydrateMutableState(): Promise<void> {
+    if (!this.durablePersistenceEnabled) return;
+    this.sessions.clear();
+    this.responses.clear();
+    this.scores.clear();
+    this.results.clear();
+    const records = await B29MutableStateStore.list<any>('ASSESSMENTS');
+    for (const record of records) {
+      if (record.entity_type === 'SESSION') {
+        const v = record.payload as AssessmentSession;
+        this.sessions.set(v.id, v);
+      } else if (record.entity_type === 'RESPONSE') {
+        const v = record.payload as AssessmentResponse;
+        if (!this.responses.has(v.session_id)) this.responses.set(v.session_id, new Map());
+        this.responses.get(v.session_id)!.set(v.question_id, v);
+      } else if (record.entity_type === 'SCORE') {
+        const v = record.payload as AssessmentScore;
+        this.scores.set(v.session_id, v);
+      } else if (record.entity_type === 'RESULT') {
+        const v = record.payload as AssessmentResult;
+        this.results.set(v.id, v);
+      }
+    }
+  }
+
   // In-memory memory structures for fast indexing and query resolution
   private static definitions = new Map<string, AssessmentDefinition>(); // id or code -> definition
   private static versions = new Map<string, AssessmentVersion>(); // id -> version
@@ -162,6 +198,17 @@ export class AssessmentPersistenceStore {
     this.sessions.set(session.id, { ...session });
   }
 
+  public static async saveSessionDurable(session: AssessmentSession): Promise<void> {
+    this.saveSession(session);
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.put({
+        domain:'ASSESSMENTS',entity_type:'SESSION',entity_id:session.id,
+        owner_id:session.subject_user_id,parent_id:session.assessment_definition_id,
+        status:String(session.status),payload:session
+      });
+    }
+  }
+
   public static getSession(id: string): AssessmentSession | undefined {
     const s = this.sessions.get(id);
     return s ? { ...s } : undefined;
@@ -186,6 +233,16 @@ export class AssessmentPersistenceStore {
     this.responses.get(response.session_id)!.set(response.question_id, { ...response });
   }
 
+  public static async saveResponseDurable(response: AssessmentResponse): Promise<void> {
+    this.saveResponse(response);
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.put({
+        domain:'ASSESSMENTS',entity_type:'RESPONSE',entity_id:response.id,
+        parent_id:response.session_id,status:response.validation_status,payload:response
+      });
+    }
+  }
+
   public static getResponses(sessionId: string): AssessmentResponse[] {
     const sessionMap = this.responses.get(sessionId);
     return sessionMap ? Array.from(sessionMap.values()) : [];
@@ -198,12 +255,32 @@ export class AssessmentPersistenceStore {
     this.scores.set(score.session_id, { ...score });
   }
 
+  public static async saveScoreDurable(score: AssessmentScore): Promise<void> {
+    this.saveScore(score);
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.put({
+        domain:'ASSESSMENTS',entity_type:'SCORE',entity_id:score.id,
+        parent_id:score.session_id,payload:score
+      });
+    }
+  }
+
   public static getScoreForSession(sessionId: string): AssessmentScore | undefined {
     return this.scores.get(sessionId);
   }
 
   public static saveResult(result: AssessmentResult): void {
     this.results.set(result.id, { ...result });
+  }
+
+  public static async saveResultDurable(result: AssessmentResult): Promise<void> {
+    this.saveResult(result);
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.put({
+        domain:'ASSESSMENTS',entity_type:'RESULT',entity_id:result.id,
+        parent_id:result.session_id,status:String(result.status),payload:result
+      });
+    }
   }
 
   public static getResult(id: string): AssessmentResult | undefined {

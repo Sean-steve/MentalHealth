@@ -125,7 +125,7 @@ export class ConsentService {
       // Supersede previous active grant
       existingActive.status = ConsentState.SUPERSEDED;
       existingActive.updated_at = now.toISOString();
-      this.repository.saveGrant(existingActive);
+      await this.repository.saveGrant(existingActive);
     }
 
     // Check previous latest state for state-machine validation
@@ -200,8 +200,8 @@ export class ConsentService {
     };
 
     // Save Grant and Evidence atomically
-    this.repository.saveGrant(grant);
-    this.repository.saveEvidence(evidence);
+    await this.repository.saveGrant(grant);
+    await this.repository.saveEvidence(evidence);
 
     // Save Scopes if specified
     if (options.scopes && options.scopes.length > 0) {
@@ -214,7 +214,7 @@ export class ConsentService {
         is_allowed: s.is_allowed,
         created_at: now.toISOString()
       }));
-      this.repository.saveScopes(scopeEntries);
+      await this.repository.saveScopes(scopeEntries);
       grant.scopes = scopeEntries;
     }
 
@@ -236,7 +236,7 @@ export class ConsentService {
           created_at: now.toISOString()
         };
       });
-      this.repository.saveRecipients(recipientEntries);
+      await this.repository.saveRecipients(recipientEntries);
       grant.recipients = recipientEntries;
     }
 
@@ -353,8 +353,8 @@ export class ConsentService {
       updated_at: now.toISOString()
     };
 
-    this.repository.saveGrant(grant);
-    this.repository.saveEvidence(evidence);
+    await this.repository.saveGrant(grant);
+    await this.repository.saveEvidence(evidence);
 
     EventBus.enqueue(
       'consent.declined',
@@ -451,8 +451,8 @@ export class ConsentService {
     };
 
     activeGrant.evidence_id = evidenceId;
-    this.repository.saveGrant(activeGrant);
-    this.repository.saveEvidence(evidence);
+    await this.repository.saveGrant(activeGrant);
+    await this.repository.saveEvidence(evidence);
 
     EventBus.enqueue(
       'consent.withdrawn',

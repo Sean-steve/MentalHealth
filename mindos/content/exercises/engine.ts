@@ -94,7 +94,7 @@ export class GuidedExerciseEngine {
       updated_at: now
     };
 
-    ContentPersistenceStore.saveSession(session);
+    await ContentPersistenceStore.saveSessionDurable(session);
 
     // Update user content progress
     const progress: ContentProgress = {
@@ -110,7 +110,7 @@ export class GuidedExerciseEngine {
       created_at: now,
       updated_at: now
     };
-    ContentPersistenceStore.saveProgress(progress);
+    await ContentPersistenceStore.saveProgressDurable(progress);
 
     await ContentAuditLogger.logExerciseSessionStarted({
       userId: input.userId,
@@ -212,7 +212,7 @@ export class GuidedExerciseEngine {
       progress.last_position = totalSteps;
       progress.completed_at = now;
       progress.last_viewed_at = now;
-      ContentPersistenceStore.saveProgress(progress);
+      await ContentPersistenceStore.saveProgressDurable(progress);
 
       await ContentAuditLogger.logExerciseSessionCompleted({
         userId: input.userId,
@@ -231,7 +231,7 @@ export class GuidedExerciseEngine {
       session.current_step = nextStepIndex;
     }
 
-    ContentPersistenceStore.saveSession(session);
+    await ContentPersistenceStore.saveSessionDurable(session);
 
     return {
       session,
@@ -262,7 +262,7 @@ export class GuidedExerciseEngine {
     session.status = ExerciseSessionState.ABANDONED;
     session.abandoned_at = new Date().toISOString();
     session.updated_at = new Date().toISOString();
-    ContentPersistenceStore.saveSession(session);
+    await ContentPersistenceStore.saveSessionDurable(session);
     return session;
   }
 }
