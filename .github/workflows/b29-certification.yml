@@ -104,7 +104,7 @@ jobs:
         run: bun run typecheck
 
       - name: Full Sprint 1-B29 regression
-        run: bun run test
+        run: timeout --signal=TERM --kill-after=10s 180s bun run test
 
       - name: B29 persistence acceptance
         run: bun run test:b29
