@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 3000
 
-CMD ["bun","run","dev"]
+CMD ["sh","-c","bun run db:migrate && bun run dev"]
