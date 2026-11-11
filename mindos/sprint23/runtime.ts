@@ -1,11 +1,11 @@
 import {
-import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
   ClinicalRecordService,
   ClinicalTimelineService,
   ClinicalObservationService,
   ClinicalRecordProjectionService,
   PgClinicalRecordRepository
 } from '../clinical_record/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
 import {
   MeasureRegistry,
   OutcomeService,
