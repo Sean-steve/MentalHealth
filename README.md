@@ -1,45 +1,76 @@
 # MindOS
 
-Private working repository for the MindOS mental-health platform.
+MindOS is a multi-sided mental-health support and care platform for users, verified professionals and operations teams.
 
-## Imported prototype baseline
+## Current engineering status
 
-The current prototype snapshot supplied on 2026-10-02 was audited as the working Sprint 21 baseline.
+The canonical implementation has progressed through Sprint 28 and **Phase B29 — Full Backend Persistence & Local Certification**.
 
-### Baseline status
+B29 closes the remaining local-backend durability gaps by activating PostgreSQL-backed persistence across the core User → Professional → Operations workflow, including identity, consent, assessments, content state, AI state, care navigation/referrals, professional/provider state, availability, appointments, care relationships, clinical workspace, clinical operations, analytics, hardening, release assurance and launch controls.
 
-- Architecture/domain source: substantial prototype implementation through Sprint 21.
-- Canonical test suites: explicit Sprint 1-21 coverage files are present.
-- Database migrations: present through availability/appointments; Sprint 21 care-relationship/clinical-workspace persistence is not yet migrated.
-- Runtime API wiring: server currently exposes major domains through Sprint 18, while Sprint 19-21 modules are not yet wired into the main Express API.
-- Persistence: several later domains still use in-memory repositories and therefore are prototype-only.
-- Sprint 22/23 code exists in the supplied snapshot (care_plans, clinical_record, outcomes) but is not accepted as completed work: it lacks matching canonical sprint tests/migrations/runtime integration and must be audited before reuse.
-- UI: primarily a platform/governance prototype dashboard, not the complete consumer/professional MindOS product surface.
+The B29 certification candidate passed:
 
-## Critical baseline rules
+- 27/27 PostgreSQL migrations
+- full TypeScript
+- 538/538 full regression tests
+- 8/8 B29 persistence acceptance tests
+- Sprint 27 release-assurance/security/clinical/privacy-regulatory regressions
+- 14/14 automated accessibility baseline
+- real PostgreSQL backup/restore drill
+- Sprint 27 and Sprint 28 PostgreSQL smokes
+- native PostgreSQL User → Professional → Operations golden path
+- restart persistence verification
+- database-level appointment-overlap protection
+- encrypted/no-plaintext clinical and AI persistence checks
+- secret and dependency scans
+- production build, performance budgets and SBOM
 
-1. Uploaded/canonical MindOS engineering documentation remains authoritative.
-2. Existing working code must be audited before modification.
-3. Prototype/in-memory implementations must not be represented as production-complete.
-4. Safety Kernel, authorization, consent, privacy and governance remain authoritative boundaries.
-5. Regulatory registration/certification status must never be fabricated. Development fixtures must be clearly synthetic and must not present the platform as actually certified or registered.
-6. Every sprint must run real lint/typecheck/tests/build and report actual results.
-7. No sprint is complete solely because domain classes exist.
+See `docs/reconciliation/b29.html` for the certification evidence.
 
-## Immediate continuation
+## Local backend
 
-Before implementing the next sprint:
+Use PostgreSQL 16+ and Redis 7+. Copy `.env.example` to `.env`, configure local credentials, then enable:
 
-1. Import the full supplied prototype source into this repository.
-2. Establish a clean reproducible dependency install/lockfile path.
-3. Run the complete Sprint 1-21 regression suite.
-4. Fix baseline compile/type issues independent of missing local dependencies.
-5. Reconcile Sprint 19-21 persistence and main-server/API integration.
-6. Classify the existing Sprint 22/23 modules as reusable, partial, conflicting or discardable.
-7. Continue with the next canonical sprint only after this baseline is green or all blockers are explicitly documented.
+```env
+MINDOS_DATABASE_DRIVER=postgres
+MINDOS_B29_STORAGE_MODE=postgres
+```
 
-## Baseline audit finding
+Apply the schema and start the platform:
 
-A static audit of the supplied snapshot found approximately 433 domain files and ~71k lines of TypeScript across the `mindos/` domain tree. The project is architecturally broad, but should still be treated as a prototype until persistence, integration, test execution, external-service behavior and release controls are verified.
+```bash
+bun install
+bun run db:validate-migrations
+bun run db:migrate
+bun run dev
+```
 
-This repository is the canonical GitHub working location for continuation of MindOS development.
+For the dedicated native-PostgreSQL B29 certification:
+
+```bash
+bun run b29:local-certification
+```
+
+A `Dockerfile` and `docker-compose.yml` are also present for containerized local development.
+
+## Product journeys
+
+**User:** onboarding → wellbeing → assessments → AI support → content → progress → care navigation → appointments → care plan.
+
+**Professional:** verified profile → referrals → appointments → patient workspace → encounters → care plans → messaging → outcomes.
+
+**Operations:** safety escalations → clinical review → incidents → continuity management → analytics → release/launch governance.
+
+## Critical safety and governance boundaries
+
+1. Generative AI is not the final authority for operational risk state, diagnosis or prescribing.
+2. Clinical, privacy, AI-safety, security and regulatory approvals cannot be fabricated by CI or development fixtures.
+3. Crisis resources presented as authoritative must be verified and unexpired.
+4. Professional verification used in local certification is synthetic TEST-ONLY evidence and does not represent a real practitioner approval.
+5. Production/beta activation remains governed by exact-build release assurance and applicable human/external evidence.
+6. In production/full-persistence mode, professional data access requires recipient-bound canonical consent.
+7. Development/test fixtures must never be represented as real Kenya regulatory registration, clinical approval or crisis-resource verification.
+
+## Repository
+
+This repository is the canonical GitHub implementation record for MindOS.
