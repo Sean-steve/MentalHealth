@@ -56,12 +56,20 @@ services:
       MINDOS_ENV: development
       PORT: 3000
       DATABASE_URL: postgresql://mindos_user:mindos_pass@postgres:5432/mindos_db
+      MINDOS_DATABASE_DRIVER: postgres
+      MINDOS_B29_STORAGE_MODE: postgres
+      DB_SSL: "false"
       REDIS_CACHE_URL: redis://redis:6379/0
       REDIS_QUEUE_URL: redis://redis:6379/1
       JWT_SECRET: dev-insecure-jwt-secret-min-32-chars-long-standard
       SESSION_SECRET: dev-insecure-session-secret-min-32-chars-long-standard
       ENCRYPTION_KMS_KEY_REF: kms://mindos-dev/local-key
       AUDIT_INTEGRITY_SALT: dev-audit-salt-minimum-8-chars
+      AI_PROVIDER: mock_sandbox
+      PAYMENTS_PROVIDER: mock
+      NOTIFICATIONS_PROVIDER: mock_console
+      NOTIFICATIONS_REAL_DISPATCH: "false"
+      ALLOW_INSECURE_COOKIES: "true"
 
 volumes:
   postgres_data:

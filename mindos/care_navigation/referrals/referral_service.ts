@@ -16,12 +16,14 @@ import {
 import { CareNavigationInvariants } from '../domain/invariants.js';
 import { HandoffService } from './handoff_service.js';
 import { ProviderMatcher } from '../matching/provider_matcher.js';
-import { ConsentService } from '../../consent/index.js';
+import { ConsentService, ConsentCode } from '../../consent/index.js';
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
 import { EventBus } from '../../platform/events/index.js';
 import { DataClassification } from '../../platform/shared/data_classification.js';
 import { AuditService } from '../../platform/audit/index.js';
 import { NotFoundError, AuthorizationError } from '../../platform/errors/index.js';
+import { B29MutableStateStore } from '../../b29/mutable_state_store.js';
+import { ProfessionalService } from '../../professionals/index.js';
 
 export interface CreateReferralParams {
   userId: string;
@@ -48,6 +50,31 @@ export interface CreateReferralParams {
 
 export class ReferralService {
   private static referrals: Map<string, ReferralEntity> = new Map();
+  private static durablePersistenceEnabled = false;
+
+  public static async enableDurablePersistence(): Promise<void> {
+    this.durablePersistenceEnabled=true;
+    this.referrals.clear();
+    for(const record of await B29MutableStateStore.list<ReferralEntity>('CARE_NAVIGATION','REFERRAL')){
+      const referral=record.payload;
+      this.referrals.set(referral.id,referral);
+    }
+  }
+
+  public static disableDurablePersistenceForTesting(): void {
+    this.durablePersistenceEnabled=false;
+  }
+
+  private static async persist(referral:ReferralEntity):Promise<void>{
+    this.referrals.set(referral.id,referral);
+    if(this.durablePersistenceEnabled){
+      await B29MutableStateStore.put({
+        domain:'CARE_NAVIGATION',entity_type:'REFERRAL',entity_id:referral.id,
+        owner_id:referral.user_id,parent_id:referral.navigation_session_id,
+        status:String(referral.state),payload:referral
+      });
+    }
+  }
 
   /**
    * Creates a canonical referral with explicit consent gate & minimum-necessary handoff package
@@ -56,17 +83,35 @@ export class ReferralService {
     const actorId = params.actorId || params.userId;
 
     // 1. Consent Gate (R-NAV-003)
+    const sharingGrant = ConsentService.getInstance().getRepository()
+      .getActiveGrant(params.userId, ConsentCode.PROFESSIONAL_DATA_SHARING);
+    const recipientAuthorized = Boolean(
+      sharingGrant && (
+        !params.receivingProviderId ||
+        (sharingGrant.recipients || []).some(
+          recipient => recipient.recipient_type === 'PROFESSIONAL' &&
+                       recipient.recipient_id === params.receivingProviderId &&
+                       (!recipient.expires_at || Date.parse(recipient.expires_at) > Date.now())
+        )
+      )
+    );
     const referralConsent = ConsentService.getConsentReceipt(params.userId, 'CARE_REFERRAL') ||
                             ConsentService.getConsentReceipt(params.userId, 'REFERRAL_SHARING') ||
                             ConsentService.getConsentReceipt(params.userId, 'CLINICAL_CONSULTATION') ||
                             ConsentService.getConsentReceipt(params.userId, 'TERMS_OF_SERVICE');
 
-    const hasConsent = Boolean(referralConsent);
+    const hasConsent = recipientAuthorized || Boolean(referralConsent);
     CareNavigationInvariants.assertReferralConsent(hasConsent);
 
     // 2. Verified Provider Gate (R-NAV-004)
     if (params.receivingProviderId) {
-      ProviderMatcher.assertProviderReadyForReferral(params.receivingProviderId);
+      const fullPersistence=process.env.MINDOS_B29_STORAGE_MODE==='postgres'||process.env.NODE_ENV==='production';
+      if(fullPersistence){
+        const verified=await ProfessionalService.isVerifiedAsync(params.receivingProviderId);
+        if(!verified)throw new AuthorizationError('Receiving provider is not durably verified and active for referral.');
+      }else{
+        ProviderMatcher.assertProviderReadyForReferral(params.receivingProviderId);
+      }
     }
 
     const id = generateUUIDv7();
@@ -90,7 +135,7 @@ export class ReferralService {
       receiving_organization_id: params.receivingOrganizationId,
       receiving_service_type: params.receivingServiceType,
       reason_codes: params.reasonCodes,
-      consent_grant_id: referralConsent?.id,
+      consent_grant_id: recipientAuthorized ? sharingGrant?.id : referralConsent?.id,
       history: [
         {
           from_state: ReferralState.DRAFT,
@@ -107,7 +152,7 @@ export class ReferralService {
 
     // 3. Create Tamper-Evident Minimum Necessary Handoff Package
     const pseudonym = `PT-${params.userId.substring(0, 8).toUpperCase()}`;
-    const handoffPkg = HandoffService.createHandoffPackage({
+    const handoffPkg = await HandoffService.createHandoffPackageDurable({
       referral,
       payloadData: {
         patient_pseudonym: pseudonym,
@@ -124,7 +169,7 @@ export class ReferralService {
     referral.clinical_summary_hash = handoffPkg.evidence_hash;
     referral.handoff_package_id = handoffPkg.id;
     referral.status = referral.state;
-    ReferralService.referrals.set(id, referral);
+    await ReferralService.persist(referral);
 
     // 4. Events & Audit
     EventBus.enqueue(
@@ -203,10 +248,12 @@ export class ReferralService {
       reason: params.reason
     });
 
+    await ReferralService.persist(referral);
+
     // 2. Automatic Privacy Revocation on Cancellation or Decline
     if (params.targetState === ReferralState.CANCELLED || params.targetState === ReferralState.DECLINED) {
       try {
-        HandoffService.revokeHandoffPackage({
+        await HandoffService.revokeHandoffPackageDurable({
           packageIdOrReferralId: referral.id,
           actorId,
           reason: `Referral transitioned to ${params.targetState}`

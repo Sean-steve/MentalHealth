@@ -136,11 +136,19 @@ export const CANONICAL_PERMISSION_CATALOG: PermissionDefinition[] = [
     minClassification: 'PUBLIC'
   },
   {
-    code: CanonicalPermissions.COMMUNITY_MODERATE,
+    code: CanonicalPermissions.COMMUNITY_POST_MODERATE,
     domain: 'community',
     resource: 'post',
     action: 'moderate',
-    description: 'Review and moderate community posts and reports',
+    description: 'Moderate a specific community post under governed community policy',
+    minClassification: 'INTERNAL'
+  },
+  {
+    code: CanonicalPermissions.COMMUNITY_MODERATE,
+    domain: 'community',
+    resource: 'community',
+    action: 'moderate',
+    description: 'Review and moderate community-wide content and reports',
     minClassification: 'INTERNAL'
   },
   {

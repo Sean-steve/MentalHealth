@@ -179,7 +179,7 @@ export class ContentDiscoveryService {
       created_at: new Date().toISOString()
     };
 
-    ContentPersistenceStore.saveIssue(issue);
+    await ContentPersistenceStore.saveIssueDurable(issue);
 
     await ContentAuditLogger.logIssueReported({
       reporterId: params.reportedBy,

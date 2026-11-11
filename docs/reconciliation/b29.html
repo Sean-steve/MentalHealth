@@ -1,0 +1,58 @@
+<!doctype html><meta charset="utf-8"><title>MindOS Phase B29 Certification</title>
+<style>body{max-width:980px;margin:48px auto;padding:0 22px;background:#07110f;color:#eefaf6;font:16px/1.65 system-ui}a{color:#5fe0ad}code{background:#10231f;border:1px solid #21433b;border-radius:8px;padding:2px 6px}h1,h2{letter-spacing:-.03em}.tag{display:inline-block;border:1px solid #5fe0ad;color:#5fe0ad;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.warn{display:inline-block;border:1px solid #e7bb69;color:#ffd58a;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.done{color:#5fe0ad}.muted{color:#9db8ae}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card{padding:15px;border:1px solid #21433b;border-radius:14px;background:#0d1c19}@media(max-width:700px){.grid{grid-template-columns:1fr}}</style>
+<a href="../tracker.html">← Engineering tracker</a>
+<h1>Phase B29 — Full Backend Persistence & Local Certification</h1>
+<span class="tag">IMPLEMENTED — FINAL HEAD CERTIFICATION PENDING</span>
+<p><span class="warn">LOCAL/TECHNICAL CERTIFICATION IS NOT REAL CLINICAL OR REGULATORY APPROVAL</span></p>
+<p class="muted">Successful candidate run: <a href="https://github.com/Sean-steve/MentalHealth/actions/runs/43037880136">43037880136</a></p>
+
+<h2>What B29 closes</h2>
+<div class="grid">
+<div class="card"><strong>Full PostgreSQL runtime</strong><br><span class="muted">One B29 storage mode activates durable repositories/state across the remaining professional, scheduling, appointment, care-relationship, clinical-workspace, consent, assessment, content, AI, care-navigation and safety paths.</span></div>
+<div class="card"><strong>User → Professional → Operations golden path</strong><br><span class="muted">The certification creates a user, verifies identity, grants governed consent, creates a test-only verified professional, referral, appointment, care relationship, clinical note and operations incident against one PostgreSQL database.</span></div>
+<div class="card"><strong>Restart persistence</strong><br><span class="muted">Runtime services are reconfigured/reloaded and the certification verifies durable identity, provider, appointment, care relationship, clinical note, consent, assessment, content, AI, navigation/referral and incident state survives.</span></div>
+<div class="card"><strong>Clinical privacy</strong><br><span class="muted">Clinical workspace persistence is encrypted; the golden path verifies plaintext clinical-note content is not persisted.</span></div>
+<div class="card"><strong>AI privacy</strong><br><span class="muted">AI mutable state is durably persisted without retaining raw message plaintext in the persistence payload checked by the golden path.</span></div>
+<div class="card"><strong>Scheduling integrity</strong><br><span class="muted">PostgreSQL exclusion constraints enforce provider appointment overlap protection, and the golden path verifies the conflicting booking is blocked.</span></div>
+<div class="card"><strong>Canonical consent</strong><br><span class="muted">Full-persistence referral and clinical-workspace access require the existing recipient-bound professional-data-sharing consent; no ad-hoc 11th consent definition was invented.</span></div>
+<div class="card"><strong>Local runtime</strong><br><span class="muted">Docker/local configuration is repaired, including the application Dockerfile and full-persistence environment wiring.</span></div>
+</div>
+
+<h2>Certification evidence</h2>
+<ul>
+<li class="done">27 / 27 PostgreSQL migrations — PASS</li>
+<li class="done">Full TypeScript — PASS</li>
+<li class="done">538 / 538 full regression tests — PASS</li>
+<li class="done">8 / 8 B29 persistence acceptance tests — PASS</li>
+<li class="done">Release assurance — 18 / 18 PASS</li>
+<li class="done">Security/red-team — 7 / 7 PASS</li>
+<li class="done">Clinical validation — 6 / 6 PASS</li>
+<li class="done">Privacy/Kenya regulatory validation — 6 / 6 PASS</li>
+<li class="done">Accessibility baseline — 14 / 14 PASS</li>
+<li class="done">DR restore — PASS: 27 migrations, CI RPO 1s / RTO 2s</li>
+<li class="done">Sprint 27 PostgreSQL assurance smoke — PASS</li>
+<li class="done">Sprint 28 PostgreSQL launch-control smoke — PASS</li>
+<li class="done">B29 native PostgreSQL golden path — PASS across 19 durable domains</li>
+<li class="done">Restart persistence — TRUE</li>
+<li class="done">Appointment overlap blocked — TRUE</li>
+<li class="done">Clinical plaintext persisted — FALSE</li>
+<li class="done">AI message plaintext persisted — FALSE</li>
+<li class="done">Secret scan — 0 detected secrets/private keys</li>
+<li class="done">Dependency scan — 0 Critical / High / Moderate / Low</li>
+<li class="done">Production build — PASS</li>
+<li class="done">Performance — PASS: client JS 593,207 B; server CJS 2,160,744 B; runtime total 2,795,407 B</li>
+<li class="done">SBOM — 23 components</li>
+</ul>
+
+<h2>Defects closed during certification</h2>
+<ul>
+<li>Separated historical canonical regression from native PostgreSQL durability gates so synthetic non-UUID fixtures do not create false database failures.</li>
+<li>Added missing outbox retry/creation columns required by the canonical runtime contract.</li>
+<li>Added the missing permission catalog entry referenced by moderator role mappings.</li>
+<li>Aligned Identity registration and email-verification events to the canonical transactional outbox schema.</li>
+<li>Removed invented B29 consent aliases and enforced recipient-bound canonical professional sharing for referrals and clinical workspace access in full-persistence mode.</li>
+</ul>
+
+<h2>Boundary</h2>
+<p>B29 certifies <strong>backend persistence and local end-to-end mechanics</strong>. The professional, crisis/safety and governance identities used in certification are explicitly synthetic TEST-ONLY fixtures. They do not establish real professional verification, crisis-resource verification, Kenya regulatory registration, clinical approval or production launch authorization.</p>
+<p><strong>Merge rule:</strong> this exact final PR head must repeat the complete B29 certification successfully before merge to <code>main</code>.</p>

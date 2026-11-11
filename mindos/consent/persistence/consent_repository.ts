@@ -19,9 +19,48 @@ import {
 } from '../domain/types.js';
 import { CANONICAL_CONSENT_SEEDS } from '../domain/definitions_seed.js';
 import { ConflictError, NotFoundError } from '../../platform/errors/index.js';
+import { B29MutableStateStore } from '../../b29/mutable_state_store.js';
 
 export class ConsentRepository {
   private db?: DatabaseClient;
+  private durablePersistenceEnabled = false;
+
+  public async enableDurablePersistence(): Promise<void> {
+    this.durablePersistenceEnabled = true;
+    await this.hydrateMutableState();
+  }
+
+  public disableDurablePersistenceForTesting(): void {
+    this.durablePersistenceEnabled = false;
+  }
+
+  public async hydrateMutableState(): Promise<void> {
+    if (!this.durablePersistenceEnabled) return;
+    this.grantsTable.clear();
+    this.evidencesTable.clear();
+    this.scopesTable.clear();
+    this.recipientsTable.clear();
+    const records = await B29MutableStateStore.list<any>('CONSENT');
+    for (const record of records) {
+      if (record.entity_type === 'GRANT') {
+        const v = record.payload as ConsentGrant;
+        this.grantsTable.set(v.id, v);
+      } else if (record.entity_type === 'EVIDENCE') {
+        const v = record.payload as ConsentEvidence;
+        this.evidencesTable.set(v.id, v);
+      } else if (record.entity_type === 'SCOPE') {
+        const v = record.payload as ConsentScopeEntry;
+        const list = this.scopesTable.get(v.consent_grant_id) || [];
+        list.push(v);
+        this.scopesTable.set(v.consent_grant_id, list);
+      } else if (record.entity_type === 'RECIPIENT') {
+        const v = record.payload as ConsentRecipient;
+        const list = this.recipientsTable.get(v.consent_grant_id) || [];
+        list.push(v);
+        this.recipientsTable.set(v.consent_grant_id, list);
+      }
+    }
+  }
 
   // In-memory canonical tables for zero-latency, fail-closed evaluation
   private definitionsTable: Map<string, ConsentDefinition> = new Map();
@@ -220,14 +259,26 @@ export class ConsentRepository {
     return matching;
   }
 
-  public saveGrant(grant: ConsentGrant): void {
+  public async saveGrant(grant: ConsentGrant): Promise<void> {
     this.grantsTable.set(grant.id, { ...grant });
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.put({
+        domain:'CONSENT',entity_type:'GRANT',entity_id:grant.id,owner_id:grant.subject_user_id,
+        parent_id:grant.consent_code,status:String(grant.status),payload:grant
+      });
+    }
   }
 
   // --- Evidence ---
 
-  public saveEvidence(evidence: ConsentEvidence): void {
+  public async saveEvidence(evidence: ConsentEvidence): Promise<void> {
     this.evidencesTable.set(evidence.id, { ...evidence });
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.put({
+        domain:'CONSENT',entity_type:'EVIDENCE',entity_id:evidence.id,parent_id:evidence.consent_grant_id,
+        status:evidence.interaction_type,payload:evidence
+      });
+    }
   }
 
   public getEvidence(evidenceId: string): ConsentEvidence | null {
@@ -236,12 +287,21 @@ export class ConsentRepository {
 
   // --- Scopes ---
 
-  public saveScopes(scopes: ConsentScopeEntry[]): void {
+  public async saveScopes(scopes: ConsentScopeEntry[]): Promise<void> {
     if (scopes.length === 0) return;
     const grantId = scopes[0].consent_grant_id;
     const existing = this.scopesTable.get(grantId) || [];
-    existing.push(...scopes.map(s => ({ ...s })));
-    this.scopesTable.set(grantId, existing);
+    const byId = new Map(existing.map(x => [x.id,x]));
+    for (const scope of scopes) byId.set(scope.id,{...scope});
+    this.scopesTable.set(grantId, [...byId.values()]);
+    if (this.durablePersistenceEnabled) {
+      for (const scope of scopes) {
+        await B29MutableStateStore.put({
+          domain:'CONSENT',entity_type:'SCOPE',entity_id:scope.id,parent_id:grantId,
+          status:scope.is_allowed?'ALLOWED':'DENIED',payload:scope
+        });
+      }
+    }
   }
 
   public getScopesForGrant(grantId: string): ConsentScopeEntry[] {
@@ -254,12 +314,21 @@ export class ConsentRepository {
 
   // --- Recipients ---
 
-  public saveRecipients(recipients: ConsentRecipient[]): void {
+  public async saveRecipients(recipients: ConsentRecipient[]): Promise<void> {
     if (recipients.length === 0) return;
     const grantId = recipients[0].consent_grant_id;
     const existing = this.recipientsTable.get(grantId) || [];
-    existing.push(...recipients.map(r => ({ ...r })));
-    this.recipientsTable.set(grantId, existing);
+    const byId = new Map(existing.map(x => [x.id,x]));
+    for (const recipient of recipients) byId.set(recipient.id,{...recipient});
+    this.recipientsTable.set(grantId, [...byId.values()]);
+    if (this.durablePersistenceEnabled) {
+      for (const recipient of recipients) {
+        await B29MutableStateStore.put({
+          domain:'CONSENT',entity_type:'RECIPIENT',entity_id:recipient.id,parent_id:grantId,
+          status:'AUTHORIZED',payload:recipient
+        });
+      }
+    }
   }
 
   public getRecipientsForGrant(grantId: string): ConsentRecipient[] {

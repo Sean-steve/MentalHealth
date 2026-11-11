@@ -23,8 +23,54 @@ import {
   ContentIssue,
   ContentClaim
 } from '../domain/types.js';
+import { B29MutableStateStore } from '../../b29/mutable_state_store.js';
 
 export class ContentPersistenceStore {
+  private static durablePersistenceEnabled = false;
+
+  public static async enableDurablePersistence(): Promise<void> {
+    this.durablePersistenceEnabled = true;
+    await this.hydrateMutableState();
+  }
+
+  public static disableDurablePersistenceForTesting(): void {
+    this.durablePersistenceEnabled = false;
+  }
+
+  public static async hydrateMutableState(): Promise<void> {
+    if (!this.durablePersistenceEnabled) return;
+    this.exerciseSessions.clear();
+    this.progress.clear();
+    this.bookmarks.clear();
+    this.issues.clear();
+    const records = await B29MutableStateStore.list<any>('CONTENT');
+    for (const record of records) {
+      if (record.entity_type === 'EXERCISE_SESSION') {
+        const v = record.payload as ExerciseSession;
+        this.exerciseSessions.set(v.id, v);
+      } else if (record.entity_type === 'PROGRESS') {
+        const v = record.payload as ContentProgress;
+        let userMap = this.progress.get(v.subject_user_id);
+        if (!userMap) {
+          userMap = new Map<string, ContentProgress>();
+          this.progress.set(v.subject_user_id, userMap);
+        }
+        userMap.set(v.content_definition_id, v);
+      } else if (record.entity_type === 'BOOKMARK') {
+        const v = record.payload as { subject_user_id:string; content_definition_id:string };
+        let set = this.bookmarks.get(v.subject_user_id);
+        if (!set) {
+          set = new Set<string>();
+          this.bookmarks.set(v.subject_user_id, set);
+        }
+        set.add(v.content_definition_id);
+      } else if (record.entity_type === 'ISSUE') {
+        const v = record.payload as ContentIssue;
+        this.issues.set(v.id, v);
+      }
+    }
+  }
+
   private static definitions = new Map<string, ContentDefinition>(); // id or code -> definition
   private static versions = new Map<string, ContentVersion>(); // id -> version
   private static blocks = new Map<string, ContentBlock[]>(); // version_id -> blocks
@@ -231,6 +277,16 @@ export class ContentPersistenceStore {
     this.exerciseSessions.set(session.id, session);
   }
 
+  public static async saveSessionDurable(session: ExerciseSession): Promise<void> {
+    this.saveSession(session);
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.put({
+        domain:'CONTENT',entity_type:'EXERCISE_SESSION',entity_id:session.id,
+        owner_id:session.subject_user_id,parent_id:session.exercise_id,status:String(session.status),payload:session
+      });
+    }
+  }
+
   public static getSession(id: string): ExerciseSession | undefined {
     return this.exerciseSessions.get(id);
   }
@@ -287,6 +343,16 @@ export class ContentPersistenceStore {
     userMap.set(prog.content_definition_id, prog);
   }
 
+  public static async saveProgressDurable(prog: ContentProgress): Promise<void> {
+    this.saveProgress(prog);
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.put({
+        domain:'CONTENT',entity_type:'PROGRESS',entity_id:prog.id,
+        owner_id:prog.subject_user_id,parent_id:prog.content_definition_id,status:String(prog.status),payload:prog
+      });
+    }
+  }
+
   public static getProgress(userId: string, defId: string): ContentProgress | undefined {
     return this.progress.get(userId)?.get(defId);
   }
@@ -308,8 +374,26 @@ export class ContentPersistenceStore {
     bms.add(defId);
   }
 
+  public static async saveBookmarkDurable(userId: string, defId: string): Promise<void> {
+    this.saveBookmark(userId,defId);
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.put({
+        domain:'CONTENT',entity_type:'BOOKMARK',entity_id:`${userId}:${defId}`,
+        owner_id:userId,parent_id:defId,status:'ACTIVE',
+        payload:{subject_user_id:userId,content_definition_id:defId}
+      });
+    }
+  }
+
   public static deleteBookmark(userId: string, defId: string): void {
     this.bookmarks.get(userId)?.delete(defId);
+  }
+
+  public static async deleteBookmarkDurable(userId: string, defId: string): Promise<void> {
+    this.deleteBookmark(userId,defId);
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.delete('CONTENT','BOOKMARK',`${userId}:${defId}`);
+    }
   }
 
   public static listBookmarks(userId: string): string[] {
@@ -325,6 +409,16 @@ export class ContentPersistenceStore {
   // --------------------------------------------------------------------------
   public static saveIssue(issue: ContentIssue): void {
     this.issues.set(issue.id, issue);
+  }
+
+  public static async saveIssueDurable(issue: ContentIssue): Promise<void> {
+    this.saveIssue(issue);
+    if (this.durablePersistenceEnabled) {
+      await B29MutableStateStore.put({
+        domain:'CONTENT',entity_type:'ISSUE',entity_id:issue.id,
+        parent_id:issue.content_version_id,status:String(issue.status),payload:issue
+      });
+    }
   }
 
   public static getIssue(id: string): ContentIssue | undefined {

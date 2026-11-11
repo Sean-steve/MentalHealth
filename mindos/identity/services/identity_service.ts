@@ -152,8 +152,9 @@ export class IdentityService {
       const now = new Date().toISOString();
       await txClient.query(
         `INSERT INTO outbox_events (
-          id, event_id, event_type, aggregate_type, aggregate_id, payload, headers, status, retry_count, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          id, event_id, event_type, aggregate_type, aggregate_id, payload, metadata,
+          classification, correlation_id, status, retry_count, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           UUIDv7.generate(),
           UUIDv7.generate(),
@@ -165,7 +166,9 @@ export class IdentityService {
             email_normalized: normalizedEmail,
             state: AccountState.PENDING_VERIFICATION
           }),
-          JSON.stringify({ correlationId: params.correlationId || 'N/A' }),
+          JSON.stringify({ source: 'identity', correlationId: params.correlationId || 'N/A' }),
+          'PERSONAL',
+          params.correlationId || null,
           'PENDING',
           0,
           now
@@ -260,8 +263,9 @@ export class IdentityService {
       const now = new Date().toISOString();
       await txClient.query(
         `INSERT INTO outbox_events (
-          id, event_id, event_type, aggregate_type, aggregate_id, payload, headers, status, retry_count, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          id, event_id, event_type, aggregate_type, aggregate_id, payload, metadata,
+          classification, correlation_id, status, retry_count, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           UUIDv7.generate(),
           UUIDv7.generate(),
@@ -269,7 +273,9 @@ export class IdentityService {
           'account',
           account.id,
           JSON.stringify({ accountId: account.id, email_normalized: account.email_normalized }),
-          JSON.stringify({ correlationId: correlationId || 'N/A' }),
+          JSON.stringify({ source: 'identity', correlationId: correlationId || 'N/A' }),
+          'PERSONAL',
+          correlationId || null,
           'PENDING',
           0,
           now

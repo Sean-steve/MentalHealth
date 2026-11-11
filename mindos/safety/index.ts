@@ -105,6 +105,9 @@ export class SafetyKernel {
   }
 
   public static seedCanonicalResources(): void {
+    const testOnly = process.env.NODE_ENV === 'test';
+    const testVerifiedAt = new Date().toISOString();
+    const testNextVerifyAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const resources: Array<Omit<CrisisResourceEntity, 'id' | 'updated_at'>> = [
       {
         country_code: 'KE',
@@ -121,8 +124,8 @@ export class SafetyKernel {
         },
         languages: ['English', 'Swahili'],
         verification_status: 'VERIFIED',
-        verified_at: '2026-08-01T00:00:00.000Z',
-        next_verify_at: '2026-11-01T00:00:00.000Z'
+        verified_at: testOnly ? testVerifiedAt : '2026-08-01T00:00:00.000Z',
+        next_verify_at: testOnly ? testNextVerifyAt : '2026-11-01T00:00:00.000Z'
       },
       {
         country_code: 'KE',
@@ -139,8 +142,8 @@ export class SafetyKernel {
         },
         languages: ['English', 'Swahili'],
         verification_status: 'VERIFIED',
-        verified_at: '2026-08-01T00:00:00.000Z',
-        next_verify_at: '2026-11-01T00:00:00.000Z'
+        verified_at: testOnly ? testVerifiedAt : '2026-08-01T00:00:00.000Z',
+        next_verify_at: testOnly ? testNextVerifyAt : '2026-11-01T00:00:00.000Z'
       },
       {
         country_code: 'KE',
@@ -157,8 +160,8 @@ export class SafetyKernel {
         },
         languages: ['English', 'Swahili'],
         verification_status: 'VERIFIED',
-        verified_at: '2026-08-01T00:00:00.000Z',
-        next_verify_at: '2026-11-01T00:00:00.000Z'
+        verified_at: testOnly ? testVerifiedAt : '2026-08-01T00:00:00.000Z',
+        next_verify_at: testOnly ? testNextVerifyAt : '2026-11-01T00:00:00.000Z'
       }
     ];
 

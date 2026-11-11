@@ -23,7 +23,7 @@ import {
 import { CareRelationshipInvariants } from '../domain/invariants.js';
 import { ICareRelationshipRepository } from '../repositories/interfaces.js';
 import { ProfessionalService } from '../../professionals/index.js';
-import { ConsentService } from '../../consent/index.js';
+import { ConsentService, ConsentCode } from '../../consent/index.js';
 
 export interface EvaluateRelationshipAccessRequest {
   relationshipId: string;
@@ -68,7 +68,7 @@ export class RelationshipAccessEvaluator {
     };
 
     // 1. Verify Professional Verification & State
-    const isVerified = ProfessionalService.isVerified(request.professionalId);
+    const isVerified = await ProfessionalService.isVerifiedAsync(request.professionalId);
     if (!isVerified) {
       AuditService.record({
         ...auditBase,
@@ -232,17 +232,33 @@ export class RelationshipAccessEvaluator {
     }
 
     // 9. User Consent Linkage
-    const hasConsent = ConsentService.hasActiveConsent(rel.subject_user_id, 'CLINICAL_CONSULTATION');
+    const fullPersistence =
+      process.env.MINDOS_B29_STORAGE_MODE === 'postgres' ||
+      process.env.NODE_ENV === 'production';
+    const sharingGrant = ConsentService.getInstance().getRepository()
+      .getActiveGrant(rel.subject_user_id, ConsentCode.PROFESSIONAL_DATA_SHARING);
+    const recipientBoundConsent = Boolean(
+      sharingGrant &&
+      (sharingGrant.recipients || []).some(
+        recipient => recipient.recipient_type === 'PROFESSIONAL' &&
+                     recipient.recipient_id === request.professionalId &&
+                     (!recipient.expires_at || Date.parse(recipient.expires_at) > Date.now())
+      )
+    );
+    const legacyConsent =
+      ConsentService.hasActiveConsent(rel.subject_user_id, 'PROFESSIONAL_DATA_SHARING') ||
+      ConsentService.hasActiveConsent(rel.subject_user_id, 'CLINICAL_CONSULTATION');
+    const hasConsent = fullPersistence ? recipientBoundConsent : legacyConsent;
     if (!hasConsent) {
       AuditService.record({
         ...auditBase,
         result: 'DENIED',
-        metadata: { denialReason: 'Active clinical consultation consent missing.' }
+        metadata: { denialReason: 'Recipient-bound professional data sharing consent missing.' }
       });
       return {
         allowed: false,
         relationship: rel,
-        denialReason: 'Active patient consent for clinical consultation is required.',
+        denialReason: 'Active recipient-bound professional data sharing consent is required.',
         errorCode: 'AUTHZ_003'
       };
     }

@@ -9,8 +9,8 @@ import { createServer as createViteServer } from 'vite';
 import { HealthService } from './mindos/platform/observability/health.js';
 import { CorrelationManager } from './mindos/platform/shared/correlation.js';
 import { logger } from './mindos/platform/observability/logger.js';
-import { MindOSError } from './mindos/platform/errors/index.js';
-import { SafetyKernel, createSafetyRouter } from './mindos/safety/index.js';
+import { MindOSError, ValidationError } from './mindos/platform/errors/index.js';
+import { SafetyKernel, createSafetyRouter, getSafetyRepository, ResourceRegistryService, CrisisResponseOrchestrator, SignalSourceType, SignalProvenance } from './mindos/safety/index.js';
 import { IdentityService } from './mindos/identity/index.js';
 import { ContentService } from './mindos/content/index.js';
 import { AuditService } from './mindos/platform/audit/index.js';
@@ -32,50 +32,64 @@ import { sprint25Router, configureSprint25Runtime } from './mindos/sprint25/inde
 import { sprint26Router, configureSprint26Runtime } from './mindos/sprint26/index.js';
 import { sprint27Router, configureSprint27Runtime } from './mindos/sprint27/index.js';
 import { sprint28Router, configureSprint28Runtime } from './mindos/sprint28/index.js';
+import { b29Router, configureB29Runtime } from './mindos/b29/index.js';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const canonicalIdentityService = new IdentityService();
+  const PORT = ConfigurationManager.get().port;
+  const fullPersistence =
+    process.env.MINDOS_B29_STORAGE_MODE === 'postgres' ||
+    process.env.NODE_ENV === 'production';
+  const b29Runtime = await configureB29Runtime({ usePostgres: fullPersistence });
+  logger.info('MindOS B29 full-persistence runtime configured', { ...b29Runtime });
 
   app.use(express.json());
 
   const sprint22UsePostgres =
+    fullPersistence ||
     process.env.MINDOS_SPRINT22_STORAGE_MODE === 'postgres' ||
     process.env.NODE_ENV === 'production';
   const sprint22Runtime = configureSprint22Runtime({ usePostgres: sprint22UsePostgres });
   logger.info('MindOS Sprint 22 runtime configured', { ...sprint22Runtime });
 
   const sprint23UsePostgres =
+    fullPersistence ||
     process.env.MINDOS_SPRINT23_STORAGE_MODE === 'postgres' ||
     process.env.NODE_ENV === 'production';
   const sprint23Runtime = await configureSprint23Runtime({ usePostgres: sprint23UsePostgres });
   logger.info('MindOS Sprint 23 runtime configured', { ...sprint23Runtime });
 
   const sprint24UsePostgres =
+    fullPersistence ||
     process.env.MINDOS_SPRINT24_STORAGE_MODE === 'postgres' ||
     process.env.NODE_ENV === 'production';
   const sprint24Runtime = await configureSprint24Runtime({ usePostgres: sprint24UsePostgres });
   logger.info('MindOS Sprint 24 runtime configured', { ...sprint24Runtime });
 
   const sprint25UsePostgres =
+    fullPersistence ||
     process.env.MINDOS_SPRINT25_STORAGE_MODE === 'postgres' ||
     process.env.NODE_ENV === 'production';
   const sprint25Runtime = await configureSprint25Runtime({ usePostgres: sprint25UsePostgres });
   logger.info('MindOS Sprint 25 runtime configured', { ...sprint25Runtime });
 
   const sprint26UsePostgres =
+    fullPersistence ||
     process.env.MINDOS_SPRINT26_STORAGE_MODE === 'postgres' ||
     process.env.NODE_ENV === 'production';
   const sprint26Runtime = configureSprint26Runtime({ usePostgres: sprint26UsePostgres });
   logger.info('MindOS Sprint 26 runtime configured', { ...sprint26Runtime });
 
   const sprint27UsePostgres =
+    fullPersistence ||
     process.env.MINDOS_SPRINT27_STORAGE_MODE === 'postgres' ||
     process.env.NODE_ENV === 'production';
   const sprint27Runtime = configureSprint27Runtime({ usePostgres: sprint27UsePostgres });
   logger.info('MindOS Sprint 27 runtime configured', { ...sprint27Runtime });
 
   const sprint28UsePostgres =
+    fullPersistence ||
     process.env.MINDOS_SPRINT28_STORAGE_MODE === 'postgres' ||
     process.env.NODE_ENV === 'production';
   const sprint28Runtime = configureSprint28Runtime({ usePostgres: sprint28UsePostgres });
@@ -122,6 +136,8 @@ async function startServer() {
 
   const formatCrisisResource = (r: any) => {
     const phones: string[] = [];
+    if (r.phone) phones.push(r.phone);
+    if (r.sms) phones.push(`SMS: ${r.sms}`);
     if (r.contact_json?.phone) phones.push(r.contact_json.phone);
     if (r.contact_json?.sms) phones.push(`SMS: ${r.contact_json.sms}`);
     if (r.contact_json?.whatsapp) phones.push(`WhatsApp: ${r.contact_json.whatsapp}`);
@@ -154,25 +170,65 @@ async function startServer() {
 
   app.use('/api/v1/safety', createSafetyRouter());
 
-  app.get('/api/v1/safety/crisis-resources', (req: Request, res: Response) => {
-    const country = (req.query.country as string) || 'KE';
-    const rawResources = SafetyKernel.getVerifiedCrisisResources(country);
-    const resources = rawResources.map(formatCrisisResource);
-    res.json({ country_code: country, total: resources.length, resources });
+  app.get('/api/v1/safety/crisis-resources', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const country = (req.query.country as string) || 'KE';
+      if (fullPersistence) {
+        const service = new ResourceRegistryService(getSafetyRepository());
+        const rawResources = await service.getVerifiedResources({ jurisdiction: country });
+        const resources = rawResources.map(formatCrisisResource);
+        return res.json({ country_code: country, total: resources.length, resources });
+      }
+      const rawResources = SafetyKernel.getVerifiedCrisisResources(country);
+      const resources = rawResources.map(formatCrisisResource);
+      return res.json({ country_code: country, total: resources.length, resources });
+    } catch (err) {
+      next(err);
+    }
   });
 
-  app.post('/api/v1/safety/evaluate-signal', (req: Request, res: Response) => {
-    const { userId, sourceDomain, riskCategory, signals } = req.body;
-    const result = SafetyKernel.evaluateRiskSignal({
-      userId: userId || 'anon-safety-check',
-      sourceDomain: sourceDomain || 'CLIENT_TRIGGER',
-      riskCategory: riskCategory || 'GENERAL_DISTRESS',
-      signals: signals || {}
-    });
-    res.json({
-      ...result,
-      urgentResources: result.urgentResources.map(formatCrisisResource)
-    });
+  app.post('/api/v1/safety/evaluate-signal', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { userId, sourceDomain, riskCategory, signals } = req.body;
+      if (fullPersistence) {
+        const codeMap: Record<string,string> = {
+          SUICIDE_SELF_HARM:'SUICIDAL_IDEATION',
+          MEDICAL_EMERGENCY:'MEDICAL_EMERGENCY',
+          ABUSE_COERCION:'ABUSE_OR_EXPLOITATION',
+          PSYCHOSIS_EMERGENCY:'PSYCHOSIS_SEVERE_DISORGANIZATION',
+          GENERAL_DISTRESS:'SEVERE_DISTRESS'
+        };
+        const orchestrator = new CrisisResponseOrchestrator(getSafetyRepository());
+        const packet = await orchestrator.handleSafetySignal({
+          subject_user_id:userId || 'anon-safety-check',
+          signal_code:codeMap[riskCategory] || String(riskCategory || 'SEVERE_DISTRESS'),
+          source_type:SignalSourceType.USER_SELF_REPORT,
+          source_reference:String(sourceDomain || 'CLIENT_TRIGGER'),
+          provenance:SignalProvenance.USER_REPORTED,
+          jurisdiction:'KE',
+          indicators:signals || {}
+        });
+        return res.json({
+          riskLevel:packet.riskLevel,
+          safetyMode:packet.safetyMode,
+          requiresSafetyOverride:packet.commercialSuppressionActive,
+          urgentResources:packet.crisisResources.map(formatCrisisResource),
+          stateChanged:packet.stateChanged
+        });
+      }
+      const result = SafetyKernel.evaluateRiskSignal({
+        userId: userId || 'anon-safety-check',
+        sourceDomain: sourceDomain || 'CLIENT_TRIGGER',
+        riskCategory: riskCategory || 'GENERAL_DISTRESS',
+        signals: signals || {}
+      });
+      return res.json({
+        ...result,
+        urgentResources: result.urgentResources.map(formatCrisisResource)
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   app.get('/api/v1/audit/ledger', (req: Request, res: Response) => {
@@ -257,6 +313,9 @@ async function startServer() {
   // Sprint 28: Controlled Beta & Kenya Launch Readiness
   app.use('/api/v1', sprint28Router);
 
+  // Phase B29: Full Backend Persistence & Local Certification
+  app.use('/api/v1', b29Router);
+
   app.get('/api/v1/content/articles', (req: Request, res: Response) => {
     const lang = (req.query.lang as string) || 'en';
     const articles = ContentService.getArticles(lang);
@@ -267,9 +326,31 @@ async function startServer() {
     '/api/v1/identity/register',
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { email, countryCode } = req.body;
+        const { email, password, countryCode } = req.body;
+        if (fullPersistence) {
+          if (!password) {
+            throw new ValidationError('Password is required for durable account registration.');
+          }
+          const { account, verificationToken } = await canonicalIdentityService.register({
+            email,
+            password,
+            deviceLabel: req.headers['user-agent'] || 'Local Browser',
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+          return res.status(201).json({
+            user_id: account.id,
+            account_state: account.account_state,
+            created_at: account.created_at,
+            verification_required: true,
+            ...(process.env.NODE_ENV !== 'production'
+              ? { development_verification_token: verificationToken }
+              : {})
+          });
+        }
+
         const user = await IdentityService.registerUser(email, countryCode);
-        res.status(201).json({
+        return res.status(201).json({
           user_id: user.id,
           account_state: user.account_state,
           created_at: user.created_at
@@ -279,6 +360,31 @@ async function startServer() {
       }
     }
   );
+
+  app.post('/api/v1/identity/verify-email', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { token } = req.body;
+      res.json(await canonicalIdentityService.verifyEmail(token));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/v1/identity/login', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email, password } = req.body;
+      const result = await canonicalIdentityService.authenticate({
+        email,
+        password,
+        deviceLabel: req.headers['user-agent'] || 'Local Browser',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent']
+      });
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
 
   app.use('/api/v1', createConsentRouter());
   app.use('/api/v1/regulatory', regulatoryRouter);

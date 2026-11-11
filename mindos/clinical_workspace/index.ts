@@ -27,6 +27,7 @@ export * from './domain/types.js';
 export * from './domain/entities.js';
 export * from './repositories/interfaces.js';
 export * from './repositories/in_memory_workspace_repository.js';
+export * from './repositories/pg_workspace_repository.js';
 export * from './encounters/clinical_encounter_service.js';
 export * from './notes/clinical_note_service.js';
 export * from './user_context/patient_clinical_context_service.js';

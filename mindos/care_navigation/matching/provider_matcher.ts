@@ -16,10 +16,27 @@ import { CareNavigationInvariants } from '../domain/invariants.js';
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
 import { NotFoundError, DomainInvariantError } from '../../platform/errors/index.js';
 import { ProfessionalService } from '../../professionals/index.js';
+import { B29MutableStateStore } from '../../b29/mutable_state_store.js';
 
 export class ProviderMatcher {
   private static providers: Map<string, ProviderMatchingProfileEntity> = new Map();
   private static initialized = false;
+  private static durablePersistenceEnabled = false;
+
+  public static async enableDurablePersistence(): Promise<void> {
+    this.durablePersistenceEnabled=true;
+    this.providers.clear();
+    for(const record of await B29MutableStateStore.list<ProviderMatchingProfileEntity>('CARE_NAVIGATION','PROVIDER_MATCH_PROFILE')){
+      const p=record.payload;
+      this.providers.set(p.professional_id,p);
+      if(p.id)this.providers.set(p.id,p);
+    }
+    this.initialized=true;
+  }
+
+  public static disableDurablePersistenceForTesting(): void {
+    this.durablePersistenceEnabled=false;
+  }
 
   static {
     ProviderMatcher.initialize();
@@ -27,7 +44,8 @@ export class ProviderMatcher {
 
   public static initialize(): void {
     if (!ProviderMatcher.initialized) {
-      ProviderMatcher.seedCanonicalProviders();
+      const fullPersistence=process.env.MINDOS_B29_STORAGE_MODE==='postgres'||process.env.NODE_ENV==='production';
+      if(!fullPersistence)ProviderMatcher.seedCanonicalProviders();
       ProviderMatcher.initialized = true;
     }
   }
@@ -140,6 +158,17 @@ export class ProviderMatcher {
     };
     ProviderMatcher.providers.set(normalized.professional_id, normalized);
     ProviderMatcher.providers.set(normalized.id!, normalized);
+  }
+
+  public static async registerProviderProfileDurable(profile: ProviderMatchingProfileEntity): Promise<void> {
+    ProviderMatcher.registerProviderProfile(profile);
+    const normalized=ProviderMatcher.requireProvider(profile.professional_id);
+    if(this.durablePersistenceEnabled){
+      await B29MutableStateStore.put({
+        domain:'CARE_NAVIGATION',entity_type:'PROVIDER_MATCH_PROFILE',entity_id:normalized.id || normalized.professional_id,
+        owner_id:normalized.professional_id,status:String(normalized.verification_state),payload:normalized
+      });
+    }
   }
 
   public static getProvider(idOrProfessionalId: string): ProviderMatchingProfileEntity | undefined {
