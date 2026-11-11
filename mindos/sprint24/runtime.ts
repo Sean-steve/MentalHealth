@@ -1,4 +1,5 @@
 import {
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
   ClinicalOperationsStaffingRegistry,
   ClinicalOperationsSafetyKernelBridge,
   PgClinicalOperationsRepository,
@@ -21,7 +22,7 @@ let status:Sprint24RuntimeStatus={
 };
 
 export async function configureSprint24Runtime(options:{usePostgres?:boolean}={}):Promise<Sprint24RuntimeStatus>{
-  const usePostgres=options.usePostgres??process.env.NODE_ENV==='production';
+  const usePostgres=options.usePostgres ?? isSystemPostgresPersistenceEnabled();
   if(usePostgres)setClinicalOperationsRepository(new PgClinicalOperationsRepository());
   else resetClinicalOperationsRepository();
 
