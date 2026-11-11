@@ -70,10 +70,15 @@
       "number": "B29",
       "title": "Full Backend Persistence & Local Certification",
       "status": "IMPLEMENTED",
-      "note": "TECHNICAL CERTIFICATION CANDIDATE on PR #7. Run 43037880136 passed 27/27 PostgreSQL migrations, full TypeScript, 538/538 full regression tests, 8/8 B29 persistence acceptance tests, 18/18 release assurance, 7/7 security/red-team, 6/6 clinical, 6/6 privacy/Kenya-regulatory, 14/14 accessibility baseline, DR restore (27 migrations; CI RPO 1s/RTO 2s), Sprint-27 and Sprint-28 PostgreSQL smokes, and the B29 User → Professional → Operations native-PostgreSQL golden path across 19 durable domains with restart persistence=true, appointment overlap blocked=true, clinical plaintext persisted=false, and AI message plaintext persisted=false. Build, performance and 23-component SBOM passed. Synthetic provider/safety fixtures prove mechanics only and are not real approvals."
+      "note": "TECHNICALLY CERTIFIED COMPLETE on PR head 57fccce94bbe9a4539a05aa8549a3a096a2dee37 and merged to main as 8787f6fef47c154e4071328ba8d60b777ed80f5f. Final B29 certification run 43038627473 passed 27/27 PostgreSQL migrations, full TypeScript, 538/538 regression tests, 8/8 B29 persistence acceptance tests, release assurance/security/clinical/privacy-regulatory/accessibility gates, DR restore, Sprint-27 and Sprint-28 PostgreSQL smokes, the native PostgreSQL User → Professional → Operations golden path across 19 durable domains with restart persistence=true, appointment overlap blocked=true, clinical plaintext persisted=false, AI message plaintext persisted=false, production build, performance budgets and 23-component SBOM. Sprint 24–28 compatibility workflows also passed on the exact head. Synthetic fixtures are TEST-ONLY and do not imply real professional, clinical, crisis-resource or regulatory approval."
     }
   ],
   "timeline": [
+    {
+      "date": "11 Nov 2026",
+      "title": "Phase B29 certified and merged to main",
+      "detail": "Exact head 57fccce94bbe9a4539a05aa8549a3a096a2dee37 passed B29 run 43038627473 plus Sprint 24–28 compatibility workflows, then merged as 8787f6fef47c154e4071328ba8d60b777ed80f5f."
+    },
     {
       "date": "11 Nov 2026",
       "title": "Phase B29 full-backend local certification passed",
@@ -275,6 +280,6 @@
       "Operations"
     ],
     "tracker": "docs/tracker.html",
-    "note": "Phase B29 has technically passed full local PostgreSQL certification on PR #7. Exact final-head recertification remains before merge. Real production/beta/legal/regulatory activation is still governed separately."
+    "note": "Phase B29 Full Backend Persistence & Local Certification is technically certified and merged to main. MindOS is now ready for full local end-to-end testing with PostgreSQL; production/beta/legal/regulatory activation remains governed separately."
   }
 }
