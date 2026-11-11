@@ -1,7 +1,7 @@
 import {
-import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
   ProfessionalService,PgProfessionalRepository
 } from '../professionals/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
 import { PgSafetyRepository,setSafetyRepository } from '../safety/index.js';
 import { AssessmentPersistenceStore } from '../assessments/infrastructure/persistence.js';
 import { ContentPersistenceStore } from '../content/infrastructure/persistence.js';
