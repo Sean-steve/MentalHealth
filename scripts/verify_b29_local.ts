@@ -13,7 +13,7 @@ import {
 } from '../mindos/professionals/index.js';
 import { AvailabilitySlotService } from '../mindos/availability/index.js';
 import { AppointmentBookingService,AppointmentType,BookingSource } from '../mindos/appointments/index.js';
-import { ConsentService } from '../mindos/consent/index.js';
+import { ConsentService,ConsentCode } from '../mindos/consent/index.js';
 import { AssessmentService } from '../mindos/assessments/index.js';
 import { AssessmentPersistenceStore } from '../mindos/assessments/infrastructure/persistence.js';
 import { ContentApplicationService } from '../mindos/content/index.js';
@@ -114,14 +114,10 @@ await ProviderMatcher.registerProviderProfileDurable({
 });
 
 const consent=ConsentService.getInstance();
-const professionalSharing=await consent.grantConsent(userId,'PROFESSIONAL_DATA_SHARING',{
+const professionalSharing=await consent.grantConsent(userId,ConsentCode.PROFESSIONAL_DATA_SHARING,{
   source:testOnly,recipients:[{recipient_type:'PROFESSIONAL',recipient_id:professionalId,recipient_name:'B29 Test-Only Counsellor',durationDays:1}]
 });
-await consent.grantConsent(userId,'CARE_REFERRAL_SHARING',{
-  source:testOnly,recipients:[{recipient_type:'PROFESSIONAL',recipient_id:professionalId,recipient_name:'B29 Test-Only Counsellor',durationDays:1}]
-});
-await consent.grantConsent(userId,'ASSESSMENT_PROCESSING',{source:testOnly});
-const aiConsent=await consent.grantConsent(userId,'AI_COMPANION_PROCESSING',{source:testOnly});
+const aiConsent=await consent.grantConsent(userId,ConsentCode.AI_PROCESSING,{source:testOnly});
 
 const assessment=await AssessmentService.startSession({userId,instrumentCode:'PHQ-9',hasConsent:true} as any);
 assert.ok(assessment.session.id);
@@ -231,7 +227,7 @@ assert.equal((await ProfessionalService.getRepository().findProviderById(profess
 assert.equal((await AppointmentBookingService.getRepository().getAppointmentById(appointment.id))?.id,appointment.id);
 assert.equal((await CareRelationshipService.getRelationship(relationship.id))?.id,relationship.id);
 assert.equal((await ClinicalNoteService.getNoteById(note.id,professionalId)).note.id,note.id);
-assert.equal(ConsentService.hasActiveConsent(userId,'PROFESSIONAL_DATA_SHARING'),true);
+assert.equal(ConsentService.hasActiveConsent(userId,ConsentCode.PROFESSIONAL_DATA_SHARING),true);
 assert.equal(AssessmentPersistenceStore.getSession(assessment.session.id)?.id,assessment.session.id);
 assert.ok(ContentApplicationService.getUserBookmarks(userId).some(x=>x.definition_id===contentId));
 assert.equal((await ConversationRepository.getConversation(conversation.id))?.id,conversation.id);
