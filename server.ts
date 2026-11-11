@@ -33,66 +33,37 @@ import { sprint26Router, configureSprint26Runtime } from './mindos/sprint26/inde
 import { sprint27Router, configureSprint27Runtime } from './mindos/sprint27/index.js';
 import { sprint28Router, configureSprint28Runtime } from './mindos/sprint28/index.js';
 import { b29Router, configureB29Runtime } from './mindos/b29/index.js';
+import { isSystemPostgresPersistenceEnabled } from './mindos/platform/database/persistence_mode.js';
 
 async function startServer() {
   const app = express();
   const canonicalIdentityService = new IdentityService();
   const PORT = ConfigurationManager.get().port;
-  const fullPersistence =
-    process.env.MINDOS_B29_STORAGE_MODE === 'postgres' ||
-    process.env.NODE_ENV === 'production';
+  const fullPersistence = isSystemPostgresPersistenceEnabled();
   const b29Runtime = await configureB29Runtime({ usePostgres: fullPersistence });
   logger.info('MindOS B29 full-persistence runtime configured', { ...b29Runtime });
 
   app.use(express.json());
 
-  const sprint22UsePostgres =
-    fullPersistence ||
-    process.env.MINDOS_SPRINT22_STORAGE_MODE === 'postgres' ||
-    process.env.NODE_ENV === 'production';
-  const sprint22Runtime = configureSprint22Runtime({ usePostgres: sprint22UsePostgres });
+  const sprint22Runtime = configureSprint22Runtime({ usePostgres: fullPersistence });
   logger.info('MindOS Sprint 22 runtime configured', { ...sprint22Runtime });
 
-  const sprint23UsePostgres =
-    fullPersistence ||
-    process.env.MINDOS_SPRINT23_STORAGE_MODE === 'postgres' ||
-    process.env.NODE_ENV === 'production';
-  const sprint23Runtime = await configureSprint23Runtime({ usePostgres: sprint23UsePostgres });
+  const sprint23Runtime = await configureSprint23Runtime({ usePostgres: fullPersistence });
   logger.info('MindOS Sprint 23 runtime configured', { ...sprint23Runtime });
 
-  const sprint24UsePostgres =
-    fullPersistence ||
-    process.env.MINDOS_SPRINT24_STORAGE_MODE === 'postgres' ||
-    process.env.NODE_ENV === 'production';
-  const sprint24Runtime = await configureSprint24Runtime({ usePostgres: sprint24UsePostgres });
+  const sprint24Runtime = await configureSprint24Runtime({ usePostgres: fullPersistence });
   logger.info('MindOS Sprint 24 runtime configured', { ...sprint24Runtime });
 
-  const sprint25UsePostgres =
-    fullPersistence ||
-    process.env.MINDOS_SPRINT25_STORAGE_MODE === 'postgres' ||
-    process.env.NODE_ENV === 'production';
-  const sprint25Runtime = await configureSprint25Runtime({ usePostgres: sprint25UsePostgres });
+  const sprint25Runtime = await configureSprint25Runtime({ usePostgres: fullPersistence });
   logger.info('MindOS Sprint 25 runtime configured', { ...sprint25Runtime });
 
-  const sprint26UsePostgres =
-    fullPersistence ||
-    process.env.MINDOS_SPRINT26_STORAGE_MODE === 'postgres' ||
-    process.env.NODE_ENV === 'production';
-  const sprint26Runtime = configureSprint26Runtime({ usePostgres: sprint26UsePostgres });
+  const sprint26Runtime = configureSprint26Runtime({ usePostgres: fullPersistence });
   logger.info('MindOS Sprint 26 runtime configured', { ...sprint26Runtime });
 
-  const sprint27UsePostgres =
-    fullPersistence ||
-    process.env.MINDOS_SPRINT27_STORAGE_MODE === 'postgres' ||
-    process.env.NODE_ENV === 'production';
-  const sprint27Runtime = configureSprint27Runtime({ usePostgres: sprint27UsePostgres });
+  const sprint27Runtime = configureSprint27Runtime({ usePostgres: fullPersistence });
   logger.info('MindOS Sprint 27 runtime configured', { ...sprint27Runtime });
 
-  const sprint28UsePostgres =
-    fullPersistence ||
-    process.env.MINDOS_SPRINT28_STORAGE_MODE === 'postgres' ||
-    process.env.NODE_ENV === 'production';
-  const sprint28Runtime = configureSprint28Runtime({ usePostgres: sprint28UsePostgres });
+  const sprint28Runtime = configureSprint28Runtime({ usePostgres: fullPersistence });
   logger.info('MindOS Sprint 28 runtime configured', { ...sprint28Runtime });
 
   app.use((req: Request, res: Response, next: NextFunction) => {
