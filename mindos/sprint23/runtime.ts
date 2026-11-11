@@ -1,4 +1,5 @@
 import {
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
   ClinicalRecordService,
   ClinicalTimelineService,
   ClinicalObservationService,
@@ -35,7 +36,7 @@ let status:Sprint23RuntimeStatus={
 };
 
 export async function configureSprint23Runtime(options:{usePostgres?:boolean}={}):Promise<Sprint23RuntimeStatus>{
-  const usePostgres=options.usePostgres??process.env.NODE_ENV==='production';
+  const usePostgres=options.usePostgres ?? isSystemPostgresPersistenceEnabled();
 
   if(usePostgres){
     const clinicalRepo=new PgClinicalRecordRepository();
