@@ -1,5 +1,4 @@
 import {
-import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
   CarePlanService,
   CareGoalService,
   CareInterventionService,
@@ -7,6 +6,7 @@ import { isSystemPostgresPersistenceEnabled } from '../platform/database/persist
   CarePlanReviewService,
   CarePlanProgressService
 } from '../care_plans/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
 import { PgCarePlanRepository } from '../care_plans/repositories/pg_care_plan_repository.js';
 import {
   ClinicalTaskService,
