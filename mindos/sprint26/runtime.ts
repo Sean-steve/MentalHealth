@@ -1,4 +1,5 @@
 import { PgHardeningRepository, resetHardeningRepository, setHardeningRepository } from '../hardening/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
 
 export interface Sprint26RuntimeStatus{
   configured:boolean;
@@ -13,7 +14,7 @@ let status:Sprint26RuntimeStatus={
 };
 
 export function configureSprint26Runtime(options:{usePostgres?:boolean}={}):Sprint26RuntimeStatus{
-  const usePostgres=options.usePostgres??process.env.NODE_ENV==='production';
+  const usePostgres=options.usePostgres ?? isSystemPostgresPersistenceEnabled();
   if(usePostgres)setHardeningRepository(new PgHardeningRepository());
   else resetHardeningRepository();
   status={

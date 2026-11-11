@@ -1,4 +1,5 @@
 import { PgLaunchRepository,resetLaunchRepository,setLaunchRepository } from '../launch/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
 
 export interface Sprint28RuntimeStatus{
   configured:boolean;
@@ -14,7 +15,7 @@ let status:Sprint28RuntimeStatus={
 };
 
 export function configureSprint28Runtime(options:{usePostgres?:boolean}={}):Sprint28RuntimeStatus{
-  const usePostgres=options.usePostgres??process.env.NODE_ENV==='production';
+  const usePostgres=options.usePostgres ?? isSystemPostgresPersistenceEnabled();
   if(usePostgres)setLaunchRepository(new PgLaunchRepository());else resetLaunchRepository();
   status={configured:true,persistence:usePostgres?'POSTGRES':'IN_MEMORY_DEFAULT',jurisdiction:'KE',raw_participant_identity_persisted:false,ci_may_authorize_real_launch:false};
   return {...status};

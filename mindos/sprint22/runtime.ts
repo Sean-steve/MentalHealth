@@ -6,6 +6,7 @@ import {
   CarePlanReviewService,
   CarePlanProgressService
 } from '../care_plans/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
 import { PgCarePlanRepository } from '../care_plans/repositories/pg_care_plan_repository.js';
 import {
   ClinicalTaskService,
@@ -57,7 +58,7 @@ export function configureSprint22Runtime(options: {
   messagingSafetyScanner?: ProtectedMessageSafetyScannerPort;
   attachmentPolicyConfig?: MessagingAttachmentPolicyConfig;
 } = {}): Sprint22RuntimeStatus {
-  const usePostgres = options.usePostgres ?? process.env.NODE_ENV === 'production';
+  const usePostgres = options.usePostgres ?? isSystemPostgresPersistenceEnabled();
 
   if (usePostgres) {
     const carePlanRepository = new PgCarePlanRepository();

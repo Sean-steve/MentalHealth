@@ -9,6 +9,7 @@
  */
 
 import { ConfigurationManager } from '../configuration/index.js';
+import { isSystemPostgresPersistenceEnabled } from './persistence_mode.js';
 import { logger } from '../observability/logger.js';
 import { PostgresErrorMapper, ConcurrencyError } from './errors.js';
 import { DatabaseObservability } from './observability.js';
@@ -767,7 +768,7 @@ let sharedDriver: DatabaseClient | null = null;
 
 function getOrCreateDriver(): DatabaseClient {
   if (!sharedDriver) {
-    const nativePostgres = String(process.env.MINDOS_DATABASE_DRIVER || '').toLowerCase() === 'postgres';
+    const nativePostgres = isSystemPostgresPersistenceEnabled();
     sharedDriver = nativePostgres ? new NativePostgresDriver() : new CanonicalPostgresDriver();
     logger.info('Database driver initialized', {
       driver: nativePostgres ? 'native_postgres_driver' : 'canonical_postgres_driver',

@@ -36,7 +36,6 @@ import { ClinicalIncidentService,ClinicalOperationsRepository } from '../mindos/
 
 if(!process.env.DATABASE_URL)throw new Error('DATABASE_URL is required for B29 local certification.');
 process.env.MINDOS_DATABASE_DRIVER='postgres';
-process.env.MINDOS_B29_STORAGE_MODE='postgres';
 process.env.AI_PROVIDER='mock_sandbox';
 process.env.PAYMENTS_PROVIDER='mock';
 process.env.NOTIFICATIONS_PROVIDER='mock_console';

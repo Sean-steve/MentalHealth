@@ -5,6 +5,7 @@ import {
   resetAnalyticsRepository,
   setAnalyticsRepository
 } from '../analytics/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
 
 export interface Sprint25RuntimeStatus{
   configured:boolean;
@@ -21,7 +22,7 @@ let status:Sprint25RuntimeStatus={
 };
 
 export async function configureSprint25Runtime(options:{usePostgres?:boolean}={}):Promise<Sprint25RuntimeStatus>{
-  const usePostgres=options.usePostgres??process.env.NODE_ENV==='production';
+  const usePostgres=options.usePostgres ?? isSystemPostgresPersistenceEnabled();
   if(usePostgres)setAnalyticsRepository(new PgAnalyticsRepository());
   else resetAnalyticsRepository();
   await AnalyticsMetricRegistry.initializeCanonical();

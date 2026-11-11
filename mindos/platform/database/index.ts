@@ -9,6 +9,7 @@ export * from './errors.js';
 export * from './observability.js';
 export * from './classification_registry.js';
 export * from './connection.js';
+export * from './persistence_mode.js';
 export * from './unit_of_work.js';
 export * from './migrations.js';
 export * from './encryption/index.js';

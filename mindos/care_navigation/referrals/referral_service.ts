@@ -24,6 +24,7 @@ import { AuditService } from '../../platform/audit/index.js';
 import { NotFoundError, AuthorizationError } from '../../platform/errors/index.js';
 import { B29MutableStateStore } from '../../b29/mutable_state_store.js';
 import { ProfessionalService } from '../../professionals/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../../platform/database/persistence_mode.js';
 
 export interface CreateReferralParams {
   userId: string;
@@ -105,7 +106,7 @@ export class ReferralService {
 
     // 2. Verified Provider Gate (R-NAV-004)
     if (params.receivingProviderId) {
-      const fullPersistence=process.env.MINDOS_B29_STORAGE_MODE==='postgres'||process.env.NODE_ENV==='production';
+      const fullPersistence=isSystemPostgresPersistenceEnabled();
       if(fullPersistence){
         const verified=await ProfessionalService.isVerifiedAsync(params.receivingProviderId);
         if(!verified)throw new AuthorizationError('Receiving provider is not durably verified and active for referral.');
