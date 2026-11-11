@@ -24,6 +24,7 @@ import { CareRelationshipInvariants } from '../domain/invariants.js';
 import { ICareRelationshipRepository } from '../repositories/interfaces.js';
 import { ProfessionalService } from '../../professionals/index.js';
 import { ConsentService, ConsentCode } from '../../consent/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../../platform/database/persistence_mode.js';
 
 export interface EvaluateRelationshipAccessRequest {
   relationshipId: string;
@@ -232,9 +233,7 @@ export class RelationshipAccessEvaluator {
     }
 
     // 9. User Consent Linkage
-    const fullPersistence =
-      process.env.MINDOS_B29_STORAGE_MODE === 'postgres' ||
-      process.env.NODE_ENV === 'production';
+    const fullPersistence = isSystemPostgresPersistenceEnabled();
     const sharingGrant = ConsentService.getInstance().getRepository()
       .getActiveGrant(rel.subject_user_id, ConsentCode.PROFESSIONAL_DATA_SHARING);
     const recipientBoundConsent = Boolean(
