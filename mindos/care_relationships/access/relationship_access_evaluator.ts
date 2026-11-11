@@ -232,9 +232,12 @@ export class RelationshipAccessEvaluator {
     }
 
     // 9. User Consent Linkage
+    const fullPersistence =
+      process.env.MINDOS_B29_STORAGE_MODE === 'postgres' ||
+      process.env.NODE_ENV === 'production';
     const sharingGrant = ConsentService.getInstance().getRepository()
       .getActiveGrant(rel.subject_user_id, ConsentCode.PROFESSIONAL_DATA_SHARING);
-    const hasConsent = Boolean(
+    const recipientBoundConsent = Boolean(
       sharingGrant &&
       (sharingGrant.recipients || []).some(
         recipient => recipient.recipient_type === 'PROFESSIONAL' &&
@@ -242,6 +245,10 @@ export class RelationshipAccessEvaluator {
                      (!recipient.expires_at || Date.parse(recipient.expires_at) > Date.now())
       )
     );
+    const legacyConsent =
+      ConsentService.hasActiveConsent(rel.subject_user_id, 'PROFESSIONAL_DATA_SHARING') ||
+      ConsentService.hasActiveConsent(rel.subject_user_id, 'CLINICAL_CONSULTATION');
+    const hasConsent = fullPersistence ? recipientBoundConsent : legacyConsent;
     if (!hasConsent) {
       AuditService.record({
         ...auditBase,
