@@ -1,11 +1,11 @@
 import {
-import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
   ClinicalOperationsStaffingRegistry,
   ClinicalOperationsSafetyKernelBridge,
   PgClinicalOperationsRepository,
   setClinicalOperationsRepository,
   resetClinicalOperationsRepository
 } from '../clinical_ops/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
 
 export interface Sprint24RuntimeStatus{
   configured:boolean;
