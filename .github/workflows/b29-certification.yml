@@ -147,8 +147,6 @@ jobs:
         run: bun run sprint28:postgres-smoke
 
       - name: B29 User → Professional → Operations PostgreSQL golden path
-        env:
-          MINDOS_B29_STORAGE_MODE: postgres
         run: bun run b29:local-certification
 
       - name: Production build
