@@ -25,12 +25,16 @@ describe('MindOS Phase B29 — Full Backend Persistence & Local Certification',(
     assert.doesNotMatch(sql,/clinical_workspace_runtime_entities[\s\S]*payload JSONB NOT NULL/);
   });
 
-  it('one B29 switch activates full local PostgreSQL persistence',()=>{
+  it('one system-wide database switch activates full local PostgreSQL persistence',()=>{
     const env=read('.env.example');
     const server=read('server.ts');
+    const mode=read('mindos/platform/database/persistence_mode.ts');
     assert.match(env,/MINDOS_DATABASE_DRIVER="postgres"/);
-    assert.match(env,/MINDOS_B29_STORAGE_MODE="postgres"/);
-    assert.match(server,/fullPersistence/);
+    assert.doesNotMatch(env,/MINDOS_(?:SPRINT\d+|B29)_STORAGE_MODE/);
+    assert.match(mode,/MINDOS_DATABASE_DRIVER/);
+    assert.doesNotMatch(server,/MINDOS_SPRINT\d+_STORAGE_MODE/);
+    assert.doesNotMatch(server,/MINDOS_B29_STORAGE_MODE/);
+    assert.match(server,/isSystemPostgresPersistenceEnabled/);
     assert.match(server,/configureB29Runtime/);
   });
 
@@ -50,7 +54,8 @@ describe('MindOS Phase B29 — Full Backend Persistence & Local Certification',(
     const professionals=read('mindos/professionals/service.ts');
     const matcher=read('mindos/care_navigation/matching/provider_matcher.ts');
     assert.match(professionals,/repo instanceof InMemoryProfessionalRepository/);
-    assert.match(matcher,/MINDOS_B29_STORAGE_MODE==='postgres'/);
+    assert.match(matcher,/isSystemPostgresPersistenceEnabled\(\)/);
+    assert.doesNotMatch(matcher,/MINDOS_B29_STORAGE_MODE/);
     assert.match(matcher,/if\(!fullPersistence\)ProviderMatcher\.seedCanonicalProviders\(\)/);
   });
 
