@@ -1,4 +1,5 @@
 import { PgValidationRepository,resetValidationRepository,setValidationRepository } from '../validation/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
 
 export interface Sprint27RuntimeStatus{
   configured:boolean;
@@ -13,7 +14,7 @@ let status:Sprint27RuntimeStatus={
 };
 
 export function configureSprint27Runtime(options:{usePostgres?:boolean}={}):Sprint27RuntimeStatus{
-  const usePostgres=options.usePostgres??process.env.NODE_ENV==='production';
+  const usePostgres=options.usePostgres ?? isSystemPostgresPersistenceEnabled();
   if(usePostgres)setValidationRepository(new PgValidationRepository());
   else resetValidationRepository();
   status={
