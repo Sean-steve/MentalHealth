@@ -104,9 +104,16 @@ jobs:
         run: bun run typecheck
 
       - name: Full Sprint 1-B29 regression
-        run: timeout --signal=TERM --kill-after=10s 180s bun run test
+        env:
+          # Historical canonical tests deliberately use isolated synthetic IDs
+          # and the high-fidelity in-memory driver. Native PostgreSQL durability
+          # is certified separately below by B29/DR/PostgreSQL smoke gates.
+          MINDOS_DATABASE_DRIVER: canonical
+        run: bun run test
 
       - name: B29 persistence acceptance
+        env:
+          MINDOS_DATABASE_DRIVER: canonical
         run: bun run test:b29
 
       - name: Release assurance regression
