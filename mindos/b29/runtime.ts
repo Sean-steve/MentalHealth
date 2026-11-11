@@ -1,4 +1,5 @@
 import {
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
   ProfessionalService,PgProfessionalRepository
 } from '../professionals/index.js';
 import { PgSafetyRepository,setSafetyRepository } from '../safety/index.js';
@@ -50,7 +51,7 @@ let status:B29RuntimeStatus={
 
 export async function configureB29Runtime(options:{usePostgres?:boolean}={}):Promise<B29RuntimeStatus>{
   const usePostgres=options.usePostgres
-    ?? (process.env.MINDOS_B29_STORAGE_MODE==='postgres' || process.env.NODE_ENV==='production');
+    ?? isSystemPostgresPersistenceEnabled();
 
   if(usePostgres){
     setSafetyRepository(new PgSafetyRepository());
