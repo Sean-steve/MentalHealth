@@ -6,6 +6,12 @@
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
+-- Reconcile the canonical transactional-outbox runtime contract with the
+-- additive schema established by migrations 002/007.
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+UPDATE outbox_events SET retry_count = attempt_count WHERE retry_count = 0 AND attempt_count > 0;
+
 CREATE TABLE IF NOT EXISTS professional_runtime_entities (
   entity_type VARCHAR(60) NOT NULL,
   entity_id VARCHAR(180) NOT NULL,
