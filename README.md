@@ -29,12 +29,13 @@ See `docs/reconciliation/b29.html` for the certification evidence.
 
 ## Local backend
 
-Use PostgreSQL 16+ and Redis 7+. Copy `.env.example` to `.env`, configure local credentials, then enable:
+Use PostgreSQL 16+ and Redis 7+. Copy `.env.example` to `.env`, configure local credentials, then enable the **single system-wide persistence switch**:
 
 ```env
 MINDOS_DATABASE_DRIVER=postgres
-MINDOS_B29_STORAGE_MODE=postgres
 ```
+
+`MINDOS_DATABASE_DRIVER=postgres` applies to the whole MindOS backend. There are no Sprint-specific storage switches in normal runtime configuration.
 
 Apply the schema and start the platform:
 
