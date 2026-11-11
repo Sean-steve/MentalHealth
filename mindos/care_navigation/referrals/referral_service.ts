@@ -16,7 +16,7 @@ import {
 import { CareNavigationInvariants } from '../domain/invariants.js';
 import { HandoffService } from './handoff_service.js';
 import { ProviderMatcher } from '../matching/provider_matcher.js';
-import { ConsentService } from '../../consent/index.js';
+import { ConsentService, ConsentCode } from '../../consent/index.js';
 import { generateUUIDv7 } from '../../platform/database/uuid.js';
 import { EventBus } from '../../platform/events/index.js';
 import { DataClassification } from '../../platform/shared/data_classification.js';
@@ -83,13 +83,24 @@ export class ReferralService {
     const actorId = params.actorId || params.userId;
 
     // 1. Consent Gate (R-NAV-003)
-    const canonicalReferralConsent = ConsentService.hasActiveConsent(params.userId, 'CARE_REFERRAL_SHARING');
+    const sharingGrant = ConsentService.getInstance().getRepository()
+      .getActiveGrant(params.userId, ConsentCode.PROFESSIONAL_DATA_SHARING);
+    const recipientAuthorized = Boolean(
+      sharingGrant && (
+        !params.receivingProviderId ||
+        (sharingGrant.recipients || []).some(
+          recipient => recipient.recipient_type === 'PROFESSIONAL' &&
+                       recipient.recipient_id === params.receivingProviderId &&
+                       (!recipient.expires_at || Date.parse(recipient.expires_at) > Date.now())
+        )
+      )
+    );
     const referralConsent = ConsentService.getConsentReceipt(params.userId, 'CARE_REFERRAL') ||
                             ConsentService.getConsentReceipt(params.userId, 'REFERRAL_SHARING') ||
                             ConsentService.getConsentReceipt(params.userId, 'CLINICAL_CONSULTATION') ||
                             ConsentService.getConsentReceipt(params.userId, 'TERMS_OF_SERVICE');
 
-    const hasConsent = canonicalReferralConsent || Boolean(referralConsent);
+    const hasConsent = recipientAuthorized || Boolean(referralConsent);
     CareNavigationInvariants.assertReferralConsent(hasConsent);
 
     // 2. Verified Provider Gate (R-NAV-004)
@@ -124,7 +135,7 @@ export class ReferralService {
       receiving_organization_id: params.receivingOrganizationId,
       receiving_service_type: params.receivingServiceType,
       reason_codes: params.reasonCodes,
-      consent_grant_id: canonicalReferralConsent ? ConsentService.getInstance().getRepository().getActiveGrant(params.userId,'CARE_REFERRAL_SHARING')?.id : referralConsent?.id,
+      consent_grant_id: recipientAuthorized ? sharingGrant?.id : referralConsent?.id,
       history: [
         {
           from_state: ReferralState.DRAFT,
