@@ -1,11 +1,11 @@
 import {
-import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
   AnalyticsEventBridge,
   AnalyticsMetricRegistry,
   PgAnalyticsRepository,
   resetAnalyticsRepository,
   setAnalyticsRepository
 } from '../analytics/index.js';
+import { isSystemPostgresPersistenceEnabled } from '../platform/database/persistence_mode.js';
 
 export interface Sprint25RuntimeStatus{
   configured:boolean;
