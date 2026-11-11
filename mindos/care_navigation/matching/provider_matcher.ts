@@ -17,6 +17,7 @@ import { generateUUIDv7 } from '../../platform/database/uuid.js';
 import { NotFoundError, DomainInvariantError } from '../../platform/errors/index.js';
 import { ProfessionalService } from '../../professionals/index.js';
 import { B29MutableStateStore } from '../../b29/mutable_state_store.js';
+import { isSystemPostgresPersistenceEnabled } from '../../platform/database/persistence_mode.js';
 
 export class ProviderMatcher {
   private static providers: Map<string, ProviderMatchingProfileEntity> = new Map();
@@ -44,7 +45,7 @@ export class ProviderMatcher {
 
   public static initialize(): void {
     if (!ProviderMatcher.initialized) {
-      const fullPersistence=process.env.MINDOS_B29_STORAGE_MODE==='postgres'||process.env.NODE_ENV==='production';
+      const fullPersistence=isSystemPostgresPersistenceEnabled();
       if(!fullPersistence)ProviderMatcher.seedCanonicalProviders();
       ProviderMatcher.initialized = true;
     }
